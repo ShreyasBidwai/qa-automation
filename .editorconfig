@@ -1,0 +1,32 @@
+# EditorConfig — https://editorconfig.org
+# Top-most EditorConfig file for the QA Automation Platform monorepo.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+max_line_length = 100
+
+# Python — align with black (4-space indent, 88-col line length)
+[*.py]
+indent_size = 4
+max_line_length = 88
+
+# Web / config languages — align with prettier (2-space indent)
+[*.{js,jsx,ts,tsx,json,jsonc,css,scss,html,yml,yaml}]
+indent_size = 2
+
+# Markdown — preserve trailing whitespace (used for hard line breaks)
+[*.md]
+trim_trailing_whitespace = false
+
+# Makefiles require literal tabs
+[Makefile]
+indent_style = tab
+
+[*.{mk,mak}]
+indent_style = tab

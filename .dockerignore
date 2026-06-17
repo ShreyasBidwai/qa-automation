@@ -1,0 +1,25 @@
+# Keep Docker build contexts small (Engineering Standards §17).
+.git
+.gitignore
+.github
+**/.env
+**/.env.*
+!**/.env.example
+**/__pycache__/
+**/*.py[cod]
+**/.venv/
+**/venv/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.pytest_cache/
+**/node_modules/
+**/dist/
+**/build/
+**/.vite/
+**/coverage/
+**/playwright-report/
+**/test-results/
+**/*.log
+docs/
+*.md
+.editorconfig
