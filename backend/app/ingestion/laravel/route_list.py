@@ -12,6 +12,9 @@ from app.ingestion.errors import RouteNotFound, ValidationExtractionError
 # Middleware whose presence implies the endpoint requires authentication.
 _AUTH_MIDDLEWARE_HEADS = {"auth", "auth.basic", "auth.session"}
 
+# Middleware heads that name a role (e.g. `role:admin`, `role_or_permission:admin`).
+_ROLE_MIDDLEWARE_HEADS = {"role", "roles", "role_or_permission"}
+
 _PATH_PARAM = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\??\}")
 
 
@@ -61,6 +64,21 @@ def derive_auth_required(middleware: list[str]) -> bool:
         if head in _AUTH_MIDDLEWARE_HEADS or "sanctum" in entry:
             return True
     return False
+
+
+def roles_from_middleware(middleware: list[str]) -> list[str]:
+    """Role names named by middleware (`role:admin`, `role:admin,editor`, …).
+
+    Only reliably role-naming middleware is read; everything else is left out
+    (honest extraction — no guessing).
+    """
+    roles: list[str] = []
+    for entry in middleware:
+        head, _, args = entry.partition(":")
+        if head.strip() in _ROLE_MIDDLEWARE_HEADS and args:
+            roles.extend(part.strip() for part in args.split(",") if part.strip())
+    # De-dupe, preserve order.
+    return list(dict.fromkeys(roles))
 
 
 def path_params_from_uri(uri: str) -> list[str]:
@@ -123,3 +141,10 @@ def build_route_facts(route: dict[str, Any], target: RouteTarget) -> RouteFacts:
 def route_facts_from_output(stdout: str, target: RouteTarget) -> RouteFacts:
     routes = parse_route_list(stdout)
     return build_route_facts(find_route(routes, target), target)
+
+
+def all_route_facts(stdout: str) -> list[RouteFacts]:
+    """Facts for EVERY route in `route:list --json` output (whole-repo ingest)."""
+    return [
+        build_route_facts(route, RouteTarget()) for route in parse_route_list(stdout)
+    ]
