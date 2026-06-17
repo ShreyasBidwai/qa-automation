@@ -96,9 +96,17 @@ class LaravelIngester:
         return all_route_facts(check_output(result, what="artisan route:list"))
 
     async def ingest(
-        self, *, session: AsyncSession, project_id: uuid.UUID, repo_path: str
+        self,
+        *,
+        session: AsyncSession,
+        project_id: uuid.UUID,
+        repo_path: str,
+        source_sha: str | None = None,
     ) -> IngestResult:
-        source_sha = self._head_sha(repo_path)
+        # When a caller already resolved the commit (e.g. GitProvider.checkout),
+        # use it; otherwise resolve the local repo's HEAD.
+        if source_sha is None:
+            source_sha = self._head_sha(repo_path)
         facts = self._route_facts(repo_path)
         graph = extract_graph(
             repo_path=repo_path,

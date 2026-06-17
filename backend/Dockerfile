@@ -46,6 +46,11 @@ ENV PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
+# git: the GitCliProvider tests clone/checkout a real LOCAL fixture repo (no
+# network). Not in the runtime image — ingestion jobs ship git in their worker.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /opt/venv /opt/venv
 COPY requirements.txt requirements-dev.txt requirements-test.txt requirements-embed.txt ./
 RUN pip install --no-cache-dir -r requirements-test.txt

@@ -68,6 +68,13 @@ class Settings(BaseSettings):
     # MUST match the model_nodes.embedding column dimension (migration 0005).
     embedding_dim: int = 384
 
+    # --- Git ingestion source (READ-ONLY; there is no push path, ever) ---
+    # A read-only access token, injected into the clone URL at runtime and NEVER
+    # logged (a secret; comes from the environment / secret store, not code).
+    git_token: str | None = None
+    git_token_username: str = "oauth2"
+    git_clone_timeout_seconds: float = 120.0
+
     # --- Brain resolver (T2.4) — hybrid vector + lexical NL→node resolution ---
     # Blended score = vector_weight * cosine_sim + lexical_weight * lexical.
     resolver_vector_weight: float = 0.6
