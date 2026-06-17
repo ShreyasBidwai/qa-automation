@@ -7,6 +7,7 @@ graph expansion) lands in T2.4.
 
 from __future__ import annotations
 
+from .resolver import BrainResolver, Resolution, ResolvedNode
 from .search import BrainSearch
 
-__all__ = ["BrainSearch"]
+__all__ = ["BrainSearch", "BrainResolver", "Resolution", "ResolvedNode"]

@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import cast, select
+from sqlalchemy import Float, cast, select
 
 from app.models.enums import NodeKind
 from app.models.model_node import EMBEDDING_DIM, ModelNode
@@ -67,5 +67,38 @@ class NodeRepository(ProjectScopedRepository[ModelNode]):
             )
             .order_by(ModelNode.embedding.op("<=>")(query_vec))
             .limit(k)
+        )
+        return list((await self.session.scalars(stmt)).all())
+
+    async def search_by_vector_scored(
+        self, project_id: uuid.UUID, embedding: list[float], k: int = 5
+    ) -> list[tuple[ModelNode, float]]:
+        """Like ``search_by_vector`` but also returns cosine distance (0=identical)."""
+        query_vec = cast(list(embedding), Vector(EMBEDDING_DIM))
+        # return_type=Float: <=> yields a scalar distance, not a vector — without
+        # this the result inherits the Vector type and pgvector mis-parses it.
+        distance = (
+            ModelNode.embedding.op("<=>", return_type=Float())(query_vec)
+        ).label("distance")
+        stmt = (
+            select(ModelNode, distance)
+            .where(
+                ModelNode.project_id == project_id,
+                ModelNode.embedding.is_not(None),
+            )
+            .order_by(distance)
+            .limit(k)
+        )
+        rows = (await self.session.execute(stmt)).all()
+        return [(row[0], float(row[1])) for row in rows]
+
+    async def get_many(
+        self, project_id: uuid.UUID, ids: set[uuid.UUID]
+    ) -> list[ModelNode]:
+        """Fetch nodes by id within a project (subgraph neighbour hydration)."""
+        if not ids:
+            return []
+        stmt = select(ModelNode).where(
+            ModelNode.project_id == project_id, ModelNode.id.in_(ids)
         )
         return list((await self.session.scalars(stmt)).all())

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.models.enums import EdgeKind
 from app.models.model_edge import ModelEdge
@@ -42,6 +42,24 @@ class EdgeRepository(ProjectScopedRepository[ModelEdge]):
     async def add(self, entity: ModelEdge) -> ModelEdge:
         await self._assert_endpoints(entity)
         return await super().add(entity)
+
+    async def list_incident(
+        self, project_id: uuid.UUID, node_id: uuid.UUID, limit: int
+    ) -> list[ModelEdge]:
+        """Edges touching a node (as src or dst), capped — for 1-hop expansion."""
+        stmt = (
+            select(ModelEdge)
+            .where(
+                ModelEdge.project_id == project_id,
+                or_(
+                    ModelEdge.src_node_id == node_id,
+                    ModelEdge.dst_node_id == node_id,
+                ),
+            )
+            .order_by(ModelEdge.created_at)
+            .limit(limit)
+        )
+        return list((await self.session.scalars(stmt)).all())
 
     async def get_by_key(
         self,
