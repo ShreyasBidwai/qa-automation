@@ -1,10 +1,14 @@
-"""ORM models. Importing them here registers them on ``Base.metadata`` so
-Alembic autogenerate sees the full schema.
+"""ORM models. Importing them here registers every table on ``Base.metadata``
+so Alembic autogenerate and ``verify_migrations`` see the full schema.
 """
 
 from __future__ import annotations
 
 from .base import Base
 from .project import Project
+from .result import Result
+from .run import Run
+from .test_case import TestCase
+from .test_script import TestScript
 
-__all__ = ["Base", "Project"]
+__all__ = ["Base", "Project", "Run", "Result", "TestCase", "TestScript"]

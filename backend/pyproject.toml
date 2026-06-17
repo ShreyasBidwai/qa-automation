@@ -22,6 +22,9 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "-ra --cov=app --cov-report=term-missing"
+# Tests are function-based; this naming convention stops pytest from trying to
+# collect domain classes named Test* (TestCase, TestType, …) as test classes.
+python_classes = ["*Tests"]
 
 [tool.ruff]
 target-version = "py312"
