@@ -44,21 +44,14 @@ test: artifacts-dir ## Run all suites in Docker (pytest + vitest + playwright) +
 	$(COMPOSE_TEST) run --rm --build frontend-tests
 	$(COMPOSE_TEST) run --rm --build e2e
 
-# Triaged starlette advisories (transitive via FastAPI). Fixed only in
-# starlette >= 1.3.1, which requires a coordinated FastAPI upgrade — tracked as a
-# follow-up; re-evaluate and remove these ignores on that bump. New/other vulns
-# are still gated.
-PIP_AUDIT_IGNORES := --ignore-vuln PYSEC-2026-161 \
-	--ignore-vuln GHSA-2c2j-9gv5-cj73 --ignore-vuln GHSA-7f5h-v6xp-fcq8 \
-	--ignore-vuln GHSA-wqp7-x3pw-xc5r --ignore-vuln GHSA-x746-7m8f-x49c \
-	--ignore-vuln GHSA-82w8-qh3p-5jfq --ignore-vuln GHSA-jp82-jpqv-5vv3
-
 # Scanning is scoped to shipped (production) dependencies: the backend audits
 # requirements.txt (runtime only) and the frontend uses --omit=dev. Dev/test
 # tooling advisories (e.g. vitest/esbuild) don't reach the deployed artifact and
 # are triaged separately on their (breaking) upgrades.
+# (The earlier starlette --ignore-vuln allowlist was removed once the FastAPI
+# 0.137 / Starlette 1.3.1 bump landed — those advisories are now actually fixed.)
 audit: artifacts-dir ## Scan shipped dependencies for known vulnerabilities (pip-audit, npm audit)
-	$(COMPOSE_TEST) run --rm --no-deps --build backend-tests pip-audit -r requirements.txt $(PIP_AUDIT_IGNORES)
+	$(COMPOSE_TEST) run --rm --no-deps --build backend-tests pip-audit -r requirements.txt
 	$(COMPOSE_TEST) run --rm --no-deps --build frontend-tests npm audit --omit=dev --audit-level=high
 	$(COMPOSE_TEST) run --rm --no-deps --build e2e npm audit --omit=dev --audit-level=high
 
