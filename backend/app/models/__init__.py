@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from .base import Base
 from .coverage import Coverage
+from .model_edge import ModelEdge
+from .model_node import ModelNode
 from .project import Project
 from .result import Result
 from .run import Run
@@ -20,4 +22,6 @@ __all__ = [
     "TestCase",
     "TestScript",
     "Coverage",
+    "ModelNode",
+    "ModelEdge",
 ]

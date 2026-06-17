@@ -8,3 +8,7 @@ psycopg[binary]==3.2.3
 SQLAlchemy[asyncio]==2.0.36
 alembic==1.14.0
 pydantic-settings==2.6.1
+# pgvector SQLAlchemy type + cosine-distance operator for Brain embeddings
+# (the `vector` extension itself is enabled in migration 0001). Pure-Python,
+# light — the heavy fastembed runtime lives in requirements-embed.txt.
+pgvector==0.3.6

@@ -44,6 +44,28 @@ services:
       - -c
       - npx vitest run --reporter=default --reporter=junit --outputFile=.artifacts/junit.xml
 
+  # Real-embedding lane — the real fastembed provider + an insert/search
+  # round-trip against pgvector. Heavy (ONNX + model download); built/run only
+  # via `make test-embeddings`, never in the fast suite. Needs the db.
+  embed-tests:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: embed-test
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-qa_platform}:${POSTGRES_PASSWORD:-change-me-locally}@db:5432/${POSTGRES_DB:-qa_platform}
+      LOG_LEVEL: WARNING
+    volumes:
+      - ./.artifacts/embed:/app/.artifacts
+    command:
+      - sh
+      - -c
+      - >-
+        pytest -m embed --junitxml=.artifacts/junit.xml -p no:cacheprovider
+    depends_on:
+      db:
+        condition: service_healthy
+
   # Laravel/Pest runner — real PHP/Pest against the bootable fixture app, plus
   # the PHP-helper shape test (closes T1.3 mock drift). Built/run only via
   # `make test-runners`; no Postgres (the target uses in-memory sqlite). Build

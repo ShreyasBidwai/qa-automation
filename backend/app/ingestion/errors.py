@@ -33,3 +33,7 @@ class ActionResolutionError(ExtractionError):
 
 class ValidationExtractionError(ExtractionError):
     """The validation rules for an action could not be extracted/parsed."""
+
+
+class GraphExtractionError(ExtractionError):
+    """The whole-repo model/migration/action graph could not be parsed."""

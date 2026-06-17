@@ -17,15 +17,22 @@ exclude = ["migrations/"]
 module = ["alembic.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# pgvector ships no type stubs; fastembed is an optional (embed-lane) dep absent
+# from the lint image. Don't fail on either's missing types.
+module = ["pgvector.*", "fastembed.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-# The fast suite excludes `runner`-marked tests (real PHP/Pest); those run only
-# in the laravel runner image via `make test-runners`, which passes `-m runner`.
-addopts = "-ra --cov=app --cov-report=term-missing -m 'not runner'"
+# The fast suite excludes the real-tooling lanes: `runner` (PHP/Pest, run via
+# `make test-runners`) and `embed` (real fastembed, run via `make test-embeddings`).
+addopts = "-ra --cov=app --cov-report=term-missing -m 'not runner and not embed'"
 markers = [
     "runner: real-tooling tests that require the runner image (PHP/Pest); run via `make test-runners`",
+    "embed: real-embedding tests that require fastembed; run via `make test-embeddings`",
 ]
 # Tests are function-based; this naming convention stops pytest from trying to
 # collect domain classes named Test* (TestCase, TestType, …) as test classes.

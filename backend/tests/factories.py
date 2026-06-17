@@ -10,7 +10,9 @@ from typing import Any
 
 from app.models.enums import (
     AuthoredBy,
+    EdgeKind,
     Framework,
+    NodeKind,
     OracleSource,
     Outcome,
     RunMode,
@@ -18,6 +20,8 @@ from app.models.enums import (
     TestLayer,
     TestType,
 )
+from app.models.model_edge import ModelEdge
+from app.models.model_node import ModelNode
 from app.models.project import Project
 from app.models.result import Result
 from app.models.run import Run
@@ -32,6 +36,35 @@ def make_project(**overrides: Any) -> Project:
     }
     attrs.update(overrides)
     return Project(**attrs)
+
+
+def make_node(project_id: uuid.UUID, **overrides: Any) -> ModelNode:
+    attrs: dict[str, Any] = {
+        "project_id": project_id,
+        "kind": NodeKind.ENDPOINT,
+        "name": f"node-{uuid.uuid4().hex[:12]}",
+        "attributes": {},
+        "source_sha": None,
+    }
+    attrs.update(overrides)
+    return ModelNode(**attrs)
+
+
+def make_edge(
+    project_id: uuid.UUID,
+    src_node_id: uuid.UUID,
+    dst_node_id: uuid.UUID,
+    **overrides: Any,
+) -> ModelEdge:
+    attrs: dict[str, Any] = {
+        "project_id": project_id,
+        "src_node_id": src_node_id,
+        "dst_node_id": dst_node_id,
+        "kind": EdgeKind.CALLS,
+        "confidence": 1.0,
+    }
+    attrs.update(overrides)
+    return ModelEdge(**attrs)
 
 
 def make_test_case(project_id: uuid.UUID, **overrides: Any) -> TestCase:

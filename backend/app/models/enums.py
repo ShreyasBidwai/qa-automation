@@ -74,3 +74,25 @@ class CoverageDimension(str, enum.Enum):
     PAGE = "page"
     JOURNEY = "journey"
     ROLE_MATRIX = "role-matrix"
+
+
+class NodeKind(str, enum.Enum):
+    """A system-model ("Brain") node kind (TRD §3, §7)."""
+
+    ENDPOINT = "endpoint"
+    PAGE = "page"
+    MODEL = "model"
+    TABLE = "table"
+    ROLE = "role"
+
+
+class EdgeKind(str, enum.Enum):
+    """A directed relationship between two model nodes (TRD §3, §7)."""
+
+    CALLS = "calls"
+    IMPLEMENTS = "implements"
+    READS = "reads"
+    WRITES = "writes"
+    COVERS = "covers"
+    OBSERVED_IN = "observed_in"
+    DERIVED_FROM = "derived_from"
