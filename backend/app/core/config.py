@@ -43,6 +43,24 @@ class Settings(BaseSettings):
     # --- Graceful shutdown ---
     shutdown_drain_timeout_seconds: float = 30.0
 
+    # --- AI layer (pluggable; dev shells to `claude -p`) (TRD §6, Arch §8) ---
+    # Provider selection: claude_cli (dev) | stub (tests). api/self-host land later.
+    ai_provider_mode: str = "claude_cli"
+    # Model tiering is config-driven so prod can swap to API/self-host with no
+    # core change. Frontier for generate, cheap for triage (Sprint 7).
+    ai_generate_model: str = "claude-opus-4-8"
+    ai_triage_model: str = "claude-haiku-4-5"
+    claude_cli_path: str = "claude"
+    # Recommended per-call context budget callers pass to generate(); the
+    # provider enforces whatever budget_tokens it is given.
+    ai_max_budget_tokens: int = 120000
+    ai_budget_strategy: str = "truncate"  # truncate | raise
+    # External-call timeout + bounded retry/backoff (Standards §12).
+    ai_timeout_seconds: float = 120.0
+    ai_max_attempts: int = 3
+    ai_retry_base_delay_seconds: float = 0.5
+    ai_retry_max_delay_seconds: float = 8.0
+
 
 @lru_cache
 def get_settings() -> Settings:
