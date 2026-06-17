@@ -67,3 +67,10 @@ class Triage(str, enum.Enum):
     FLAKY = "flaky"
     INFRA = "infra"
     UNKNOWN = "unknown"
+
+
+class CoverageDimension(str, enum.Enum):
+    ENDPOINT = "endpoint"
+    PAGE = "page"
+    JOURNEY = "journey"
+    ROLE_MATRIX = "role-matrix"

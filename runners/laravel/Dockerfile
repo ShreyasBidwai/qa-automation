@@ -59,8 +59,9 @@ RUN composer install --no-interaction --prefer-dist --no-progress --no-ansi
 
 WORKDIR /work
 
-# Real-tooling tests only (marker `runner`); the fast suite lives in the backend
-# image. No Postgres is touched here — the target runs against in-memory sqlite.
-CMD ["pytest", "-m", "runner", \
-     "tests/test_runner_pest_integration.py", "tests/test_helper_php_shape.py", \
+# Real-tooling tests only (marker `runner`) across tests/ — the PestRunner
+# integration, the PHP-helper shape test, and the mutant-kill gate. The fast
+# suite lives in the backend image. No Postgres is touched here — the target
+# runs against in-memory sqlite.
+CMD ["pytest", "-m", "runner", "tests/", \
      "--junitxml=.artifacts/junit.xml", "-p", "no:cacheprovider"]
