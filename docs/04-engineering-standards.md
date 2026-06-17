@@ -101,9 +101,10 @@ One reference for how we build, so quality is consistent whether code comes from
 
 ## 16. CI/CD
 
-- GitHub Actions runs **inside Docker**: build → lint → typecheck → unit → integration → (E2E where relevant).
-- Fail-fast; **no merge on red**. Artifacts (coverage, test reports) published.
-- CI mirrors local `docker compose` so "works on my machine" can't happen.
+- **CI is deferred for now.** The GitHub Actions workflow is preserved (disabled) at `docs/ci/ci.yml.disabled` and is re-enabled by moving it back to `.github/workflows/ci.yml`. It runs the full pipeline **inside Docker** — build → lint → typecheck → unit → integration → (E2E where relevant) — mirroring local `docker compose`, fail-fast, with coverage/test-report artifacts.
+- **Until CI is re-enabled, the per-task gate is local:** `make test` (and `make lint`) must be green in Docker before a task is considered done (§20). These are the same Docker targets the workflow runs, so there is no drift when CI returns.
+- Pre-commit hooks (ruff/black/eslint/prettier) still run locally on every commit (`pre-commit install`).
+- When re-enabled: CI mirrors local `docker compose` so "works on my machine" can't happen; fail-fast; **no merge on red**; artifacts published.
 
 ## 17. Docker conventions
 
@@ -127,7 +128,7 @@ One reference for how we build, so quality is consistent whether code comes from
 
 ## 20. Definition of Done (every task)
 
-Code merged via reviewed PR · works in `docker compose up` · tests added and **full CI green** · no secrets · logging/health where relevant · graceful start/stop honored for services · docs/ADR updated if a contract changed · tracker note added.
+Code merged via reviewed PR · works in `docker compose up` · tests added and **`make test` green locally** (full CI once re-enabled, §16) · no secrets · logging/health where relevant · graceful start/stop honored for services · docs/ADR updated if a contract changed · tracker note added.
 
 ## 21. Maker–Checker workflow
 

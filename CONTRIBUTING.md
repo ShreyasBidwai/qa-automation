@@ -68,7 +68,7 @@ docs(adr): record dual-DB execution decision
 ### Required to merge (Standards §3, §20 — Definition of Done)
 
 - [ ] Review approved
-- [ ] Full CI green (build → lint → typecheck → unit → integration → E2E where relevant)
+- [ ] `make test` and `make lint` green locally in Docker (full CI once re-enabled — Standards §16)
 - [ ] No unresolved review threads
 - [ ] Works in `docker compose up`
 - [ ] Tests added for changed code; meaningful assertions, no flakes
@@ -102,17 +102,21 @@ Run on everything manually with `pre-commit run --all-files`.
 
 ## CI
 
-Every push and PR runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml),
-which executes the same `make` targets locally used — entirely in Docker, so
-there is no environment drift:
+**CI is deferred for now (Standards §16).** Until it is re-enabled, the per-task
+gate is **local**: a task is done only when `make test` and `make lint` are green
+in Docker (and review is approved).
+
+The GitHub Actions workflow is preserved at
+[`docs/ci/ci.yml.disabled`](docs/ci/ci.yml.disabled); re-enable it by moving it
+back to `.github/workflows/ci.yml`. It runs the same `make` targets — entirely in
+Docker, so there is no environment drift:
 
 `make build` → `make lint` → `make test` (pytest → vitest → playwright, with the
 backend services coverage gate) → coverage/test-report artifacts, plus a
 parallel `make audit` (pip-audit + npm audit) for dependency scanning.
 
-**No-merge-on-red:** configure branch protection on `main` to require the
-**“CI success”** status check (and review approval). That single check is green
-only when every CI job passed.
+When re-enabled, configure branch protection on `main` to require the
+**“CI success”** status check (no-merge-on-red).
 
 ## Maker–Checker
 

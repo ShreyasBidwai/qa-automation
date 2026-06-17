@@ -1,3 +1,8 @@
+# ⚠️ DISABLED / DEFERRED (Standards §16). Kept out of `.github/workflows/` so
+# GitHub Actions does not run it yet. Until CI is re-enabled the per-task gate is
+# local: `make test` (and `make lint`) must be green before a task is done.
+# To re-enable, move this file back verbatim to `.github/workflows/ci.yml`.
+
 name: CI
 
 # Runs entirely inside Docker via the same `make` targets developers run
