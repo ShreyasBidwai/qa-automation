@@ -1,11 +1,18 @@
-"""The 0002 migration applied cleanly and additively in the compose stack."""
+"""Migrations 0002–0003 applied cleanly and additively in the compose stack."""
 
 from __future__ import annotations
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-EXPECTED_TABLES = {"projects", "test_cases", "test_scripts", "runs", "results"}
+EXPECTED_TABLES = {
+    "projects",
+    "test_cases",
+    "test_scripts",
+    "runs",
+    "results",
+    "coverage",
+}
 EXPECTED_ENUMS = {
     "test_type",
     "test_layer",
@@ -16,6 +23,7 @@ EXPECTED_ENUMS = {
     "run_mode",
     "outcome",
     "triage",
+    "coverage_dimension",
 }
 
 
@@ -23,7 +31,7 @@ async def test_migration_at_head(db_session: AsyncSession) -> None:
     revision = (
         await db_session.execute(text("SELECT version_num FROM alembic_version"))
     ).scalar_one()
-    assert revision == "0002_core_test_data_model"
+    assert revision == "0003_coverage"
 
 
 async def test_core_tables_and_enums_exist(db_session: AsyncSession) -> None:
