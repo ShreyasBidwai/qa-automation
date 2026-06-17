@@ -11,7 +11,7 @@ COMPOSE := docker compose --project-directory . -f infra/docker-compose.yml
 COMPOSE_TEST := docker compose --project-directory . -f infra/docker-compose.yml -f infra/docker-compose.test.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help up down build lint test audit migrate artifacts-dir
+.PHONY: help up down build lint test test-runners audit migrate artifacts-dir
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -20,8 +20,8 @@ help: ## List available targets
 # Host-owned report dirs (777 so the non-root test containers can write into the
 # bind mounts). Gitignored. A prerequisite of every target that mounts them.
 artifacts-dir:
-	@mkdir -p .artifacts/backend .artifacts/frontend .artifacts/e2e
-	@chmod 777 .artifacts/backend .artifacts/frontend .artifacts/e2e
+	@mkdir -p .artifacts/backend .artifacts/frontend .artifacts/e2e .artifacts/runner
+	@chmod 777 .artifacts/backend .artifacts/frontend .artifacts/e2e .artifacts/runner
 
 up: ## Start the dev stack (Postgres + backend + frontend), build and wait for healthy
 	$(COMPOSE) up -d --build --wait
@@ -43,6 +43,13 @@ test: artifacts-dir ## Run all suites in Docker (pytest + vitest + playwright) +
 	$(COMPOSE_TEST) run --rm --build backend-tests
 	$(COMPOSE_TEST) run --rm --build frontend-tests
 	$(COMPOSE_TEST) run --rm --build e2e
+
+# Real-tooling tests run in the dedicated Laravel runner image (PHP + Composer +
+# Pest), kept OUT of `make test` so the main suite stays fast. No Postgres: the
+# target-under-test boots against in-memory sqlite (Architecture §9). Builds the
+# image (composer install of the fixture app) and runs the `runner`-marked tests.
+test-runners: artifacts-dir ## Build the Laravel runner image and run real PHP/Pest + PHP-helper tests
+	$(COMPOSE_TEST) run --rm --no-deps --build runner-tests
 
 # Scanning is scoped to shipped (production) dependencies: the backend audits
 # requirements.txt (runtime only) and the frontend uses --omit=dev. Dev/test
