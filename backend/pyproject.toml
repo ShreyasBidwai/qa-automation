@@ -21,7 +21,12 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-addopts = "-ra --cov=app --cov-report=term-missing"
+# The fast suite excludes `runner`-marked tests (real PHP/Pest); those run only
+# in the laravel runner image via `make test-runners`, which passes `-m runner`.
+addopts = "-ra --cov=app --cov-report=term-missing -m 'not runner'"
+markers = [
+    "runner: real-tooling tests that require the runner image (PHP/Pest); run via `make test-runners`",
+]
 # Tests are function-based; this naming convention stops pytest from trying to
 # collect domain classes named Test* (TestCase, TestType, …) as test classes.
 python_classes = ["*Tests"]

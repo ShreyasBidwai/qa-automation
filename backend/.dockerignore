@@ -17,3 +17,8 @@ htmlcov/
 Dockerfile
 .dockerignore
 README.md
+# Laravel fixture: vendor is installed at image-build time; generated tests and
+# phpunit caches are runtime-only — never ship host copies into the context.
+tests/fixtures/laravel-app/vendor/
+tests/fixtures/laravel-app/.phpunit.cache/
+tests/fixtures/laravel-app/tests/Feature/_generated/

@@ -44,6 +44,18 @@ services:
       - -c
       - npx vitest run --reporter=default --reporter=junit --outputFile=.artifacts/junit.xml
 
+  # Laravel/Pest runner — real PHP/Pest against the bootable fixture app, plus
+  # the PHP-helper shape test (closes T1.3 mock drift). Built/run only via
+  # `make test-runners`; no Postgres (the target uses in-memory sqlite). Build
+  # context is ./backend so the image bundles the backend code + the fixture; the
+  # Dockerfile lives in runners/laravel/.
+  runner-tests:
+    build:
+      context: ./backend
+      dockerfile: ../runners/laravel/Dockerfile
+    volumes:
+      - ./.artifacts/runner:/work/.artifacts
+
   # Playwright E2E — loads the running frontend and asserts live backend health.
   e2e:
     build:
