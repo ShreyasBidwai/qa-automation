@@ -1,21 +1,26 @@
 """``model_nodes`` — the system-model ("Brain") nodes (TRD §3, §7).
 
 Endpoints/pages/models/tables/roles extracted from a target, versioned by
-``source_sha``. Holds structure only — no business logic (Standards §5). The
-embedding vector column is intentionally deferred to T2.3 (once the embedding
-model's dimension is chosen); the Brain is rebuildable from the codebase.
+``source_sha``. Holds structure only — no business logic (Standards §5). Carries
+a pgvector ``embedding`` for semantic NL→node resolution (T2.3); the Brain is
+rebuildable from the codebase.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import Index, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base, ProjectScopedMixin, pg_enum
 from .enums import NodeKind
+
+# Embedding dimension — the schema's source of truth. The configured embedding
+# provider MUST produce vectors of this dimension (config embedding_dim).
+EMBEDDING_DIM = 384
 
 
 class ModelNode(Base, ProjectScopedMixin):
@@ -39,3 +44,9 @@ class ModelNode(Base, ProjectScopedMixin):
     # Content/commit SHA the node was derived from — the cache/change-impact key
     # (ADR-0010). Nullable: some nodes (e.g. roles) have no single source file.
     source_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Semantic embedding of the node's document (T2.3). Nullable: populated on
+    # ingest when an embedding provider is configured. HNSW-indexed for cosine
+    # ANN search (migration 0005).
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(EMBEDDING_DIM), nullable=True
+    )

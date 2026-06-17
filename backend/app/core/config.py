@@ -61,6 +61,13 @@ class Settings(BaseSettings):
     ai_retry_base_delay_seconds: float = 0.5
     ai_retry_max_delay_seconds: float = 8.0
 
+    # --- Embeddings (pluggable; local fastembed dev/prod, stub for tests) ---
+    # Provider selection: local (fastembed ONNX) | stub (tests, no download).
+    embedding_provider: str = "local"
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    # MUST match the model_nodes.embedding column dimension (migration 0005).
+    embedding_dim: int = 384
+
 
 @lru_cache
 def get_settings() -> Settings:

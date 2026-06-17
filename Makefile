@@ -11,7 +11,7 @@ COMPOSE := docker compose --project-directory . -f infra/docker-compose.yml
 COMPOSE_TEST := docker compose --project-directory . -f infra/docker-compose.yml -f infra/docker-compose.test.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help up down build lint test test-runners audit migrate artifacts-dir
+.PHONY: help up down build lint test test-runners test-embeddings audit migrate artifacts-dir
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -20,8 +20,8 @@ help: ## List available targets
 # Host-owned report dirs (777 so the non-root test containers can write into the
 # bind mounts). Gitignored. A prerequisite of every target that mounts them.
 artifacts-dir:
-	@mkdir -p .artifacts/backend .artifacts/frontend .artifacts/e2e .artifacts/runner
-	@chmod 777 .artifacts/backend .artifacts/frontend .artifacts/e2e .artifacts/runner
+	@mkdir -p .artifacts/backend .artifacts/frontend .artifacts/e2e .artifacts/runner .artifacts/embed
+	@chmod 777 .artifacts/backend .artifacts/frontend .artifacts/e2e .artifacts/runner .artifacts/embed
 
 up: ## Start the dev stack (Postgres + backend + frontend), build and wait for healthy
 	$(COMPOSE) up -d --build --wait
@@ -50,6 +50,13 @@ test: artifacts-dir ## Run all suites in Docker (pytest + vitest + playwright) +
 # image (composer install of the fixture app) and runs the `runner`-marked tests.
 test-runners: artifacts-dir ## Build the Laravel runner image and run real PHP/Pest + PHP-helper tests
 	$(COMPOSE_TEST) run --rm --no-deps --build runner-tests
+
+# Real-embedding lane (heavy: fastembed ONNX + model download), separate from
+# `make test` so the main suite stays fast. Needs the db for the insert/search
+# round-trip.
+test-embeddings: artifacts-dir ## Build the embed image and run the real fastembed integration lane
+	$(COMPOSE_TEST) up -d --build --wait db
+	$(COMPOSE_TEST) run --rm --build embed-tests
 
 # Scanning is scoped to shipped (production) dependencies: the backend audits
 # requirements.txt (runtime only) and the frontend uses --omit=dev. Dev/test

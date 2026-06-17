@@ -17,10 +17,13 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.embeddings.document import build_node_document
+from app.embeddings.errors import EmbeddingDimMismatch
+from app.embeddings.types import EmbeddingProvider
 from app.ingestion.commands import CommandRunner, check_output, run_subprocess
 from app.models.enums import EdgeKind, NodeKind
 from app.models.model_edge import ModelEdge
-from app.models.model_node import ModelNode
+from app.models.model_node import EMBEDDING_DIM, ModelNode
 from app.repositories.edge_repository import EdgeRepository
 from app.repositories.node_repository import NodeRepository
 
@@ -66,6 +69,7 @@ class LaravelIngester:
         route_timeout: float = 60.0,
         php_timeout: float = 60.0,
         graph_helper: str = _GRAPH_HELPER,
+        embedding_provider: EmbeddingProvider | None = None,
     ) -> None:
         self._runner = runner
         self._php = php_path
@@ -73,6 +77,7 @@ class LaravelIngester:
         self._route_timeout = route_timeout
         self._php_timeout = php_timeout
         self._graph_helper = graph_helper
+        self._embedding = embedding_provider
 
     def _head_sha(self, repo_path: str) -> str:
         result = self._runner(
@@ -137,6 +142,7 @@ class LaravelIngester:
                 )
             )
 
+        endpoint_nodes: list[ModelNode] = []
         endpoint_actions: list[tuple[ModelNode, ActionMeta]] = []
         for fact in facts:
             split = _split_action(fact.action)
@@ -163,6 +169,7 @@ class LaravelIngester:
                     source_sha=source_sha,
                 )
             )
+            endpoint_nodes.append(endpoint)
             if action_meta is not None:
                 endpoint_actions.append((endpoint, action_meta))
 
@@ -225,6 +232,30 @@ class LaravelIngester:
                 if dst is None:
                     continue
                 await _edge(endpoint.id, dst.id, EdgeKind.CALLS, _CONFIDENCE_MEDIUM)
+
+        # --- embed each node's document (T2.3) -------------------------------
+        # Embed all nodes now; the ADR-0010 optimization (re-embed only when
+        # source_sha changed) is a later addition once re-runs make it worthwhile.
+        if self._embedding is not None:
+            all_nodes = [
+                *table_nodes.values(),
+                *model_nodes.values(),
+                *endpoint_nodes,
+                *role_nodes.values(),
+            ]
+            documents = [
+                build_node_document(node.kind, node.name, node.attributes)
+                for node in all_nodes
+            ]
+            vectors = self._embedding.embed(documents)
+            for node, vector in zip(all_nodes, vectors, strict=True):
+                if len(vector) != EMBEDDING_DIM:
+                    raise EmbeddingDimMismatch(
+                        f"provider returned dim {len(vector)}, "
+                        f"column expects {EMBEDDING_DIM}"
+                    )
+                node.embedding = vector
+            await session.flush()
 
         node_counts = {
             NodeKind.ENDPOINT.value: sum(1 for _ in facts),

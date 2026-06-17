@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import cast, select
 
 from app.models.enums import NodeKind
-from app.models.model_node import ModelNode
+from app.models.model_node import EMBEDDING_DIM, ModelNode
 
 from .base import ProjectScopedRepository
 
@@ -48,3 +49,23 @@ class NodeRepository(ProjectScopedRepository[ModelNode]):
         existing.source_sha = node.source_sha
         await self.session.flush()
         return existing
+
+    async def search_by_vector(
+        self, project_id: uuid.UUID, embedding: list[float], k: int = 5
+    ) -> list[ModelNode]:
+        """Top-k embedded nodes nearest the query vector (cosine), project-scoped.
+
+        Uses the pgvector ``<=>`` cosine-distance operator, served by the HNSW
+        index (migration 0005). Nodes without an embedding are excluded.
+        """
+        query_vec = cast(list(embedding), Vector(EMBEDDING_DIM))
+        stmt = (
+            select(ModelNode)
+            .where(
+                ModelNode.project_id == project_id,
+                ModelNode.embedding.is_not(None),
+            )
+            .order_by(ModelNode.embedding.op("<=>")(query_vec))
+            .limit(k)
+        )
+        return list((await self.session.scalars(stmt)).all())

@@ -1,0 +1,5 @@
+# Real-embedding lane only (heavy; NOT in the fast test/lint image).
+# Installed in the Dockerfile `embed-test` stage and run via `make test-embeddings`.
+# fastembed is ONNX-based (no torch); it downloads the model on first use.
+-r requirements-test.txt
+fastembed==0.4.2

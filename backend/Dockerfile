@@ -47,7 +47,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
-COPY requirements.txt requirements-dev.txt requirements-test.txt ./
+COPY requirements.txt requirements-dev.txt requirements-test.txt requirements-embed.txt ./
 RUN pip install --no-cache-dir -r requirements-test.txt
 
 COPY alembic.ini pyproject.toml ./
@@ -56,3 +56,10 @@ COPY app ./app
 COPY tests ./tests
 
 CMD ["pytest"]
+
+# ---- embed-test (real-embedding lane: test stage + fastembed) ---------------
+# Heavy ONNX runtime kept OUT of the default test image; built/run only by
+# `make test-embeddings`. fastembed downloads the model on first use.
+FROM test AS embed-test
+
+RUN pip install --no-cache-dir -r requirements-embed.txt

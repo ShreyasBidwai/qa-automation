@@ -1,4 +1,4 @@
-"""Migrations 0002–0004 applied cleanly and additively in the compose stack."""
+"""Migrations 0002–0005 applied cleanly and additively in the compose stack."""
 
 from __future__ import annotations
 
@@ -35,7 +35,32 @@ async def test_migration_at_head(db_session: AsyncSession) -> None:
     revision = (
         await db_session.execute(text("SELECT version_num FROM alembic_version"))
     ).scalar_one()
-    assert revision == "0004_brain_nodes_and_edges"
+    assert revision == "0005_node_embeddings"
+
+
+async def test_model_nodes_has_embedding_column_and_hnsw_index(
+    db_session: AsyncSession,
+) -> None:
+    column = (
+        await db_session.execute(
+            text(
+                "SELECT data_type FROM information_schema.columns "
+                "WHERE table_name = 'model_nodes' AND column_name = 'embedding'"
+            )
+        )
+    ).scalar_one_or_none()
+    assert column is not None  # pgvector reports as USER-DEFINED
+
+    indexes = set(
+        (
+            await db_session.execute(
+                text("SELECT indexname FROM pg_indexes WHERE schemaname = 'public'")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert "ix_model_nodes_embedding_hnsw" in indexes
 
 
 async def test_core_tables_and_enums_exist(db_session: AsyncSession) -> None:
