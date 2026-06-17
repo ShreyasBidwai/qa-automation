@@ -1,48 +1,32 @@
-"""Minimal FastAPI control-plane placeholder.
+"""Application factory (Standards §5).
 
-This is scaffolding so the Docker Compose stack boots and the health contract
-(Engineering Standards §9) is in place. The real API — routers/services/
-repositories behind the app-factory pattern — lands in later tasks.
+Wiring only — middleware, error handlers, routers. Runtime config and lifecycle
+live in ``app.core``; the server entrypoint is ``app.__main__``.
 """
 
 from __future__ import annotations
 
-import os
+from fastapi import FastAPI
 
-import psycopg
-from fastapi import FastAPI, Response
-
-
-def _libpq_dsn(url: str) -> str:
-    """Normalize a SQLAlchemy-style URL to a libpq DSN psycopg can consume.
-
-    The app config uses ``postgresql+psycopg://…`` (SQLAlchemy dialect); the
-    raw psycopg driver wants ``postgresql://…``.
-    """
-    return url.replace("postgresql+psycopg://", "postgresql://", 1)
+from .api.health import router as health_router
+from .core.config import get_settings
+from .core.errors import register_exception_handlers
+from .core.lifespan import lifespan
+from .middleware.request_id import RequestIdMiddleware
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="QA Automation Platform API", version="0.0.0")
+    settings = get_settings()
+    app = FastAPI(
+        title="QA Automation Platform API",
+        version="0.1.0",
+        lifespan=lifespan,
+    )
+    app.add_middleware(RequestIdMiddleware, header_name=settings.request_id_header)
+    register_exception_handlers(app)
 
-    @app.get("/healthz", tags=["health"])
-    def healthz() -> dict[str, str]:
-        """Liveness — the process is up. No dependencies checked."""
-        return {"status": "ok"}
-
-    @app.get("/readyz", tags=["health"])
-    def readyz(response: Response) -> dict[str, object]:
-        """Readiness — gates traffic; checks the database is reachable."""
-        dsn = _libpq_dsn(os.environ.get("DATABASE_URL", ""))
-        try:
-            with psycopg.connect(dsn, connect_timeout=3) as conn:
-                conn.execute("SELECT 1")
-        except Exception:
-            response.status_code = 503
-            return {"status": "not-ready", "checks": {"database": "down"}}
-        return {"status": "ready", "checks": {"database": "up"}}
+    # Liveness/readiness are unversioned, top-level endpoints (TRD §4).
+    app.include_router(health_router)
+    # Versioned API (`/api/v1`) routers attach in later tasks.
 
     return app
-
-
-app = create_app()

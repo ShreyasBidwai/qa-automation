@@ -29,4 +29,4 @@ lint: ## Run linters and type checks (ruff, black --check, mypy, eslint, prettie
 	@echo "[make lint] not yet implemented — will wrap: ruff / black / mypy / eslint / prettier"
 
 migrate: ## Apply database migrations (forward-only)
-	@echo "[make migrate] not yet implemented — will wrap: docker compose run --rm backend alembic upgrade head"
+	$(COMPOSE) run --rm backend alembic upgrade head
