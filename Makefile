@@ -1,9 +1,13 @@
 # QA Automation Platform — developer command wrapper.
 #
 # `docker compose up` is the canonical dev entrypoint (Engineering Standards §17);
-# these targets wrap the common commands. They are DECLARED BUT NOT YET IMPLEMENTED
-# — each prints what it will do until the corresponding services and tooling land.
-# CI mirrors these targets so "works on my machine" can't happen.
+# these targets wrap the common commands. CI mirrors them so "works on my
+# machine" can't happen. Targets not yet wired print what they will do.
+#
+# Run from the repo root. `--project-directory .` makes the root `.env` the
+# source of config and resolves build contexts relative to the repo root.
+
+COMPOSE := docker compose --project-directory . -f infra/docker-compose.yml
 
 .DEFAULT_GOAL := help
 .PHONY: help up down test lint migrate
@@ -12,11 +16,11 @@ help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
 
-up: ## Start the dev stack (Postgres + backend + frontend)
-	@echo "[make up] not yet implemented — will wrap: docker compose up"
+up: ## Start the dev stack (Postgres + backend + frontend), build and wait for healthy
+	$(COMPOSE) up -d --build --wait
 
-down: ## Stop the dev stack and remove containers
-	@echo "[make down] not yet implemented — will wrap: docker compose down"
+down: ## Stop the dev stack and remove containers (the db volume persists)
+	$(COMPOSE) down
 
 test: ## Run the full test suite inside Docker
 	@echo "[make test] not yet implemented — will wrap: docker compose run --rm backend pytest / frontend vitest"

@@ -1,0 +1,6 @@
+# Pinned runtime dependencies (Engineering Standards §17).
+# Application deps proper land with the real backend; this is the minimal set
+# needed for the placeholder control plane to boot and expose health endpoints.
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+psycopg[binary]==3.2.3
