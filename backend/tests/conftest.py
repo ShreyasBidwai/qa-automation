@@ -105,3 +105,67 @@ async def db_session(test_database_url: str) -> AsyncIterator[AsyncSession]:
         await transaction.rollback()
         await connection.close()
         await engine.dispose()
+
+
+@pytest.fixture
+def endpoint_spec() -> "object":
+    """A representative EndpointSpec (mirrors the T1.3 Laravel `users.store`
+    fixture) exercising required / email / integer / min / max / exists /
+    unique / auth — the input for the generation tests.
+    """
+    from app.ingestion.models import (
+        EndpointSpec,
+        FieldConstraints,
+        RelationalRule,
+        ValidationField,
+    )
+
+    return EndpointSpec(
+        method="POST",
+        uri="api/users",
+        route_name="users.store",
+        auth_required=True,
+        path_params=[],
+        query_params=[],
+        validation_fields=[
+            ValidationField(
+                name="name",
+                raw_rules=["required", "string", "max:255"],
+                required=True,
+                type="string",
+                constraints=FieldConstraints(max=255.0),
+            ),
+            ValidationField(
+                name="email",
+                raw_rules=["required", "email", "unique:users,email"],
+                required=True,
+                type="email",
+                constraints=FieldConstraints(),
+                relational=RelationalRule(kind="unique", table="users", column="email"),
+            ),
+            ValidationField(
+                name="age",
+                raw_rules=["required", "integer", "min:18", "max:120"],
+                required=True,
+                type="integer",
+                constraints=FieldConstraints(min=18.0, max=120.0),
+            ),
+            ValidationField(
+                name="country_id",
+                raw_rules=["required", "exists:countries,id"],
+                required=True,
+                type="unknown",
+                constraints=FieldConstraints(),
+                relational=RelationalRule(
+                    kind="exists", table="countries", column="id"
+                ),
+            ),
+            ValidationField(
+                name="newsletter",
+                raw_rules=["boolean"],
+                required=False,
+                type="boolean",
+                constraints=FieldConstraints(),
+            ),
+        ],
+    )
