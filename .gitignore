@@ -58,6 +58,7 @@ build/
 .vite/
 *.local
 .eslintcache
+*.tsbuildinfo
 coverage/
 playwright-report/
 test-results/
