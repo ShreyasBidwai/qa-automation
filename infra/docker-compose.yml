@@ -39,6 +39,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      target: runtime
     environment:
       APP_ENV: ${APP_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -63,6 +64,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: runtime
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
     depends_on:

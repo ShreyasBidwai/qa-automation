@@ -37,3 +37,22 @@ EXPOSE 8000
 
 # Owns the uvicorn server so SIGTERM flips readiness off before draining (§11).
 CMD ["python", "-m", "app"]
+
+# ---- test (dev/test deps + test sources; ephemeral, not for deployment) -----
+FROM python:3.12.7-slim-bookworm AS test
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/opt/venv/bin:$PATH"
+
+WORKDIR /app
+COPY --from=builder /opt/venv /opt/venv
+COPY requirements.txt requirements-test.txt ./
+RUN pip install --no-cache-dir -r requirements-test.txt
+
+COPY alembic.ini pyproject.toml ./
+COPY migrations ./migrations
+COPY app ./app
+COPY tests ./tests
+
+CMD ["pytest"]

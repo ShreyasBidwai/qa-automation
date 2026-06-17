@@ -8,6 +8,7 @@
 # source of config and resolves build contexts relative to the repo root.
 
 COMPOSE := docker compose --project-directory . -f infra/docker-compose.yml
+COMPOSE_TEST := docker compose --project-directory . -f infra/docker-compose.yml -f infra/docker-compose.test.yml
 
 .DEFAULT_GOAL := help
 .PHONY: help up down test lint migrate
@@ -22,8 +23,11 @@ up: ## Start the dev stack (Postgres + backend + frontend), build and wait for h
 down: ## Stop the dev stack and remove containers (the db volume persists)
 	$(COMPOSE) down
 
-test: ## Run the full test suite inside Docker
-	@echo "[make test] not yet implemented — will wrap: docker compose run --rm backend pytest / frontend vitest"
+test: ## Run all suites inside Docker (backend pytest + frontend vitest + e2e playwright)
+	$(COMPOSE_TEST) up -d --build --wait db backend frontend
+	$(COMPOSE_TEST) run --rm --build backend-tests
+	$(COMPOSE_TEST) run --rm --build frontend-tests
+	$(COMPOSE_TEST) run --rm --build e2e
 
 lint: ## Run linters and type checks (ruff, black --check, mypy, eslint, prettier)
 	@echo "[make lint] not yet implemented — will wrap: ruff / black / mypy / eslint / prettier"

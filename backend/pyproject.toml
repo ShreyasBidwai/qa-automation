@@ -17,6 +17,12 @@ exclude = ["migrations/"]
 module = ["alembic.*"]
 ignore_missing_imports = true
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-ra --cov=app --cov-report=term-missing"
+
 [tool.ruff]
 target-version = "py312"
 line-length = 88
