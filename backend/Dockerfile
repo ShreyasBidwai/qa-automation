@@ -47,7 +47,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
-COPY requirements.txt requirements-test.txt ./
+COPY requirements.txt requirements-dev.txt requirements-test.txt ./
 RUN pip install --no-cache-dir -r requirements-test.txt
 
 COPY alembic.ini pyproject.toml ./

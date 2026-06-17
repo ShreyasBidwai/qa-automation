@@ -83,6 +83,37 @@ docs(adr): record dual-DB execution decision
 - **TS/React:** eslint + prettier; strict TS; no `any` without justification.
 - No dead code, no commented-out blocks, no TODOs without an issue reference.
 
+## Pre-commit hooks
+
+Install the hooks once so lint/format runs before every commit (mirrors CI):
+
+```bash
+pipx install pre-commit   # or: pip install pre-commit
+pre-commit install        # from the repo root
+
+# The frontend hooks (eslint/prettier) use the project's own tooling, so install
+# its deps once. The backend hooks (ruff/black) are self-contained.
+cd frontend && npm ci && cd ..
+```
+
+What runs (see [`.pre-commit-config.yaml`](.pre-commit-config.yaml)): ruff + black
+on `backend/**`, eslint + prettier on `frontend/**`, plus basic hygiene checks.
+Run on everything manually with `pre-commit run --all-files`.
+
+## CI
+
+Every push and PR runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml),
+which executes the same `make` targets locally used — entirely in Docker, so
+there is no environment drift:
+
+`make build` → `make lint` → `make test` (pytest → vitest → playwright, with the
+backend services coverage gate) → coverage/test-report artifacts, plus a
+parallel `make audit` (pip-audit + npm audit) for dependency scanning.
+
+**No-merge-on-red:** configure branch protection on `main` to require the
+**“CI success”** status check (and review approval). That single check is green
+only when every CI job passed.
+
 ## Maker–Checker
 
 Tasks are implemented by a *maker* and independently verified by a *checker*

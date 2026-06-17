@@ -11,11 +11,17 @@ COMPOSE := docker compose --project-directory . -f infra/docker-compose.yml
 COMPOSE_TEST := docker compose --project-directory . -f infra/docker-compose.yml -f infra/docker-compose.test.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help up down test lint migrate
+.PHONY: help up down build lint test audit migrate artifacts-dir
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
+
+# Host-owned report dirs (777 so the non-root test containers can write into the
+# bind mounts). Gitignored. A prerequisite of every target that mounts them.
+artifacts-dir:
+	@mkdir -p .artifacts/backend .artifacts/frontend .artifacts/e2e
+	@chmod 777 .artifacts/backend .artifacts/frontend .artifacts/e2e
 
 up: ## Start the dev stack (Postgres + backend + frontend), build and wait for healthy
 	$(COMPOSE) up -d --build --wait
@@ -23,14 +29,38 @@ up: ## Start the dev stack (Postgres + backend + frontend), build and wait for h
 down: ## Stop the dev stack and remove containers (the db volume persists)
 	$(COMPOSE) down
 
-test: ## Run all suites inside Docker (backend pytest + frontend vitest + e2e playwright)
+build: ## Build all Docker images
+	$(COMPOSE_TEST) build
+
+lint: artifacts-dir ## Lint + typecheck in Docker (ruff/black/mypy, eslint/prettier/tsc)
+	$(COMPOSE_TEST) run --rm --no-deps --build backend-tests \
+		sh -c "ruff check app && black --check app && mypy app"
+	$(COMPOSE_TEST) run --rm --no-deps --build frontend-tests \
+		sh -c "npm run lint && npm run format && npm run typecheck"
+
+test: artifacts-dir ## Run all suites in Docker (pytest + vitest + playwright) + coverage gate
 	$(COMPOSE_TEST) up -d --build --wait db backend frontend
 	$(COMPOSE_TEST) run --rm --build backend-tests
 	$(COMPOSE_TEST) run --rm --build frontend-tests
 	$(COMPOSE_TEST) run --rm --build e2e
 
-lint: ## Run linters and type checks (ruff, black --check, mypy, eslint, prettier)
-	@echo "[make lint] not yet implemented — will wrap: ruff / black / mypy / eslint / prettier"
+# Triaged starlette advisories (transitive via FastAPI). Fixed only in
+# starlette >= 1.3.1, which requires a coordinated FastAPI upgrade — tracked as a
+# follow-up; re-evaluate and remove these ignores on that bump. New/other vulns
+# are still gated.
+PIP_AUDIT_IGNORES := --ignore-vuln PYSEC-2026-161 \
+	--ignore-vuln GHSA-2c2j-9gv5-cj73 --ignore-vuln GHSA-7f5h-v6xp-fcq8 \
+	--ignore-vuln GHSA-wqp7-x3pw-xc5r --ignore-vuln GHSA-x746-7m8f-x49c \
+	--ignore-vuln GHSA-82w8-qh3p-5jfq --ignore-vuln GHSA-jp82-jpqv-5vv3
+
+# Scanning is scoped to shipped (production) dependencies: the backend audits
+# requirements.txt (runtime only) and the frontend uses --omit=dev. Dev/test
+# tooling advisories (e.g. vitest/esbuild) don't reach the deployed artifact and
+# are triaged separately on their (breaking) upgrades.
+audit: artifacts-dir ## Scan shipped dependencies for known vulnerabilities (pip-audit, npm audit)
+	$(COMPOSE_TEST) run --rm --no-deps --build backend-tests pip-audit -r requirements.txt $(PIP_AUDIT_IGNORES)
+	$(COMPOSE_TEST) run --rm --no-deps --build frontend-tests npm audit --omit=dev --audit-level=high
+	$(COMPOSE_TEST) run --rm --no-deps --build e2e npm audit --omit=dev --audit-level=high
 
 migrate: ## Apply database migrations (forward-only)
 	$(COMPOSE) run --rm backend alembic upgrade head

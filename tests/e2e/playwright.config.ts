@@ -8,7 +8,12 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   retries: 0,
   forbidOnly: true,
-  reporter: [["list"]],
+  outputDir: "artifacts/test-results",
+  reporter: [
+    ["list"],
+    ["junit", { outputFile: "artifacts/junit.xml" }],
+    ["html", { outputFolder: "artifacts/report", open: "never" }],
+  ],
   use: {
     baseURL: process.env.E2E_BASE_URL ?? "http://frontend:5173",
     trace: "retain-on-failure",

@@ -31,15 +31,11 @@ describe("SystemStatusPage", () => {
   it("renders backend and database as healthy once checks resolve", async () => {
     render(<SystemStatusPage />);
 
-    expect(
-      screen.getByRole("heading", { name: "System status" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "System status" })).toBeInTheDocument();
     // findBy* waits for the async health checks to resolve — no sleeps.
     expect(await screen.findByText("Operational")).toBeInTheDocument();
     expect(await screen.findByText("Connected")).toBeInTheDocument();
-    expect(
-      await screen.findByText("All systems operational"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("All systems operational")).toBeInTheDocument();
   });
 
   it("shows the backend as unreachable when the API cannot be reached", async () => {
