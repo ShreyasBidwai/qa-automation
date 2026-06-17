@@ -1,0 +1,82 @@
+# QA Automation Platform — dev stack (TRD §12, Engineering Standards §17).
+# Canonical dev entrypoint, wrapped by the root Makefile (`make up` / `make down`).
+#
+# Run from the repo root via `make up`, which invokes:
+#   docker compose --project-directory . -f infra/docker-compose.yml up -d --build --wait
+# `--project-directory .` makes the repo root the project directory, so the root
+# `.env` is loaded and the relative build `context:` paths below resolve against it.
+#
+# Required variables are documented in the root `.env.example` (copy to `.env`).
+# Every interpolation has a default so the stack also boots without a `.env`.
+name: ${COMPOSE_PROJECT_NAME:-qa-automation}
+
+services:
+  # --- Postgres 16 + pgvector ------------------------------------------------
+  # Image pins both the pgvector extension (0.8.0) and the Postgres major (16).
+  # The PostgreSQL server process runs as the unprivileged `postgres` user: the
+  # image entrypoint starts as root only to fix data-dir ownership, then drops
+  # privileges. (Forcing `user:` here would break initdb on a fresh named volume.)
+  db:
+    image: pgvector/pgvector:0.8.0-pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-qa_platform}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-locally}
+      POSTGRES_DB: ${POSTGRES_DB:-qa_platform}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # --- FastAPI control plane -------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: runtime
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # DATABASE_URL is derived from the POSTGRES_* vars (single source of truth).
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-qa_platform}:${POSTGRES_PASSWORD:-change-me-locally}@db:5432/${POSTGRES_DB:-qa_platform}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # Readiness gates dependents — "healthy" means the DB is reachable.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  # --- React + Vite operator console (dev server) ----------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: runtime
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  db_data:

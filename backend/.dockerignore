@@ -1,0 +1,19 @@
+# Keep the backend build context small (Engineering Standards §17).
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+*.log
+Dockerfile
+.dockerignore
+README.md

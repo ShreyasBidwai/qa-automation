@@ -58,6 +58,7 @@ build/
 .vite/
 *.local
 .eslintcache
+*.tsbuildinfo
 coverage/
 playwright-report/
 test-results/
@@ -88,3 +89,8 @@ Thumbs.db
 logs/
 tmp/
 .tmp/
+
+# ---------------------------------------------------------------------------
+# CI / test report output (coverage, junit, playwright report)
+# ---------------------------------------------------------------------------
+.artifacts/

@@ -1,0 +1,5 @@
+# Dev/CI tooling (Engineering Standards §4). Installed on top of runtime deps.
+-r requirements.txt
+mypy==1.13.0
+ruff==0.8.2
+black==24.10.0

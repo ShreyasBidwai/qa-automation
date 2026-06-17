@@ -1,0 +1,78 @@
+name: CI
+
+# Runs entirely inside Docker via the same `make` targets developers run
+# locally (Standards §16: CI mirrors `docker compose`, no environment drift).
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+# Least privilege (Standards §18). This workflow needs no secrets; if one is
+# ever required, reference it as ${{ secrets.NAME }} — never hardcode a value.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-lint-test:
+    name: Build, lint, typecheck & test (Docker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env from template (no secrets)
+        run: cp .env.example .env
+
+      # Ordered, fail-fast pipeline — each step mirrors a local `make` target.
+      - name: Build images
+        run: make build
+
+      - name: Lint & typecheck (ruff/black/mypy + eslint/prettier/tsc)
+        run: make lint
+
+      - name: Tests (pytest -> vitest -> playwright) + coverage gate
+        run: make test
+
+      - name: Publish coverage & test reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-and-coverage-reports
+          path: .artifacts/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Tear down
+        if: ${{ always() }}
+        run: make down
+
+  dependency-scan:
+    name: Dependency scan (pip-audit, npm audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create .env from template (no secrets)
+        run: cp .env.example .env
+      - name: Scan dependencies
+        run: make audit
+
+  # Single required status check for branch protection (no-merge-on-red).
+  # Configure `main` to require this check; it fails if any job above failed.
+  ci-success:
+    name: CI success
+    needs: [build-lint-test, dependency-scan]
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    steps:
+      - name: Verify required jobs succeeded
+        run: |
+          if [ "${{ needs.build-lint-test.result }}" != "success" ] \
+            || [ "${{ needs.dependency-scan.result }}" != "success" ]; then
+            echo "One or more required jobs failed."
+            exit 1
+          fi
+          echo "All required jobs passed."

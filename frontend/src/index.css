@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Design tokens — the single source of truth for the light design system
+ * (PRD §9: light, professional, content-first). Tinted-neutral (zinc) base, one
+ * restrained indigo accent reserved for primary actions / active state, and
+ * semantic status colours each with a light badge variant. Components consume
+ * these only through the Tailwind theme (see tailwind.config.js) — never raw hex.
+ */
+@layer base {
+  :root {
+    /* Surfaces & text (zinc family) */
+    --color-background: #fafafa; /* page base (zinc-50) */
+    --color-surface: #ffffff; /* cards / surfaces */
+    --color-border: #e4e4e7; /* hairlines (zinc-200) */
+    --color-foreground: #18181b; /* primary text (zinc-900) */
+    --color-muted-foreground: #71717a; /* secondary text (zinc-500) */
+
+    /* Accent — indigo, used sparingly for primary actions / active state */
+    --color-accent: #4f46e5; /* indigo-600 */
+    --color-accent-hover: #4338ca; /* indigo-700 */
+    --color-accent-foreground: #ffffff;
+
+    /* Status: pass = green */
+    --color-status-pass-bg: #f0fdf4; /* green-50 */
+    --color-status-pass-fg: #15803d; /* green-700 */
+    --color-status-pass-solid: #16a34a; /* green-600 */
+
+    /* Status: fail = red */
+    --color-status-fail-bg: #fef2f2; /* red-50 */
+    --color-status-fail-fg: #b91c1c; /* red-700 */
+    --color-status-fail-solid: #dc2626; /* red-600 */
+
+    /* Status: flaky = amber */
+    --color-status-flaky-bg: #fffbeb; /* amber-50 */
+    --color-status-flaky-fg: #b45309; /* amber-700 */
+    --color-status-flaky-solid: #f59e0b; /* amber-500 */
+
+    /* Status: info / running = blue */
+    --color-status-info-bg: #eff6ff; /* blue-50 */
+    --color-status-info-fg: #1d4ed8; /* blue-700 */
+    --color-status-info-solid: #2563eb; /* blue-600 */
+
+    /* Status: neutral / unknown = zinc */
+    --color-status-neutral-bg: #f4f4f5; /* zinc-100 */
+    --color-status-neutral-fg: #52525b; /* zinc-600 */
+    --color-status-neutral-solid: #a1a1aa; /* zinc-400 */
+
+    --radius: 0.5rem;
+  }
+
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+}

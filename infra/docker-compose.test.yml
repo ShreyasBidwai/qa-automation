@@ -1,0 +1,59 @@
+# Test overlay — adds one-off test/lint/audit runners on top of the base dev
+# stack (Standards §16: CI runs inside Docker and mirrors `docker compose`).
+# Used via `make test` / `make lint` / `make audit`, which `docker compose run`
+# these services. They are never `up`ed. Report output is written to a mounted
+# `.artifacts/` dir so CI can publish it.
+name: ${COMPOSE_PROJECT_NAME:-qa-automation}
+
+services:
+  # Backend pytest — runs against an isolated test DB it creates on `db`
+  # (backend/tests/conftest.py), writes coverage + junit reports, and enforces
+  # the coverage gate on the services layer (~80%, Standards §15).
+  backend-tests:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: test
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-qa_platform}:${POSTGRES_PASSWORD:-change-me-locally}@db:5432/${POSTGRES_DB:-qa_platform}
+      LOG_LEVEL: WARNING
+    volumes:
+      - ./.artifacts/backend:/app/.artifacts
+    command:
+      - sh
+      - -c
+      - >-
+        pytest --cov-report=xml:.artifacts/coverage.xml
+        --junitxml=.artifacts/junit.xml
+        && coverage report --include='app/services/*' --fail-under=80
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Frontend Vitest — reuses the frontend image (devDeps + sources present).
+  # Unit tests mock the API client, so no backend is needed.
+  frontend-tests:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: runtime
+    volumes:
+      - ./.artifacts/frontend:/app/.artifacts
+    command:
+      - sh
+      - -c
+      - npx vitest run --reporter=default --reporter=junit --outputFile=.artifacts/junit.xml
+
+  # Playwright E2E — loads the running frontend and asserts live backend health.
+  e2e:
+    build:
+      context: ./tests/e2e
+      dockerfile: Dockerfile
+    environment:
+      E2E_BASE_URL: http://frontend:5173
+      CI: "true"
+    volumes:
+      - ./.artifacts/e2e:/e2e/artifacts
+    depends_on:
+      frontend:
+        condition: service_healthy

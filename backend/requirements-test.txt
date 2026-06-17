@@ -1,0 +1,10 @@
+# Test + lint + audit dependencies (pinned). Installed in the Docker `test`
+# stage; not present in the runtime image. Includes the dev/lint tools so a
+# single image serves `make lint`, `make test`, and `make audit`.
+-r requirements-dev.txt
+pytest==8.3.3
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+httpx==0.27.2
+asgi-lifespan==2.1.0
+pip-audit==2.7.3
