@@ -40,3 +40,5 @@ This folder holds numbered Architecture Decision Records. Anything marked a
 | [ADR-0010](ADR-0010-sha-keyed-cache-invalidation.md) | SHA-keyed cache invalidation | Accepted |
 | [ADR-0011](ADR-0011-test-case-lineage-versioning.md) | Test-case lineage versioning | Accepted |
 | [ADR-0012](ADR-0012-regeneration-merge-and-proposals.md) | Re-generation merge with clobber-protection | Accepted |
+| [ADR-0013](ADR-0013-proposal-resolution.md) | Proposal resolution (accept / reject) | Accepted |
+| [ADR-0014](ADR-0014-mode-a-authoring-and-deterministic-scripting.md) | Mode A authoring + deterministic-first scripting | Accepted |

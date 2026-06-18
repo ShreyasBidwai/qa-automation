@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -118,4 +119,14 @@ class TestCase(Base, ProjectScopedMixin):
     # case awaiting accept/reject); null otherwise.
     proposal_status: Mapped[ProposalStatus | None] = mapped_column(
         pg_enum(ProposalStatus, "proposal_status"), nullable=True
+    )
+    # Resolution provenance: who accepted/rejected a proposal and when. Written by
+    # ProposalResolutionService when a pending proposal is resolved; null on every
+    # other row (non-proposals and still-pending proposals). The proposal's
+    # lifecycle state itself is ``proposal_status``; these record the human
+    # decision behind a terminal status. Not carried forward by new_version — a
+    # fork is a fresh, unresolved version.
+    resolved_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )

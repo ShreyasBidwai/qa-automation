@@ -50,6 +50,11 @@ class CaseOrigin(str, enum.Enum):
     # A re-generation against a human-edited case: a non-current candidate the
     # human can later accept/reject (resolution is T3.3). See [[CaseMergeService]].
     PROPOSED = "proposed"
+    # A case a human wrote from scratch (Mode A) — not AI-generated and not an
+    # edit of a prior version. Starts a fresh lineage at version 1, current, and
+    # is ``edited_by_human=true`` so re-generation can only ever propose against
+    # it (never clobber). See [[CaseAuthoringService]].
+    AUTHORED = "authored"
 
 
 class ProposalStatus(str, enum.Enum):

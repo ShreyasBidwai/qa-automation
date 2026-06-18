@@ -36,3 +36,23 @@ class MergeError(ServiceError):
     resolves to more than one current lineage (an invariant violation surfaced
     loudly rather than silently clobbering one).
     """
+
+
+class InvalidCaseSpecError(ServiceError):
+    """A human-authoring spec is malformed (Mode A).
+
+    Raised when an authored case cannot be built from the spec — e.g. a missing
+    HTTP method or URI, or an out-of-range expected status. Distinct from
+    ``InvalidEditError`` (which guards *edits* to existing cases): this guards the
+    initial authoring input. The boundary maps it to 422.
+    """
+
+
+class ProposalAlreadyResolvedError(ServiceError):
+    """A proposal was accepted/rejected but is no longer pending.
+
+    Resolution is terminal: once a proposal's ``proposal_status`` is ``accepted``
+    or ``rejected``, accepting or rejecting it again is rejected rather than
+    silently re-applied (which could demote the wrong current version or rewrite
+    provenance). The boundary maps it to 409 Conflict.
+    """

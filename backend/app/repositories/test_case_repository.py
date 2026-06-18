@@ -7,7 +7,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from app.models.enums import TestType
+from app.models.enums import CaseOrigin, ProposalStatus, TestType
 from app.models.test_case import TestCase
 
 from .base import ProjectScopedRepository
@@ -118,3 +118,22 @@ class TestCaseRepository(ProjectScopedRepository[TestCase]):
             TestCase.version == version,
         )
         return (await self.session.scalars(stmt)).one_or_none()
+
+    async def list_pending_proposals(self, project_id: uuid.UUID) -> list[TestCase]:
+        """Re-generation proposals awaiting a human decision (project-scoped).
+
+        Spans all lineages in the project — the backing read for a review queue.
+        Only ``origin=proposed`` versions still ``proposal_status=pending`` are
+        returned (resolved ones are excluded); ordered oldest → newest so the
+        queue is stable and deterministic.
+        """
+        stmt = (
+            select(TestCase)
+            .where(
+                TestCase.project_id == project_id,
+                TestCase.origin == CaseOrigin.PROPOSED,
+                TestCase.proposal_status == ProposalStatus.PENDING,
+            )
+            .order_by(TestCase.created_at, TestCase.id)
+        )
+        return list((await self.session.scalars(stmt)).all())
