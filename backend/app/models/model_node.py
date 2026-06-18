@@ -32,6 +32,7 @@ class ModelNode(Base, ProjectScopedMixin):
             "project_id", "kind", "name", name="uq_model_nodes_project_kind_name"
         ),
         Index("ix_model_nodes_project_id_source_sha", "project_id", "source_sha"),
+        Index("ix_model_nodes_project_id_content_sha", "project_id", "content_sha"),
     )
 
     kind: Mapped[NodeKind] = mapped_column(
@@ -41,9 +42,13 @@ class ModelNode(Base, ProjectScopedMixin):
     attributes: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
-    # Content/commit SHA the node was derived from — the cache/change-impact key
-    # (ADR-0010). Nullable: some nodes (e.g. roles) have no single source file.
+    # Provenance / last-seen: the repo HEAD commit the node was last ingested
+    # from (refreshed every re-ingest). Nullable: some nodes have no single file.
     source_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # ADR-0010 cache key: a deterministic hash of the node's EXTRACTED content
+    # (attributes + document). Re-ingest re-embeds only when this changes; an
+    # identical content_sha is a cache hit (T2.6). Nullable until embedded.
+    content_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Semantic embedding of the node's document (T2.3). Nullable: populated on
     # ingest when an embedding provider is configured. HNSW-indexed for cosine
     # ANN search (migration 0005).

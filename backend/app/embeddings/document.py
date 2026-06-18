@@ -8,6 +8,8 @@ deterministic so the same node always yields the same document (and vector).
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Mapping
 from typing import Any
 
@@ -68,3 +70,27 @@ def build_node_document(
     if kind is NodeKind.ROLE:
         return f"role {name}"
     return f"{kind.value} {name}"
+
+
+def content_sha(
+    kind: NodeKind, name: str, attributes: Mapping[str, Any], document: str
+) -> str:
+    """Deterministic hash of a node's EXTRACTED content — the ADR-0010 cache key.
+
+    Keyed on the extracted facts that define the node (kind + name + attributes +
+    its node-document), NOT the raw file or repo HEAD: identical extracted
+    content yields an identical content_sha even if unrelated code or whitespace
+    changed, so re-ingest only re-embeds nodes whose meaning actually changed.
+    """
+    payload = json.dumps(
+        {
+            "kind": kind.value,
+            "name": name,
+            "attributes": attributes,
+            "document": document,
+        },
+        sort_keys=True,
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
