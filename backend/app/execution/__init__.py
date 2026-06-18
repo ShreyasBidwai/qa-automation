@@ -13,6 +13,8 @@ from .dual_db import ensure_safe_target, subprocess_db_env
 from .errors import (
     ExecutionError,
     JUnitParseError,
+    MissingTargetUrlError,
+    PlaywrightReportError,
     ReadOnlyTargetError,
     RunnerProcessError,
     RunnerTimeout,
@@ -20,6 +22,8 @@ from .errors import (
 from .junit import JUnitCase, parse_junit
 from .lifecycle import RunLifecycle
 from .pest_runner import PestRunner, map_results
+from .playwright_report import PlaywrightCase, parse_playwright_json
+from .playwright_runner import PlaywrightRunner
 from .types import (
     DbHandle,
     DbRole,
@@ -37,8 +41,12 @@ __all__ = [
     "ExecutionRunner",
     "JUnitCase",
     "JUnitParseError",
+    "MissingTargetUrlError",
     "PestRunner",
     "PestScript",
+    "PlaywrightCase",
+    "PlaywrightReportError",
+    "PlaywrightRunner",
     "ReadOnlyTargetError",
     "RunLifecycle",
     "RunnerProcessError",
@@ -47,5 +55,6 @@ __all__ = [
     "ensure_safe_target",
     "map_results",
     "parse_junit",
+    "parse_playwright_json",
     "subprocess_db_env",
 ]

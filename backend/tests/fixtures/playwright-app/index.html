@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Playwright runner fixture</title>
+  </head>
+  <body>
+    <!-- A deliberately tiny, stack-agnostic target page for the PlaywrightRunner
+         integration lane. One known element + one interaction is enough to prove
+         the runner drives a real browser against a real DOM and captures
+         pass/fail outcomes. This is NOT AAHOA's frontend — the real adapter is a
+         later task. -->
+    <h1>Fixture Ready</h1>
+    <button id="toggle" type="button" onclick="document.getElementById('status').textContent = 'clicked';">
+      Toggle
+    </button>
+    <p id="status" data-testid="status">idle</p>
+  </body>
+</html>

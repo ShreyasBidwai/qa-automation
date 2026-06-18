@@ -78,6 +78,20 @@ services:
     volumes:
       - ./.artifacts/runner:/work/.artifacts
 
+  # Playwright RUNNER lane — the PlaywrightRunner (app/execution) drives a real
+  # browser against a bundled static fixture page and maps outcomes to Results.
+  # This is the execution adapter for GENERATED specs against a target app — NOT
+  # the tool's own dashboard E2E (that is the `e2e` service below). Built/run only
+  # via `make test-e2e-runner`; no Postgres (the fixture is a static page served
+  # in-process by the test). Build context is the repo root so the image bundles
+  # the backend code + fixture; the Dockerfile lives in runners/playwright/.
+  e2e-runner-tests:
+    build:
+      context: .
+      dockerfile: runners/playwright/Dockerfile
+    volumes:
+      - ./.artifacts/e2e-runner:/work/.artifacts
+
   # Playwright E2E — loads the running frontend and asserts live backend health.
   e2e:
     build:

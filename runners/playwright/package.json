@@ -1,0 +1,9 @@
+{
+  "name": "qa-automation-playwright-runner",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Node deps for the PlaywrightRunner image: @playwright/test pinned to the base image's browser version.",
+  "devDependencies": {
+    "@playwright/test": "1.48.2"
+  }
+}

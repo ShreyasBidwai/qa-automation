@@ -15,7 +15,7 @@ carries that stack's toolchain and runs the adapter + its integration tests.
 | Path          | Stack / framework                                  | Status |
 |---------------|----------------------------------------------------|--------|
 | `laravel/`    | Laravel target, Pest tests (`PestRunner`)          | **implemented** — `make test-runners` |
-| `playwright/` | Browser / UI E2E via Playwright (`PlaywrightRunner`) | scaffold |
+| `playwright/` | Browser / UI E2E via Playwright (`PlaywrightRunner`) | **implemented** — `make test-e2e-runner` |
 | `python/`     | Python target, pytest                              | scaffold |
 
 ## `laravel/` (PestRunner)
@@ -34,6 +34,24 @@ integration tests run against the bootable fixture app
 
 The target boots against **in-memory sqlite** (the writable, ephemeral test DB),
 so there is no Postgres and nothing to leak.
+
+## `playwright/` (PlaywrightRunner)
+
+`runners/playwright/Dockerfile` builds a non-root image on the **pinned
+`mcr.microsoft.com/playwright` base** (browsers preinstalled, version-matched to
+`@playwright/test`) **and** Python 3.12, so the `PlaywrightRunner` and its pytest
+integration test run together. `make test-e2e-runner` builds it and runs:
+
+- the **runner integration test** — `PlaywrightRunner` writes generated
+  `.spec.ts` into a throwaway project, drives a **real browser** against a tiny
+  static fixture page (`backend/tests/fixtures/playwright-app/`, served
+  in-process by the test), and maps each spec to a `Result` outcome — a passing
+  case → PASS and a deliberately-failing case → FAIL — with the JUnit/JSON report
+  and traces captured as evidence, then tears the generated project down.
+
+The fixture is a **stack-light static page** (one element + one interaction), not
+AAHOA's real frontend — the real adapter is a later task. There is no Postgres;
+the page is served in-process and nothing is left running.
 
 ## Rules (Architecture §9, Standards §11)
 
