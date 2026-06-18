@@ -36,3 +36,13 @@ class MergeError(ServiceError):
     resolves to more than one current lineage (an invariant violation surfaced
     loudly rather than silently clobbering one).
     """
+
+
+class ProposalAlreadyResolvedError(ServiceError):
+    """A proposal was accepted/rejected but is no longer pending.
+
+    Resolution is terminal: once a proposal's ``proposal_status`` is ``accepted``
+    or ``rejected``, accepting or rejecting it again is rejected rather than
+    silently re-applied (which could demote the wrong current version or rewrite
+    provenance). The boundary maps it to 409 Conflict.
+    """

@@ -1,4 +1,4 @@
-"""Migrations 0002–0008 applied cleanly and additively in the compose stack."""
+"""Migrations 0002–0009 applied cleanly and additively in the compose stack."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ async def test_migration_at_head(db_session: AsyncSession) -> None:
     revision = (
         await db_session.execute(text("SELECT version_num FROM alembic_version"))
     ).scalar_one()
-    assert revision == "0008_case_key_and_proposals"
+    assert revision == "0009_proposal_resolution"
 
 
 async def test_model_nodes_has_embedding_column_and_hnsw_index(
@@ -87,6 +87,8 @@ async def test_test_cases_has_lineage_columns(db_session: AsyncSession) -> None:
     assert {"lineage_id", "is_current", "origin", "edited_by"} <= columns
     # T3.2 merge/proposal columns.
     assert {"case_key", "proposal_status"} <= columns
+    # T3.3 proposal-resolution provenance columns.
+    assert {"resolved_by", "resolved_at"} <= columns
 
 
 async def test_core_tables_and_enums_exist(db_session: AsyncSession) -> None:
