@@ -7,7 +7,7 @@ Includes the deterministic node-document builder used for retrieval.
 
 from __future__ import annotations
 
-from .document import build_node_document
+from .document import build_node_document, content_sha
 from .errors import EmbeddingDimMismatch, EmbeddingError, EmbeddingProviderError
 from .factory import build_embedding_provider
 from .stub import StubEmbeddingProvider
@@ -19,6 +19,7 @@ __all__ = [
     "StubEmbeddingProvider",
     "build_embedding_provider",
     "build_node_document",
+    "content_sha",
     "EmbeddingError",
     "EmbeddingProviderError",
     "EmbeddingDimMismatch",

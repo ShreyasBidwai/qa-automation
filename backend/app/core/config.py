@@ -68,6 +68,26 @@ class Settings(BaseSettings):
     # MUST match the model_nodes.embedding column dimension (migration 0005).
     embedding_dim: int = 384
 
+    # --- Git ingestion source (READ-ONLY; there is no push path, ever) ---
+    # A read-only access token, injected into the clone URL at runtime and NEVER
+    # logged (a secret; comes from the environment / secret store, not code).
+    git_token: str | None = None
+    git_token_username: str = "oauth2"
+    git_clone_timeout_seconds: float = 120.0
+
+    # --- Brain resolver (T2.4) — hybrid vector + lexical NL→node resolution ---
+    # Blended score = vector_weight * cosine_sim + lexical_weight * lexical.
+    resolver_vector_weight: float = 0.6
+    resolver_lexical_weight: float = 0.4
+    # Below this best cosine similarity, vectors are treated as uninformative and
+    # resolution falls back to pure lexical (codebase facts are ground truth).
+    resolver_vector_min_similarity: float = 0.15
+    # Top blended score below this flags the resolution low-confidence.
+    resolver_confidence_threshold: float = 0.35
+    # Vector ANN candidates to blend, and the 1-hop subgraph neighbour cap.
+    resolver_vector_candidates: int = 20
+    resolver_subgraph_max_neighbors: int = 10
+
 
 @lru_cache
 def get_settings() -> Settings:

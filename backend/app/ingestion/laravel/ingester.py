@@ -17,7 +17,7 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.embeddings.document import build_node_document
+from app.embeddings.document import build_node_document, content_sha
 from app.embeddings.errors import EmbeddingDimMismatch
 from app.embeddings.types import EmbeddingProvider
 from app.ingestion.commands import CommandRunner, check_output, run_subprocess
@@ -96,9 +96,17 @@ class LaravelIngester:
         return all_route_facts(check_output(result, what="artisan route:list"))
 
     async def ingest(
-        self, *, session: AsyncSession, project_id: uuid.UUID, repo_path: str
+        self,
+        *,
+        session: AsyncSession,
+        project_id: uuid.UUID,
+        repo_path: str,
+        source_sha: str | None = None,
     ) -> IngestResult:
-        source_sha = self._head_sha(repo_path)
+        # When a caller already resolved the commit (e.g. GitProvider.checkout),
+        # use it; otherwise resolve the local repo's HEAD.
+        if source_sha is None:
+            source_sha = self._head_sha(repo_path)
         facts = self._route_facts(repo_path)
         graph = extract_graph(
             repo_path=repo_path,
@@ -233,9 +241,14 @@ class LaravelIngester:
                     continue
                 await _edge(endpoint.id, dst.id, EdgeKind.CALLS, _CONFIDENCE_MEDIUM)
 
-        # --- embed each node's document (T2.3) -------------------------------
-        # Embed all nodes now; the ADR-0010 optimization (re-embed only when
-        # source_sha changed) is a later addition once re-runs make it worthwhile.
+        # --- embed nodes, SHA-cached (ADR-0010 / T2.6) -----------------------
+        # content_sha is a hash of each node's EXTRACTED content. A node is
+        # re-embedded only when its content_sha is new or changed; an unchanged
+        # node reuses its stored vector (its source_sha provenance was already
+        # refreshed by the upsert). The provider is NOT called for unchanged
+        # nodes, turning re-ingest from O(all nodes) into O(changed nodes).
+        # (Reconciling DELETED nodes — sources that disappeared on re-ingest — is
+        # a separate follow-up, out of scope here.)
         if self._embedding is not None:
             all_nodes = [
                 *table_nodes.values(),
@@ -243,18 +256,24 @@ class LaravelIngester:
                 *endpoint_nodes,
                 *role_nodes.values(),
             ]
-            documents = [
-                build_node_document(node.kind, node.name, node.attributes)
-                for node in all_nodes
-            ]
-            vectors = self._embedding.embed(documents)
-            for node, vector in zip(all_nodes, vectors, strict=True):
-                if len(vector) != EMBEDDING_DIM:
-                    raise EmbeddingDimMismatch(
-                        f"provider returned dim {len(vector)}, "
-                        f"column expects {EMBEDDING_DIM}"
-                    )
-                node.embedding = vector
+            changed: list[tuple[ModelNode, str]] = []
+            for node in all_nodes:
+                document = build_node_document(node.kind, node.name, node.attributes)
+                new_sha = content_sha(node.kind, node.name, node.attributes, document)
+                if node.content_sha == new_sha and node.embedding is not None:
+                    continue  # cache hit: reuse vector, content unchanged
+                node.content_sha = new_sha
+                changed.append((node, document))
+
+            if changed:  # never call the provider when nothing changed
+                vectors = self._embedding.embed([doc for _, doc in changed])
+                for (node, _document), vector in zip(changed, vectors, strict=True):
+                    if len(vector) != EMBEDDING_DIM:
+                        raise EmbeddingDimMismatch(
+                            f"provider returned dim {len(vector)}, "
+                            f"column expects {EMBEDDING_DIM}"
+                        )
+                    node.embedding = vector
             await session.flush()
 
         node_counts = {
