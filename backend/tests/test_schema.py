@@ -1,4 +1,4 @@
-"""Migrations 0002–0009 applied cleanly and additively in the compose stack."""
+"""Migrations 0002–0010 applied cleanly and additively in the compose stack."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ async def test_migration_at_head(db_session: AsyncSession) -> None:
     revision = (
         await db_session.execute(text("SELECT version_num FROM alembic_version"))
     ).scalar_one()
-    assert revision == "0009_proposal_resolution"
+    assert revision == "0010_authored_case_origin"
 
 
 async def test_model_nodes_has_embedding_column_and_hnsw_index(
