@@ -47,6 +47,22 @@ class CaseOrigin(str, enum.Enum):
 
     GENERATED = "generated"
     EDITED = "edited"
+    # A re-generation against a human-edited case: a non-current candidate the
+    # human can later accept/reject (resolution is T3.3). See [[CaseMergeService]].
+    PROPOSED = "proposed"
+
+
+class ProposalStatus(str, enum.Enum):
+    """Lifecycle of a re-generation proposal against a human-edited case.
+
+    Null on non-proposal versions; set to ``pending`` when a proposal is created
+    by the merge engine. ``accepted``/``rejected`` are written by resolution
+    (T3.3) — this sprint only creates pending proposals.
+    """
+
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
 
 
 class Framework(str, enum.Enum):

@@ -27,3 +27,12 @@ class InvalidEditError(ServiceError):
     never identity/lineage/provenance columns. Rejecting unknown fields at the
     boundary keeps history honest and avoids silent no-ops (Standards §13).
     """
+
+
+class MergeError(ServiceError):
+    """A re-generation could not be reconciled against existing cases.
+
+    Raised when a candidate lacks the ``case_key`` needed to match, or when a key
+    resolves to more than one current lineage (an invariant violation surfaced
+    loudly rather than silently clobbering one).
+    """

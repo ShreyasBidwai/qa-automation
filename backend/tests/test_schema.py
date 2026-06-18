@@ -1,4 +1,4 @@
-"""Migrations 0002–0007 applied cleanly and additively in the compose stack."""
+"""Migrations 0002–0008 applied cleanly and additively in the compose stack."""
 
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ EXPECTED_ENUMS = {
     "node_kind",
     "edge_kind",
     "case_origin",
+    "proposal_status",
 }
 
 
@@ -36,7 +37,7 @@ async def test_migration_at_head(db_session: AsyncSession) -> None:
     revision = (
         await db_session.execute(text("SELECT version_num FROM alembic_version"))
     ).scalar_one()
-    assert revision == "0007_case_lineage"
+    assert revision == "0008_case_key_and_proposals"
 
 
 async def test_model_nodes_has_embedding_column_and_hnsw_index(
@@ -84,6 +85,8 @@ async def test_test_cases_has_lineage_columns(db_session: AsyncSession) -> None:
     )
     # T3 lineage/versioning columns added additively over the T1.1 schema.
     assert {"lineage_id", "is_current", "origin", "edited_by"} <= columns
+    # T3.2 merge/proposal columns.
+    assert {"case_key", "proposal_status"} <= columns
 
 
 async def test_core_tables_and_enums_exist(db_session: AsyncSession) -> None:
@@ -127,6 +130,7 @@ async def test_required_indexes_exist(db_session: AsyncSession) -> None:
     assert "ix_test_cases_project_id_type" in indexes
     assert "ix_test_cases_project_id_lineage_id" in indexes  # T3 lineage history
     assert "uq_test_cases_one_current" in indexes  # T3 one-current invariant
+    assert "ix_test_cases_project_id_case_key" in indexes  # T3.2 re-gen matching
     assert "ix_model_nodes_project_id_source_sha" in indexes
     for fk_index in (
         "ix_test_cases_project_id",
