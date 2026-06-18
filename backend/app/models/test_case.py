@@ -10,7 +10,14 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base, ProjectScopedMixin, pg_enum
-from .enums import AuthoredBy, CaseOrigin, OracleSource, TestLayer, TestType
+from .enums import (
+    AuthoredBy,
+    CaseOrigin,
+    OracleSource,
+    ProposalStatus,
+    TestLayer,
+    TestType,
+)
 
 
 class TestCase(Base, ProjectScopedMixin):
@@ -19,6 +26,8 @@ class TestCase(Base, ProjectScopedMixin):
         Index("ix_test_cases_project_id_type", "project_id", "type"),
         # History lookups for a logical case (all versions of a lineage).
         Index("ix_test_cases_project_id_lineage_id", "project_id", "lineage_id"),
+        # (Re)generation matching: find the lineage for a deterministic case_key.
+        Index("ix_test_cases_project_id_case_key", "project_id", "case_key"),
         # EXACTLY ONE current version per (project_id, lineage_id), enforced at
         # the DB level (TRD §3 never-clobber): a partial unique index over the
         # current rows only. Appending a second current row for a lineage is
@@ -99,3 +108,14 @@ class TestCase(Base, ProjectScopedMixin):
     # The edit timestamp is the row's own ``created_at`` (each version is a new
     # row), so no separate column is needed.
     edited_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Deterministic identity of the logical case, derived from its plan (endpoint
+    # + case type + targeted rule/field). Stable across runs, so re-generation
+    # matches "the same logical case" by (project_id, case_key) instead of
+    # duplicating it. Carried forward across versions; nullable for rows that
+    # predate keying. See [[compute_case_key]] / [[CaseMergeService]].
+    case_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Set only on ``origin="proposed"`` versions (a re-gen against a human-edited
+    # case awaiting accept/reject); null otherwise.
+    proposal_status: Mapped[ProposalStatus | None] = mapped_column(
+        pg_enum(ProposalStatus, "proposal_status"), nullable=True
+    )

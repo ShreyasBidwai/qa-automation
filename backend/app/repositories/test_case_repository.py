@@ -56,6 +56,8 @@ class TestCaseRepository(ProjectScopedRepository[TestCase]):
             "lineage_id": prior.lineage_id,
             "origin": prior.origin,
             "edited_by": prior.edited_by,
+            "case_key": prior.case_key,
+            "proposal_status": prior.proposal_status,
             "is_current": False,
         }
         data.update(overrides)
@@ -71,6 +73,23 @@ class TestCaseRepository(ProjectScopedRepository[TestCase]):
         stmt = select(TestCase).where(
             TestCase.project_id == project_id,
             TestCase.lineage_id == lineage_id,
+            TestCase.is_current.is_(True),
+        )
+        return (await self.session.scalars(stmt)).one_or_none()
+
+    async def get_current_by_case_key(
+        self, project_id: uuid.UUID, case_key: str
+    ) -> TestCase | None:
+        """The current version of the lineage matching ``case_key`` (scoped).
+
+        ``case_key`` is 1:1 with a lineage and exactly one version per lineage is
+        current, so this returns at most one row. A ``MultipleResultsFound`` here
+        would mean two lineages share a key — an invariant violation surfaced
+        loudly rather than silently picking one (Standards §7).
+        """
+        stmt = select(TestCase).where(
+            TestCase.project_id == project_id,
+            TestCase.case_key == case_key,
             TestCase.is_current.is_(True),
         )
         return (await self.session.scalars(stmt)).one_or_none()

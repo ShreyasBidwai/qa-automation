@@ -12,6 +12,7 @@ is "spec-grounded" — no requirements are ingested yet.
 
 from __future__ import annotations
 
+from .case_key import compute_case_key
 from .errors import GenerationError
 from .generator import GeneratedCase, TestGenerator
 from .plan import DbDependency, ExpectedOutcome, PlannedCase, plan_cases
@@ -19,6 +20,7 @@ from .plan import DbDependency, ExpectedOutcome, PlannedCase, plan_cases
 __all__ = [
     "TestGenerator",
     "GeneratedCase",
+    "compute_case_key",
     "plan_cases",
     "PlannedCase",
     "ExpectedOutcome",
