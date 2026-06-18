@@ -11,7 +11,7 @@ COMPOSE := docker compose --project-directory . -f infra/docker-compose.yml
 COMPOSE_TEST := docker compose --project-directory . -f infra/docker-compose.yml -f infra/docker-compose.test.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help up down build lint test test-runners test-embeddings audit migrate artifacts-dir
+.PHONY: help up down build lint test test-runners test-e2e-runner test-embeddings audit migrate artifacts-dir
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -20,8 +20,8 @@ help: ## List available targets
 # Host-owned report dirs (777 so the non-root test containers can write into the
 # bind mounts). Gitignored. A prerequisite of every target that mounts them.
 artifacts-dir:
-	@mkdir -p .artifacts/backend .artifacts/frontend .artifacts/e2e .artifacts/runner .artifacts/embed
-	@chmod 777 .artifacts/backend .artifacts/frontend .artifacts/e2e .artifacts/runner .artifacts/embed
+	@mkdir -p .artifacts/backend .artifacts/frontend .artifacts/e2e .artifacts/runner .artifacts/e2e-runner .artifacts/embed
+	@chmod 777 .artifacts/backend .artifacts/frontend .artifacts/e2e .artifacts/runner .artifacts/e2e-runner .artifacts/embed
 
 up: ## Start the dev stack (Postgres + backend + frontend), build and wait for healthy
 	$(COMPOSE) up -d --build --wait
@@ -50,6 +50,13 @@ test: artifacts-dir ## Run all suites in Docker (pytest + vitest + playwright) +
 # image (composer install of the fixture app) and runs the `runner`-marked tests.
 test-runners: artifacts-dir ## Build the Laravel runner image and run real PHP/Pest + PHP-helper tests
 	$(COMPOSE_TEST) run --rm --no-deps --build runner-tests
+
+# Real-browser lane (heavy: Playwright + browsers), kept OUT of `make test` so the
+# main suite stays fast. Builds the Playwright runner image and runs the
+# PlaywrightRunner against a static fixture page in a real browser. No Postgres
+# (the fixture is served in-process by the test).
+test-e2e-runner: artifacts-dir ## Build the Playwright runner image and run real-browser E2E against the fixture page
+	$(COMPOSE_TEST) run --rm --no-deps --build e2e-runner-tests
 
 # Real-embedding lane (heavy: fastembed ONNX + model download), separate from
 # `make test` so the main suite stays fast. Needs the db for the insert/search

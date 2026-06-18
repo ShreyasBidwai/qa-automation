@@ -35,13 +35,19 @@ class TargetEnv:
     """Where and against what a runner executes.
 
     ``execution_db`` MUST be the writable, ephemeral test DB; ``introspection_db``
-    (Sprint 2) is read-only and never written here.
+    (Sprint 2) is read-only and never written here. ``base_url`` is the running
+    target frontend a browser runner (PlaywrightRunner) drives; it is unused by
+    process/file runners like the PestRunner. The dual-DB guard still applies to
+    browser runners: ``execution_db`` asserts the target environment is a
+    throwaway test environment (the app behind ``base_url`` must be test-backed),
+    even though the browser never opens the DB itself.
     """
 
     app_path: str
     execution_db: DbHandle
     evidence_dir: str
     introspection_db: DbHandle | None = None
+    base_url: str | None = None
 
 
 @dataclass(frozen=True)

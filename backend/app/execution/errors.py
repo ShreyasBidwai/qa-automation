@@ -24,6 +24,19 @@ class JUnitParseError(ExecutionError):
     """A JUnit evidence artifact could not be parsed."""
 
 
+class PlaywrightReportError(ExecutionError):
+    """A Playwright JSON report artifact could not be parsed."""
+
+
+class MissingTargetUrlError(ExecutionError):
+    """A browser runner was given no target URL (``TargetEnv.base_url``).
+
+    A Playwright run drives a running frontend; without a base URL there is
+    nothing to execute against. Surfaced loudly rather than defaulting to some
+    implicit host (Standards §7).
+    """
+
+
 class ReadOnlyTargetError(ExecutionError):
     """A dual-DB safety violation (Architecture §9).
 
