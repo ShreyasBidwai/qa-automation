@@ -42,3 +42,4 @@ This folder holds numbered Architecture Decision Records. Anything marked a
 | [ADR-0012](ADR-0012-regeneration-merge-and-proposals.md) | Re-generation merge with clobber-protection | Accepted |
 | [ADR-0013](ADR-0013-proposal-resolution.md) | Proposal resolution (accept / reject) | Accepted |
 | [ADR-0014](ADR-0014-mode-a-authoring-and-deterministic-scripting.md) | Mode A authoring + deterministic-first scripting | Accepted |
+| [ADR-0015](ADR-0015-runtime-crawler-vs-source-adapter.md) | Runtime frontend crawler vs source adapter | Accepted |

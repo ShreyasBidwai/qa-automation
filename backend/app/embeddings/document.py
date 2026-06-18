@@ -55,6 +55,24 @@ def _model(name: str, attrs: Mapping[str, Any]) -> str:
     return " ".join(parts)
 
 
+def _page(name: str, attrs: Mapping[str, Any]) -> str:
+    parts = [f"page {str(attrs.get('path', name)).strip()}"]
+    if attrs.get("title"):
+        parts.append(f"title={attrs['title']}")
+    forms = attrs.get("forms")
+    if isinstance(forms, list):
+        fields = [
+            str(field.get("name", ""))
+            for form in forms
+            if isinstance(form, Mapping)
+            for field in form.get("fields", [])
+            if isinstance(field, Mapping) and field.get("name")
+        ]
+        if fields:
+            parts.append(f"fields={_csv(fields)}")
+    return " ".join(parts)
+
+
 def build_node_document(
     kind: NodeKind, name: str, attributes: Mapping[str, Any]
 ) -> str:
@@ -62,6 +80,8 @@ def build_node_document(
         return _endpoint(name, attributes)
     if kind is NodeKind.MODEL:
         return _model(name, attributes)
+    if kind is NodeKind.PAGE:
+        return _page(name, attributes)
     if kind is NodeKind.TABLE:
         columns = attributes.get("columns")
         if columns:

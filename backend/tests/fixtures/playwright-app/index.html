@@ -16,5 +16,19 @@
       Toggle
     </button>
     <p id="status" data-testid="status">idle</p>
+
+    <!-- A form + a backend fetch, for the FrontendCrawler integration lane: the
+         crawler extracts the form and intercepts the /api/ping call, bridging it
+         to a matching endpoint node (page → endpoint edge). The static fixture
+         server need not actually serve /api/ping — the request is intercepted
+         regardless of its response. -->
+    <form action="/api/contact" method="post">
+      <input name="email" type="email" required />
+      <input name="message" type="text" />
+      <button type="submit">Send</button>
+    </form>
+    <script>
+      fetch("/api/ping").catch(function () {});
+    </script>
   </body>
 </html>

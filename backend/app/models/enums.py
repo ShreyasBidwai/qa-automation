@@ -129,3 +129,7 @@ class EdgeKind(str, enum.Enum):
     COVERS = "covers"
     OBSERVED_IN = "observed_in"
     DERIVED_FROM = "derived_from"
+    # A page links/navigates to another page (observed in the rendered DOM by the
+    # runtime frontend crawler, T4.2). Distinct from ``calls`` (page → backend
+    # endpoint). See [[FrontendCrawler]].
+    NAVIGATES = "navigates"
