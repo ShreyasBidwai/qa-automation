@@ -10,12 +10,27 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base, ProjectScopedMixin, pg_enum
-from .enums import AuthoredBy, OracleSource, TestLayer, TestType
+from .enums import AuthoredBy, CaseOrigin, OracleSource, TestLayer, TestType
 
 
 class TestCase(Base, ProjectScopedMixin):
     __tablename__ = "test_cases"
-    __table_args__ = (Index("ix_test_cases_project_id_type", "project_id", "type"),)
+    __table_args__ = (
+        Index("ix_test_cases_project_id_type", "project_id", "type"),
+        # History lookups for a logical case (all versions of a lineage).
+        Index("ix_test_cases_project_id_lineage_id", "project_id", "lineage_id"),
+        # EXACTLY ONE current version per (project_id, lineage_id), enforced at
+        # the DB level (TRD §3 never-clobber): a partial unique index over the
+        # current rows only. Appending a second current row for a lineage is
+        # rejected by Postgres, so the invariant cannot be violated by any path.
+        Index(
+            "uq_test_cases_one_current",
+            "project_id",
+            "lineage_id",
+            unique=True,
+            postgresql_where=text("is_current = true"),
+        ),
+    )
 
     type: Mapped[TestType] = mapped_column(
         pg_enum(TestType, "test_type"), nullable=False
@@ -58,3 +73,29 @@ class TestCase(Base, ProjectScopedMixin):
         nullable=True,
         index=True,
     )
+    # Lineage: every version of one logical case shares ``lineage_id``. A brand-new
+    # root case gets a fresh lineage from the server default; forks carry the
+    # parent's lineage_id forward (see TestCaseRepository.new_version).
+    lineage_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=False,
+        server_default=text("gen_random_uuid()"),
+    )
+    # The current-version pointer. Exactly one row per (project_id, lineage_id)
+    # is current, enforced by the partial unique index in __table_args__.
+    is_current: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
+    # Per-version provenance: what produced *this* row. A fresh case is
+    # "generated"; an edit appends an "edited" version. oracle_source is carried
+    # forward as-is by an edit unless the edit itself changes the oracle (a
+    # "human-vouched" oracle tier is a later refinement — not added now).
+    origin: Mapped[CaseOrigin] = mapped_column(
+        pg_enum(CaseOrigin, "case_origin"),
+        nullable=False,
+        server_default=text("'generated'"),
+    )
+    # Editor identity for edited versions; null for generated/backfilled rows.
+    # The edit timestamp is the row's own ``created_at`` (each version is a new
+    # row), so no separate column is needed.
+    edited_by: Mapped[str | None] = mapped_column(String(255), nullable=True)

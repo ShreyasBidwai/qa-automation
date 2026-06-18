@@ -38,3 +38,4 @@ This folder holds numbered Architecture Decision Records. Anything marked a
 | [ADR-0001](ADR-0001-monorepo.md) | Monorepo | Accepted |
 | [ADR-0009](ADR-0009-projectstore-abstraction.md) | ProjectStore abstraction | Accepted |
 | [ADR-0010](ADR-0010-sha-keyed-cache-invalidation.md) | SHA-keyed cache invalidation | Accepted |
+| [ADR-0011](ADR-0011-test-case-lineage-versioning.md) | Test-case lineage versioning | Accepted |
