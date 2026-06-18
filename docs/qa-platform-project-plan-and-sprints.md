@@ -46,7 +46,7 @@ An autonomous, full-stack QA platform that understands a target web app (backend
 | 0 | Foundation & setup | Whole stack runs in Docker, CI green, design tokens in | M | Not started | — | |
 | 1 | Walking skeleton | One Laravel endpoint → generated + run + reported tests | M | Not started | — | The thesis gate |
 | 2 | Ingestion + lightweight Brain | Read-only git + Laravel extraction + pgvector resolution | L | Not started | — | |
-| 3 | Editable, versioned test cases | Mode A core; human edits never clobbered | M | Not started | — | |
+| 3 | Editable, versioned test cases | Mode A core; human edits never clobbered | M | In progress | Green | Lineage model + edit service done: edits append an immutable, current version (full provenance, human-edited flag); one-current enforced by a partial unique index; current/history/version queries; AI v1 preserved on edit. Migration 0007 forward-only (backfill verified on populated table). Deferred: CRUD API endpoints + re-generation merge. |
 | 4 | Frontend E2E + cross-layer | Playwright journeys linked to backend endpoints | L | Not started | — | |
 | 5 | Mode C (hybrid) + NL prompting | "Test the loyalty discount" → cases + scripts + run | L | Not started | — | Default mode |
 | 6 | Professional UI | App shell + core screens, light design system | L | Not started | — | Design mockups optional |

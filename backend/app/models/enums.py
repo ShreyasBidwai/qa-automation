@@ -37,6 +37,18 @@ class AuthoredBy(str, enum.Enum):
     HUMAN = "human"
 
 
+class CaseOrigin(str, enum.Enum):
+    """How a particular test-case *version* came to exist (per-version provenance).
+
+    Distinct from ``AuthoredBy`` (who originally authored the logical case):
+    ``origin`` records the act that produced *this row*. A re-generation sibling
+    or other origins may be added later (forward-only, additive).
+    """
+
+    GENERATED = "generated"
+    EDITED = "edited"
+
+
 class Framework(str, enum.Enum):
     PEST = "pest"
     PYTEST = "pytest"
