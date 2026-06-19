@@ -12,7 +12,9 @@ browser (the real fetcher is the heavy lane).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
+
+from app.auth.types import AuthConfig
 
 
 @dataclass(frozen=True)
@@ -57,24 +59,13 @@ class PageSnapshot:
 
 
 @dataclass(frozen=True)
-class AuthConfig:
-    """A configurable login step so authenticated pages are reachable.
-
-    Credentials are passed to the browser layer over stdin and are NEVER logged
-    (the crawler logs progress, never this object).
-    """
-
-    login_url: str
-    username: str
-    password: str
-    username_selector: str = "input[type=email], input[name=email]"
-    password_selector: str = "input[type=password], input[name=password]"
-    submit_selector: str = "button[type=submit], input[type=submit]"
-
-
-@dataclass(frozen=True)
 class CrawlConfig:
-    """Bounds + entry point for a crawl. Hard caps keep it safe and finite."""
+    """Bounds + entry point for a crawl. Hard caps keep it safe and finite.
+
+    ``auth`` is the per-target login config consumed by the injected
+    ``AuthStrategy`` (None → the no-auth path). The crawler no longer owns a
+    login step of its own — there is one auth path (see ADR-0016).
+    """
 
     base_url: str  # the target origin; the crawl never leaves it
     start_path: str = "/"
@@ -101,6 +92,10 @@ class PageFetcher(Protocol):
     The real implementation launches a browser; tests inject a fake that returns
     canned snapshots. ``fetch`` is synchronous — a crawl is sequential, so the
     blocking browser call simply sits between the crawler's async DB writes.
+    ``storage_state`` is the logged-in session from ``AuthStrategy.login`` (None
+    → a fresh, unauthenticated context), replayed so authenticated pages render.
     """
 
-    def fetch(self, url: str) -> PageSnapshot: ...
+    def fetch(
+        self, url: str, *, storage_state: dict[str, Any] | None = None
+    ) -> PageSnapshot: ...

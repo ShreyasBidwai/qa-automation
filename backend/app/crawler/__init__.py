@@ -7,12 +7,13 @@ source — and writes pages + page→page + page→endpoint edges into the Brain
 
 from __future__ import annotations
 
+from app.auth.types import AuthConfig
+
 from .crawler import FrontendCrawler
 from .errors import CrawlConfigError, CrawlError, PageFetchError
 from .matching import EndpointMatcher
 from .playwright_fetcher import PlaywrightPageFetcher
 from .types import (
-    AuthConfig,
     CrawlConfig,
     CrawlResult,
     ElementSpec,

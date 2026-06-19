@@ -29,6 +29,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.strategy import NoAuthStrategy
+from app.auth.types import AuthStrategy
 from app.embeddings.document import build_node_document, content_sha
 from app.embeddings.errors import EmbeddingDimMismatch
 from app.embeddings.types import EmbeddingProvider
@@ -65,18 +67,24 @@ class FrontendCrawler:
         self,
         fetcher: PageFetcher,
         *,
+        auth_strategy: AuthStrategy | None = None,
         embedding_provider: EmbeddingProvider | None = None,
         now: Callable[[], float] = time.monotonic,
     ) -> None:
         self._fetcher = fetcher
+        # One auth path: login is delegated to an AuthStrategy (default: none).
+        self._auth = auth_strategy if auth_strategy is not None else NoAuthStrategy()
         self._embedding = embedding_provider
         self._now = now
 
-    def discover(self, config: CrawlConfig) -> list[PageSnapshot]:
+    def discover(
+        self, config: CrawlConfig, *, storage_state: dict[str, Any] | None = None
+    ) -> list[PageSnapshot]:
         """Bounded BFS from the start URL → page snapshots (no DB; pure browser).
 
-        Enforces the caps (pages, depth, time) and the origin guard. Separated
-        from persistence so the crawl traversal is testable on its own.
+        Enforces the caps (pages, depth, time) and the origin guard. Each page is
+        fetched with the logged-in ``storage_state`` (None → unauthenticated).
+        Separated from persistence so the crawl traversal is testable on its own.
         """
         start = normalize(resolve(config.base_url, config.start_path))
         if not same_origin(start, config.base_url):
@@ -99,7 +107,7 @@ class FrontendCrawler:
                 continue
             seen.add(url)
 
-            snapshot = self._fetcher.fetch(url)
+            snapshot = self._fetcher.fetch(url, storage_state=storage_state)
             snapshots.append(snapshot)
 
             if depth >= config.max_depth:
@@ -118,8 +126,15 @@ class FrontendCrawler:
         config: CrawlConfig,
         source_sha: str | None = None,
     ) -> CrawlResult:
-        """Crawl the target and write the result into the Brain (idempotent)."""
-        snapshots = self.discover(config)
+        """Crawl the target and write the result into the Brain (idempotent).
+
+        Logs in once via the AuthStrategy (the tester enters OTP at most once),
+        then crawls every page with that reusable session.
+        """
+        auth_session = await self._auth.login(
+            session=session, project_id=project_id, config=config.auth
+        )
+        snapshots = self.discover(config, storage_state=auth_session.storage_state)
 
         nodes = NodeRepository(session)
         edges = EdgeRepository(session)

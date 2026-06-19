@@ -19,12 +19,14 @@ function readStdin() {
 }
 
 const input = JSON.parse((await readStdin()) || "{}");
-const { url, origin, waitMs = 1500, auth = null } = input;
+const { url, origin, waitMs = 1500, storageState = null } = input;
 
 const browser = await chromium.launch();
 const calls = [];
 try {
-  const context = await browser.newContext();
+  // Replay the logged-in session captured once by the AuthStrategy (T4.2a);
+  // null → a fresh, unauthenticated context. Login is NOT done here.
+  const context = await browser.newContext(storageState ? { storageState } : {});
   const page = await context.newPage();
 
   // Capture which BACKEND calls the page makes (xhr/fetch), same-origin only.
@@ -39,16 +41,6 @@ try {
       /* ignore unparseable URLs */
     }
   });
-
-  if (auth) {
-    await page.goto(auth.login_url, { waitUntil: "domcontentloaded" });
-    await page.fill(auth.username_selector, auth.username);
-    await page.fill(auth.password_selector, auth.password);
-    await Promise.all([
-      page.waitForLoadState("networkidle").catch(() => {}),
-      page.click(auth.submit_selector),
-    ]);
-  }
 
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.waitForLoadState("networkidle").catch(() => {});

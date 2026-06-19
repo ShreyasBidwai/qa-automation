@@ -9,19 +9,19 @@ real fetcher's parsing + credentials-never-logged guarantee (fake node runner).
 
 from __future__ import annotations
 
-import logging
 import uuid
+from typing import Any
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.strategy import StubAuthStrategy
 from app.crawler.crawler import FrontendCrawler
 from app.crawler.errors import CrawlConfigError, PageFetchError
 from app.crawler.matching import EndpointMatcher
 from app.crawler.playwright_fetcher import PlaywrightPageFetcher
 from app.crawler.types import (
-    AuthConfig,
     CrawlConfig,
     FormField,
     FormSpec,
@@ -62,9 +62,13 @@ class _FakeFetcher:
     def __init__(self, snapshots: list[PageSnapshot]) -> None:
         self._by_url = {normalize(s.url): s for s in snapshots}
         self.fetched: list[str] = []
+        self.storage_states: list[dict[str, Any] | None] = []
 
-    def fetch(self, url: str) -> PageSnapshot:
+    def fetch(
+        self, url: str, *, storage_state: dict[str, Any] | None = None
+    ) -> PageSnapshot:
         self.fetched.append(url)
+        self.storage_states.append(storage_state)
         if url not in self._by_url:
             raise PageFetchError(f"no canned page for {url}")
         return self._by_url[url]
@@ -327,15 +331,46 @@ async def test_crawl_is_project_scoped(db_session: AsyncSession) -> None:
     assert await _edges(db_session, project_b) == []
 
 
-# --- real fetcher: parsing + credentials never logged ------------------------
+# --- crawler delegates auth to AuthStrategy ----------------------------------
 
 
-def test_playwright_fetcher_parses_and_never_logs_credentials(
-    caplog: pytest.LogCaptureFixture,
+async def test_crawl_threads_stub_auth_storage_state_to_fetcher(
+    db_session: AsyncSession,
 ) -> None:
+    project_id = await _project(db_session)
+    state: dict[str, Any] = {"cookies": [{"name": "session", "value": "abc"}]}
+    fetcher = _FakeFetcher([_snap("/")])
+    crawler = FrontendCrawler(
+        fetcher, auth_strategy=StubAuthStrategy(storage_state=state)
+    )
+
+    await crawler.crawl(
+        session=db_session, project_id=project_id, config=CrawlConfig(base_url=_BASE)
+    )
+    # The logged-in session is replayed into every page fetch.
+    assert fetcher.storage_states == [state]
+
+
+async def test_crawl_with_default_noauth_passes_no_session(
+    db_session: AsyncSession,
+) -> None:
+    project_id = await _project(db_session)
+    fetcher = _FakeFetcher([_snap("/")])
+    crawler = FrontendCrawler(fetcher)  # default NoAuthStrategy
+
+    await crawler.crawl(
+        session=db_session, project_id=project_id, config=CrawlConfig(base_url=_BASE)
+    )
+    assert fetcher.storage_states == [None]
+
+
+# --- real fetcher: parsing + storage-state passthrough -----------------------
+
+
+def test_playwright_fetcher_parses_and_passes_storage_state() -> None:
     captured: dict[str, str] = {}
     snapshot_json = (
-        '{"url":"http://app.test/login-ok","title":"Home",'
+        '{"url":"http://app.test/p","title":"Home",'
         '"links":["http://app.test/users"],'
         '"forms":[{"action":"http://app.test/api/contact","method":"post",'
         '"fields":[{"name":"email","type":"email","required":true}]}],'
@@ -345,33 +380,19 @@ def test_playwright_fetcher_parses_and_never_logs_credentials(
     )
 
     def _fake_runner(argv, cwd, stdin, timeout):  # type: ignore[no-untyped-def]
-        captured["argv"] = " ".join(argv)
         captured["stdin"] = stdin
         return 0, snapshot_json, ""
 
-    fetcher = PlaywrightPageFetcher(
-        base_url="http://app.test",
-        node_project_dir=".",
-        auth=AuthConfig(
-            login_url="http://app.test/login",
-            username="admin@example.com",
-            password="sup3r-s3cret",
-        ),
-        runner=_fake_runner,
-    )
-    with caplog.at_level(logging.DEBUG, logger="app.crawler"):
-        snapshot = fetcher.fetch("http://app.test/home")
+    fetcher = PlaywrightPageFetcher(base_url="http://app.test", runner=_fake_runner)
+    snapshot = fetcher.fetch("http://app.test/home", storage_state={"cookies": ["x"]})
 
     # Parsing: method uppercased, form/network normalized.
     assert snapshot.network[0].method == "GET"
     assert snapshot.forms[0].method == "POST"
     assert snapshot.forms[0].fields[0].name == "email"
     assert snapshot.links == ("http://app.test/users",)
-
-    # Credentials travel over stdin (used) but never via argv or the logs.
-    assert "sup3r-s3cret" in captured["stdin"]
-    assert "sup3r-s3cret" not in captured["argv"]
-    assert all("sup3r-s3cret" not in rec.getMessage() for rec in caplog.records)
+    # The session is handed to the driver over stdin (for an authenticated context).
+    assert "storageState" in captured["stdin"]
 
 
 def test_playwright_fetcher_raises_on_driver_failure() -> None:

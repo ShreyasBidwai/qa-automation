@@ -4,6 +4,7 @@ so Alembic autogenerate and ``verify_migrations`` see the full schema.
 
 from __future__ import annotations
 
+from .auth_challenge_log import AuthChallengeLog
 from .base import Base
 from .coverage import Coverage
 from .model_edge import ModelEdge
@@ -24,4 +25,5 @@ __all__ = [
     "Coverage",
     "ModelNode",
     "ModelEdge",
+    "AuthChallengeLog",
 ]

@@ -2,11 +2,11 @@
 
 Reuses the T4.1 Playwright/browser infra (same pinned image + @playwright/test):
 for each URL it runs the Node ``crawl_page.mjs`` driver as a subprocess, which
-launches a browser, optionally logs in, navigates, intercepts xhr/fetch calls,
-reads the DOM, and prints one page snapshot as JSON. The driver opens and closes
-its own browser per page, so nothing leaks. Configuration — including any
-credentials — is passed over STDIN (never argv/env), and this layer never logs
-it (Standards §11/§18).
+launches a browser (replaying the logged-in ``storageState`` when given),
+navigates, intercepts xhr/fetch calls, reads the DOM, and prints one page
+snapshot as JSON. The driver opens and closes its own browser per page, so
+nothing leaks. Login itself is NOT done here — it is delegated once to an
+AuthStrategy (T4.2a); this layer only replays the resulting session.
 
 The Node driver is injectable so the JSON→snapshot parsing is unit-testable
 without a real browser; the end-to-end browser path is the heavy e2e-runner lane.
@@ -23,7 +23,6 @@ from typing import Any
 
 from .errors import PageFetchError
 from .types import (
-    AuthConfig,
     ElementSpec,
     FormField,
     FormSpec,
@@ -69,7 +68,6 @@ class PlaywrightPageFetcher:
         base_url: str,
         node_project_dir: str = ".",
         script_path: str | None = None,
-        auth: AuthConfig | None = None,
         wait_ms: int = 1500,
         timeout: float = 60.0,
         runner: NodeRunner = _run_node,
@@ -77,27 +75,20 @@ class PlaywrightPageFetcher:
         self._base_url = base_url
         self._project_dir = Path(node_project_dir).resolve()
         self._script = script_path or str(self._project_dir / _DEFAULT_SCRIPT)
-        self._auth = auth
         self._wait_ms = wait_ms
         self._timeout = timeout
         self._runner = runner
 
-    def fetch(self, url: str) -> PageSnapshot:
+    def fetch(
+        self, url: str, *, storage_state: dict[str, Any] | None = None
+    ) -> PageSnapshot:
         config: dict[str, Any] = {
             "url": url,
             "origin": self._base_url,
             "waitMs": self._wait_ms,
         }
-        if self._auth is not None:
-            config["auth"] = {
-                "login_url": self._auth.login_url,
-                "username": self._auth.username,
-                "password": self._auth.password,
-                "username_selector": self._auth.username_selector,
-                "password_selector": self._auth.password_selector,
-                "submit_selector": self._auth.submit_selector,
-            }
-        # Log the navigation target only — NEVER the config (credentials).
+        if storage_state:
+            config["storageState"] = storage_state
         logger.info("crawl.fetch", extra={"url": url})
 
         argv = ["node", self._script]

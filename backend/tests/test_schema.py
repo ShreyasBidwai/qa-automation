@@ -1,4 +1,4 @@
-"""Migrations 0002–0011 applied cleanly and additively in the compose stack."""
+"""Migrations 0002–0012 applied cleanly and additively in the compose stack."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ EXPECTED_TABLES = {
     "coverage",
     "model_nodes",
     "model_edges",
+    "auth_challenge_log",
 }
 EXPECTED_ENUMS = {
     "test_type",
@@ -30,6 +31,7 @@ EXPECTED_ENUMS = {
     "edge_kind",
     "case_origin",
     "proposal_status",
+    "auth_challenge",
 }
 
 
@@ -37,7 +39,7 @@ async def test_migration_at_head(db_session: AsyncSession) -> None:
     revision = (
         await db_session.execute(text("SELECT version_num FROM alembic_version"))
     ).scalar_one()
-    assert revision == "0011_navigates_edge_kind"
+    assert revision == "0012_auth_challenge_log"
 
 
 async def test_model_nodes_has_embedding_column_and_hnsw_index(

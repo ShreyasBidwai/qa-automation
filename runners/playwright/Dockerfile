@@ -44,10 +44,10 @@ WORKDIR /work
 COPY runners/playwright/package.json runners/playwright/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
-# The stack-agnostic single-page crawl driver (T4.2), invoked per page by the
-# Python PlaywrightPageFetcher. Lives next to node_modules so it resolves
+# The Node browser drivers (T4.2 crawl + T4.2a manual-OTP login), invoked by the
+# Python fetcher/auth layers. Live next to node_modules so they resolve
 # @playwright/test up-tree.
-COPY runners/playwright/crawl_page.mjs ./
+COPY runners/playwright/crawl_page.mjs runners/playwright/auth_login.mjs ./
 
 # Python deps — the backend test deps cover the execution adapter + pytest.
 COPY backend/requirements.txt backend/requirements-dev.txt backend/requirements-test.txt ./
