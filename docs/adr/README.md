@@ -50,3 +50,4 @@ This folder holds numbered Architecture Decision Records. Anything marked a
 | [ADR-0020](ADR-0020-finding-model.md) | Finding data model | Accepted |
 | [ADR-0021](ADR-0021-root-cause-keying.md) | Root-cause keying — what makes two failures the same bug | Accepted |
 | [ADR-0022](ADR-0022-severity-scoring.md) | Severity scoring — blast radius × failure shape | Accepted |
+| [ADR-0024](ADR-0024-change-impact-selection.md) | Change-impact test selection — widen on uncertainty | Accepted |
