@@ -61,6 +61,42 @@ class EdgeRepository(ProjectScopedRepository[ModelEdge]):
         )
         return list((await self.session.scalars(stmt)).all())
 
+    async def list_from(
+        self, project_id: uuid.UUID, src_ids: set[uuid.UUID]
+    ) -> list[ModelEdge]:
+        """Outgoing edges from any of ``src_ids`` (one query — no N+1).
+
+        Used for forward cross-layer traversal (page → endpoint → table). Ordered
+        deterministically so traversal output is stable.
+        """
+        if not src_ids:
+            return []
+        stmt = (
+            select(ModelEdge)
+            .where(
+                ModelEdge.project_id == project_id,
+                ModelEdge.src_node_id.in_(src_ids),
+            )
+            .order_by(ModelEdge.src_node_id, ModelEdge.dst_node_id, ModelEdge.kind)
+        )
+        return list((await self.session.scalars(stmt)).all())
+
+    async def list_into(
+        self, project_id: uuid.UUID, dst_ids: set[uuid.UUID]
+    ) -> list[ModelEdge]:
+        """Incoming edges into any of ``dst_ids`` (one query — for blast radius)."""
+        if not dst_ids:
+            return []
+        stmt = (
+            select(ModelEdge)
+            .where(
+                ModelEdge.project_id == project_id,
+                ModelEdge.dst_node_id.in_(dst_ids),
+            )
+            .order_by(ModelEdge.dst_node_id, ModelEdge.src_node_id, ModelEdge.kind)
+        )
+        return list((await self.session.scalars(stmt)).all())
+
     async def get_by_key(
         self,
         project_id: uuid.UUID,
