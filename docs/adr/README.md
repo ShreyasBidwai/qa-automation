@@ -51,3 +51,4 @@ This folder holds numbered Architecture Decision Records. Anything marked a
 | [ADR-0021](ADR-0021-root-cause-keying.md) | Root-cause keying — what makes two failures the same bug | Accepted |
 | [ADR-0022](ADR-0022-severity-scoring.md) | Severity scoring — blast radius × failure shape | Accepted |
 | [ADR-0023](ADR-0023-history-classification.md) | Cross-run history classification — new vs regression vs flaky vs known | Accepted |
+| [ADR-0024](ADR-0024-change-impact-selection.md) | Change-impact test selection — widen on uncertainty | Accepted |

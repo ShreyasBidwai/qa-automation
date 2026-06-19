@@ -119,6 +119,28 @@ class TestCaseRepository(ProjectScopedRepository[TestCase]):
         )
         return (await self.session.scalars(stmt)).one_or_none()
 
+    async def list_current_by_target_nodes(
+        self, project_id: uuid.UUID, node_ids: set[uuid.UUID]
+    ) -> list[TestCase]:
+        """Current cases whose ``target_node`` is in ``node_ids`` (project-scoped).
+
+        The case→node "covers" lookup for change-impact selection (ADR-0024): a
+        case covers the node it targets. Only current versions; ordered
+        deterministically.
+        """
+        if not node_ids:
+            return []
+        stmt = (
+            select(TestCase)
+            .where(
+                TestCase.project_id == project_id,
+                TestCase.is_current.is_(True),
+                TestCase.target_node.in_(node_ids),
+            )
+            .order_by(TestCase.created_at, TestCase.id)
+        )
+        return list((await self.session.scalars(stmt)).all())
+
     async def list_pending_proposals(self, project_id: uuid.UUID) -> list[TestCase]:
         """Re-generation proposals awaiting a human decision (project-scoped).
 
