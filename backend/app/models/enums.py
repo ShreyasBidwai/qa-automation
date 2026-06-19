@@ -38,6 +38,20 @@ class FindingLayer(str, enum.Enum):
     DB = "db"
 
 
+class Severity(str, enum.Enum):
+    """A Finding's severity tier (reporting, T7.3).
+
+    A product vocabulary scored from blast radius × failure shape (ADR-0022).
+    Persisted as its string value into the existing ``findings.severity`` column
+    (no pg enum / migration); ``unset`` (see ``SEVERITY_UNSET``) is the pre-scored
+    default and ranks below all three.
+    """
+
+    CRITICAL = "critical"
+    MAJOR = "major"
+    MINOR = "minor"
+
+
 class OracleSource(str, enum.Enum):
     RULE_DERIVED = "rule-derived"
     CHARACTERIZATION = "characterization"
