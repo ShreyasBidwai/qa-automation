@@ -52,6 +52,21 @@ class Severity(str, enum.Enum):
     MINOR = "minor"
 
 
+class FindingStatus(str, enum.Enum):
+    """A Finding's cross-run history status (reporting, T7.4).
+
+    Classified against the project's prior runs joined on ``root_cause_key``
+    (ADR-0023). Persisted as its string value into the existing
+    ``findings.status`` column (no pg enum / migration); ``open`` (see
+    ``STATUS_OPEN``) is the pre-classification default.
+    """
+
+    NEW = "new"
+    KNOWN = "known"
+    REGRESSION = "regression"
+    FLAKY = "flaky"
+
+
 class OracleSource(str, enum.Enum):
     RULE_DERIVED = "rule-derived"
     CHARACTERIZATION = "characterization"
