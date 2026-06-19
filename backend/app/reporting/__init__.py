@@ -14,6 +14,7 @@ from .finding_assembler import (
     root_cause_key,
     strongest_oracle,
 )
+from .history import HistoryClassifier, classify_history
 from .orchestrator import EndpointExtractor, run_walking_skeleton
 from .report import (
     OracleBreakdown,
@@ -35,6 +36,7 @@ __all__ = [
     "EndpointExtractor",
     "FindingAssembler",
     "FindingAssemblyError",
+    "HistoryClassifier",
     "ImpactResolver",
     "LocationResolver",
     "OracleBreakdown",
@@ -43,6 +45,7 @@ __all__ = [
     "SeverityScorer",
     "blast_radius",
     "build_report",
+    "classify_history",
     "persist_coverage",
     "rank_findings",
     "rank_key",
