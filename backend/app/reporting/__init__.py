@@ -8,7 +8,12 @@ extract -> generate -> execute -> report for one endpoint.
 from __future__ import annotations
 
 from .errors import FindingAssemblyError, ReportingError
-from .finding_assembler import FindingAssembler, LocationResolver
+from .finding_assembler import (
+    FindingAssembler,
+    LocationResolver,
+    root_cause_key,
+    strongest_oracle,
+)
 from .orchestrator import EndpointExtractor, run_walking_skeleton
 from .report import (
     OracleBreakdown,
@@ -28,6 +33,8 @@ __all__ = [
     "RunReport",
     "build_report",
     "persist_coverage",
+    "root_cause_key",
     "run_walking_skeleton",
+    "strongest_oracle",
     "summarize",
 ]
