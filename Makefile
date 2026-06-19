@@ -52,11 +52,13 @@ test-runners: artifacts-dir ## Build the Laravel runner image and run real PHP/P
 	$(COMPOSE_TEST) run --rm --no-deps --build runner-tests
 
 # Real-browser lane (heavy: Playwright + browsers), kept OUT of `make test` so the
-# main suite stays fast. Builds the Playwright runner image and runs the
-# PlaywrightRunner against a static fixture page in a real browser. No Postgres
-# (the fixture is served in-process by the test).
-test-e2e-runner: artifacts-dir ## Build the Playwright runner image and run real-browser E2E against the fixture page
-	$(COMPOSE_TEST) run --rm --no-deps --build e2e-runner-tests
+# main suite stays fast. Builds the Playwright runner image and runs, in a real
+# browser, both the PlaywrightRunner (against a static fixture page) and the
+# FrontendCrawler (crawls the fixture, writes pages/edges to the Brain). The
+# fixture is served in-process by the test; the crawler test needs the db.
+test-e2e-runner: artifacts-dir ## Build the Playwright runner image and run real-browser E2E (runner + crawler)
+	$(COMPOSE_TEST) up -d --build --wait db
+	$(COMPOSE_TEST) run --rm --build e2e-runner-tests
 
 # Real-embedding lane (heavy: fastembed ONNX + model download), separate from
 # `make test` so the main suite stays fast. Needs the db for the insert/search

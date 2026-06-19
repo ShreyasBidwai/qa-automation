@@ -89,8 +89,17 @@ services:
     build:
       context: .
       dockerfile: runners/playwright/Dockerfile
+    environment:
+      # The crawler integration test writes to the Brain; tests create an
+      # isolated DB on `db` (conftest) and migrate it. The Playwright runner
+      # integration test ignores the DB.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-qa_platform}:${POSTGRES_PASSWORD:-change-me-locally}@db:5432/${POSTGRES_DB:-qa_platform}
+      LOG_LEVEL: WARNING
     volumes:
       - ./.artifacts/e2e-runner:/work/.artifacts
+    depends_on:
+      db:
+        condition: service_healthy
 
   # Playwright E2E — loads the running frontend and asserts live backend health.
   e2e:

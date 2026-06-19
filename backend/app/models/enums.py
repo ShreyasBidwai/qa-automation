@@ -129,3 +129,35 @@ class EdgeKind(str, enum.Enum):
     COVERS = "covers"
     OBSERVED_IN = "observed_in"
     DERIVED_FROM = "derived_from"
+    # A page links/navigates to another page (observed in the rendered DOM by the
+    # runtime frontend crawler, T4.2). Distinct from ``calls`` (page → backend
+    # endpoint). See [[FrontendCrawler]].
+    NAVIGATES = "navigates"
+
+
+class AuthVariant(str, enum.Enum):
+    """Which AuthStrategy logs a session in against a live target (T4.2a).
+
+    Config-only (selects a strategy); not persisted. Only ``none``,
+    ``test_bypass`` and ``manual`` are implemented now — the automated variants
+    are declared behind the same contract but parked (see docs/parking-lot.md).
+    """
+
+    NONE = "none"
+    TEST_BYPASS = "test_bypass"
+    TOTP = "totp"
+    EMAIL_OTP = "email_otp"
+    SMS_OTP = "sms_otp"
+    MANUAL = "manual"
+
+
+class AuthChallenge(str, enum.Enum):
+    """The login challenge a target presented, recorded in the challenge log.
+
+    Persisted (``auth_challenge`` pg enum). ``2fa`` is a non-OTP second factor
+    (e.g. an authenticator approval) distinct from a one-time ``otp`` code.
+    """
+
+    NONE = "none"
+    OTP = "otp"
+    TWO_FA = "2fa"

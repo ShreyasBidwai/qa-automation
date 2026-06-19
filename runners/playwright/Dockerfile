@@ -44,14 +44,20 @@ WORKDIR /work
 COPY runners/playwright/package.json runners/playwright/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
+# The Node browser drivers (T4.2 crawl + T4.2a manual-OTP login), invoked by the
+# Python fetcher/auth layers. Live next to node_modules so they resolve
+# @playwright/test up-tree.
+COPY runners/playwright/crawl_page.mjs runners/playwright/auth_login.mjs ./
+
 # Python deps — the backend test deps cover the execution adapter + pytest.
 COPY backend/requirements.txt backend/requirements-dev.txt backend/requirements-test.txt ./
 RUN pip install -r requirements-test.txt
 
-# Backend code, tests, and the bundled static fixture page (under
-# tests/fixtures/playwright-app/). alembic.ini is copied for import-time parity
-# with the backend image though no Postgres is touched here.
+# Backend code, tests, migrations, and the bundled static fixture page (under
+# tests/fixtures/playwright-app/). The crawler integration test writes to the
+# Brain, so migrations are needed for the conftest's `alembic upgrade head`.
 COPY backend/pyproject.toml backend/alembic.ini ./
+COPY backend/migrations ./migrations
 COPY backend/app ./app
 COPY backend/tests ./tests
 
