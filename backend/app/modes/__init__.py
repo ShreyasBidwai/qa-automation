@@ -7,8 +7,12 @@ lifecycle. The orchestrator + its factory are the integration entry points.
 
 from __future__ import annotations
 
+from .mode_c import ModeCOrchestrator, ModeCResult, build_mode_c_orchestrator
 from .proposals import generate_proposed_cases
 
 __all__ = [
+    "ModeCOrchestrator",
+    "ModeCResult",
+    "build_mode_c_orchestrator",
     "generate_proposed_cases",
 ]
