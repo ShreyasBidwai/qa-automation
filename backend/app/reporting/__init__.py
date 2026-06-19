@@ -22,19 +22,33 @@ from .report import (
     persist_coverage,
     summarize,
 )
+from .scoring import (
+    ImpactResolver,
+    SeverityScorer,
+    blast_radius,
+    rank_findings,
+    rank_key,
+    score_severity,
+)
 
 __all__ = [
     "EndpointExtractor",
     "FindingAssembler",
     "FindingAssemblyError",
+    "ImpactResolver",
     "LocationResolver",
     "OracleBreakdown",
     "ReportingError",
     "RunReport",
+    "SeverityScorer",
+    "blast_radius",
     "build_report",
     "persist_coverage",
+    "rank_findings",
+    "rank_key",
     "root_cause_key",
     "run_walking_skeleton",
+    "score_severity",
     "strongest_oracle",
     "summarize",
 ]
