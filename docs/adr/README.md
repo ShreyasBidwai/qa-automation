@@ -45,3 +45,6 @@ This folder holds numbered Architecture Decision Records. Anything marked a
 | [ADR-0015](ADR-0015-runtime-crawler-vs-source-adapter.md) | Runtime frontend crawler vs source adapter | Accepted |
 | [ADR-0016](ADR-0016-auth-strategy-and-challenge-log.md) | Pluggable AuthStrategy + interim manual OTP + challenge log | Accepted |
 | [ADR-0017](ADR-0017-ui-oracle-model.md) | UI oracle model for generated E2E tests | Accepted |
+| [ADR-0018](ADR-0018-mode-c-nl-authoring.md) | Mode C — natural-language test authoring | Accepted |
+| [ADR-0019](ADR-0019-mode-c-cases-are-proposals.md) | Mode-C generated cases are proposals | Accepted |
+| [ADR-0020](ADR-0020-finding-model.md) | Finding data model | Accepted |

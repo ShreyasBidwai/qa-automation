@@ -7,6 +7,7 @@ from __future__ import annotations
 from .auth_challenge_log import AuthChallengeLog
 from .base import Base
 from .coverage import Coverage
+from .finding import Finding
 from .model_edge import ModelEdge
 from .model_node import ModelNode
 from .project import Project
@@ -26,4 +27,5 @@ __all__ = [
     "ModelNode",
     "ModelEdge",
     "AuthChallengeLog",
+    "Finding",
 ]

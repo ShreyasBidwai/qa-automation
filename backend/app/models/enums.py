@@ -26,6 +26,18 @@ class TestLayer(str, enum.Enum):
     INTEGRATION = "integration"
 
 
+class FindingLayer(str, enum.Enum):
+    """Which layer a Finding manifests at (reporting, T7.1).
+
+    Distinct from ``TestLayer`` (how a case runs): a finding is located on the
+    stack. ``db`` is reserved for DB-level findings surfaced by later work.
+    """
+
+    UI = "ui"
+    API = "api"
+    DB = "db"
+
+
 class OracleSource(str, enum.Enum):
     RULE_DERIVED = "rule-derived"
     CHARACTERIZATION = "characterization"

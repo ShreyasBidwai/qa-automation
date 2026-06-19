@@ -1,0 +1,26 @@
+"""Repository for ``findings`` (T7.1) — project-scoped."""
+
+from __future__ import annotations
+
+import uuid
+
+from sqlalchemy import select
+
+from app.models.finding import Finding
+
+from .base import ProjectScopedRepository
+
+
+class FindingRepository(ProjectScopedRepository[Finding]):
+    model = Finding
+
+    async def list_for_run(
+        self, project_id: uuid.UUID, run_id: uuid.UUID
+    ) -> list[Finding]:
+        """All findings for a run, oldest → newest (project-scoped)."""
+        stmt = (
+            select(Finding)
+            .where(Finding.project_id == project_id, Finding.run_id == run_id)
+            .order_by(Finding.created_at, Finding.id)
+        )
+        return list((await self.session.scalars(stmt)).all())
