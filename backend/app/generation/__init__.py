@@ -13,8 +13,18 @@ is "spec-grounded" — no requirements are ingested yet.
 from __future__ import annotations
 
 from .case_key import compute_case_key
-from .errors import GenerationError
+from .e2e_generator import E2EGenerator, GeneratedE2ECase
+from .e2e_plan import (
+    E2EAssertion,
+    E2EStep,
+    PlannedE2ECase,
+    build_e2e_plan,
+    e2e_case_key,
+)
+from .e2e_render import render_e2e_spec
+from .errors import E2EPlanError, GenerationError, MutationGateError
 from .generator import GeneratedCase, TestGenerator
+from .mutation_gate import enforce_mutation_gate, is_tautological
 from .plan import DbDependency, ExpectedOutcome, PlannedCase, plan_cases
 
 __all__ = [
@@ -26,4 +36,16 @@ __all__ = [
     "ExpectedOutcome",
     "DbDependency",
     "GenerationError",
+    "E2EGenerator",
+    "GeneratedE2ECase",
+    "E2EAssertion",
+    "E2EStep",
+    "PlannedE2ECase",
+    "build_e2e_plan",
+    "e2e_case_key",
+    "render_e2e_spec",
+    "enforce_mutation_gate",
+    "is_tautological",
+    "E2EPlanError",
+    "MutationGateError",
 ]

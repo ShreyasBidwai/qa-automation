@@ -44,3 +44,4 @@ This folder holds numbered Architecture Decision Records. Anything marked a
 | [ADR-0014](ADR-0014-mode-a-authoring-and-deterministic-scripting.md) | Mode A authoring + deterministic-first scripting | Accepted |
 | [ADR-0015](ADR-0015-runtime-crawler-vs-source-adapter.md) | Runtime frontend crawler vs source adapter | Accepted |
 | [ADR-0016](ADR-0016-auth-strategy-and-challenge-log.md) | Pluggable AuthStrategy + interim manual OTP + challenge log | Accepted |
+| [ADR-0017](ADR-0017-ui-oracle-model.md) | UI oracle model for generated E2E tests | Accepted |
