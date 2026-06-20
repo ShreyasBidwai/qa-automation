@@ -64,6 +64,12 @@ playwright-report/
 test-results/
 .cache/
 
+# The frontend's source lib/ (API client, types, router, registry) is real
+# source — re-include it; the unanchored Python `lib/` rule above otherwise
+# swallows frontend/src/lib.
+!frontend/src/lib/
+!frontend/src/lib/**
+
 # ---------------------------------------------------------------------------
 # Docker
 # ---------------------------------------------------------------------------

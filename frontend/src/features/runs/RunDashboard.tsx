@@ -31,6 +31,7 @@ import {
   readMetrics,
   type PassRateDelta,
 } from "./runMetrics";
+import { FindingDrawer } from "./FindingDrawer";
 import { useRunDashboard } from "./useRunDashboard";
 
 /** The at-a-glance health view for a completed run (T6.2). */
@@ -43,11 +44,16 @@ export function RunDashboard({
 }) {
   const { summary, findings, loading, error } = useRunDashboard(runId);
   const [filters, setFilters] = useState<FindingFilters>(EMPTY_FILTERS);
+  const [selected, setSelected] = useState<Finding | null>(null);
 
   const metrics = readMetrics(summary);
   const delta = passRateDelta(metrics.passRate, metrics.priorPassRate);
   const visible = applyFilters(findings, filters);
-  const select = onSelectFinding ?? (() => {});
+  // Open the detail drawer (progressive disclosure); still notify any listener.
+  const select = (finding: Finding) => {
+    setSelected(finding);
+    onSelectFinding?.(finding);
+  };
 
   return (
     <>
@@ -120,6 +126,7 @@ export function RunDashboard({
           </>
         )}
       </main>
+      <FindingDrawer finding={selected} onClose={() => setSelected(null)} />
     </>
   );
 }
