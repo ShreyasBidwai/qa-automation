@@ -49,10 +49,18 @@ def main() -> None:
     configure_logging(settings.log_level)
 
     # Imported after logging is configured so app wiring logs through JSON.
+    from .api.composition import build_ingestor, build_run_executor
     from .main import create_app
 
+    app = create_app()
+    # Compose the run/ingest ports (stubs by default → zero-cred boot). create_app
+    # leaves them None so the fast lane stubs them per-test; the real server wires
+    # them here from settings (docs/running.md).
+    app.state.run_executor = build_run_executor(settings)
+    app.state.ingestor = build_ingestor(settings)
+
     config = uvicorn.Config(
-        app=create_app(),
+        app=app,
         host="0.0.0.0",
         port=settings.app_port,
         log_config=None,  # we own logging

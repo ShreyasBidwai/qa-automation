@@ -43,8 +43,20 @@ class Settings(BaseSettings):
     # --- Graceful shutdown ---
     shutdown_drain_timeout_seconds: float = 30.0
 
+    # --- Run / ingest composition (packaging; docs/running.md) ----------------
+    # What the API's run-executor and ingestor ports resolve to at server start
+    # (composed in app.__main__, NOT create_app — tests stub the ports per-test).
+    # DEFAULT to safe stubs so a clone boots and a stub run completes end-to-end
+    # with zero external credentials or toolchains. The real orchestrator/ingestor
+    # need the runner toolchains (Pest/Playwright) + git and are an opt-in.
+    #   executor_mode: stub | orchestrator     ingestor_mode: stub | laravel
+    executor_mode: str = "stub"
+    ingestor_mode: str = "stub"
+
     # --- AI layer (pluggable; dev shells to `claude -p`) (TRD §6, Arch §8) ---
     # Provider selection: claude_cli (dev) | stub (tests). api/self-host land later.
+    # NOTE: the packaged backend image ships no `claude` CLI; switching to
+    # claude_cli requires providing it (docs/running.md).
     ai_provider_mode: str = "claude_cli"
     # Model tiering is config-driven so prod can swap to API/self-host with no
     # core change. Frontier for generate, cheap for triage (Sprint 7).

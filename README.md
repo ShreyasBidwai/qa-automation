@@ -34,7 +34,7 @@ This is a monorepo (see [ADR-0001](docs/adr/ADR-0001-monorepo.md)).
 | `docs/`      | Architecture, PRD, TRD, engineering standards, and ADRs               |
 | `tests/`     | Cross-cutting / platform-level tests                                  |
 
-> Application code is not present yet — this commit scaffolds the repository only.
+See **[`docs/running.md`](docs/running.md)** to go from clone to a running stack.
 
 ## Tech stack
 
@@ -44,39 +44,26 @@ This is a monorepo (see [ADR-0001](docs/adr/ADR-0001-monorepo.md)).
 - **Infra:** Docker + Compose, GitHub Actions.
 - **AI:** pluggable provider; the dev implementation shells out to `claude -p`.
 
-## How to run (dev)
+## How to run
 
-`docker compose up` is the canonical dev entrypoint, wrapped by a `Makefile` for
-common commands. The Compose stack will bring up Postgres (+pgvector), the
-backend, and the frontend; runners are built on demand.
+Clone → a running Polaris (Postgres + backend + operator console, single-origin)
+for local / demo / internal use:
 
 ```bash
-# 1. Copy the environment templates and fill in local values (no real secrets in VCS)
-cp .env.example .env
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
-
-# 2. Bring the stack up (Postgres, backend, frontend)
-make up            # wraps: docker compose up
-
-# 3. Run database migrations
-make migrate       # wraps: alembic upgrade head (inside the backend container)
-
-# 4. Lint and test
-make lint
-make test
-
-# 5. Tear the stack down
-make down          # wraps: docker compose down
+cp .env.example .env     # optional — every value has a built-in default
+make up                  # build + start, wait until healthy, migrations applied
+# open http://localhost:8080
+make down                # stop (the Postgres volume persists)
 ```
 
-Once running, the services are reachable at:
+It boots with **zero external credentials** — the run/ingest paths default to
+safe stubs, so you can click through create-project → trigger-run → triage
+findings immediately. See **[`docs/running.md`](docs/running.md)** for the full
+walkthrough, the configuration knobs (incl. switching to real AI / runners), the
+runner execution model, and the honest limitations.
 
-- Backend API: `http://localhost:8000/api/v1` (liveness `GET /healthz`, readiness `GET /readyz`)
-- Frontend console: `http://localhost:5173`
-
-> The `Makefile` targets are **declared but not yet implemented** — they will be
-> wired to `docker compose` and `alembic` as the corresponding services land.
+Other entrypoints: `make dev-up` (Vite hot-reload dev stack), `make test`
+(full suite in Docker), `make lint`.
 
 ## Contributing
 

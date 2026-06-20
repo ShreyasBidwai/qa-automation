@@ -8,10 +8,11 @@
 # source of config and resolves build contexts relative to the repo root.
 
 COMPOSE := docker compose --project-directory . -f infra/docker-compose.yml
+COMPOSE_APP := docker compose --project-directory . -f infra/docker-compose.app.yml
 COMPOSE_TEST := docker compose --project-directory . -f infra/docker-compose.yml -f infra/docker-compose.test.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help up down build lint test test-runners test-e2e-runner test-embeddings audit migrate artifacts-dir
+.PHONY: help up down dev-up dev-down build lint test test-runners test-e2e-runner test-embeddings audit migrate artifacts-dir
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -23,10 +24,16 @@ artifacts-dir:
 	@mkdir -p .artifacts/backend .artifacts/frontend .artifacts/e2e .artifacts/runner .artifacts/e2e-runner .artifacts/embed
 	@chmod 777 .artifacts/backend .artifacts/frontend .artifacts/e2e .artifacts/runner .artifacts/e2e-runner .artifacts/embed
 
-up: ## Start the dev stack (Postgres + backend + frontend), build and wait for healthy
+up: ## Run Polaris: packaged stack (Postgres + backend + single-origin web) — clone→running (docs/running.md)
+	$(COMPOSE_APP) up -d --build --wait
+
+down: ## Stop Polaris and remove containers (the db volume persists)
+	$(COMPOSE_APP) down
+
+dev-up: ## Dev stack (Vite hot-reload frontend on :5173) — for working on the UI, not packaging
 	$(COMPOSE) up -d --build --wait
 
-down: ## Stop the dev stack and remove containers (the db volume persists)
+dev-down: ## Stop the dev stack
 	$(COMPOSE) down
 
 build: ## Build all Docker images
@@ -78,5 +85,5 @@ audit: artifacts-dir ## Scan shipped dependencies for known vulnerabilities (pip
 	$(COMPOSE_TEST) run --rm --no-deps --build frontend-tests npm audit --omit=dev --audit-level=high
 	$(COMPOSE_TEST) run --rm --no-deps --build e2e npm audit --omit=dev --audit-level=high
 
-migrate: ## Apply database migrations (forward-only)
-	$(COMPOSE) run --rm backend alembic upgrade head
+migrate: ## Apply database migrations (forward-only) — one-shot; the packaged backend also auto-migrates on start
+	$(COMPOSE_APP) run --rm backend alembic upgrade head

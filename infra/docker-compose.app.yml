@@ -1,0 +1,85 @@
+# Polaris — packaged "run it" stack (docs/running.md).
+# Clone → running Polaris for LOCAL / DEMO / INTERNAL use (NOT production k8s):
+#   postgres (pgvector) + backend (migrates on start) + web (built SPA, single-
+#   origin). Boots with zero external credentials — the run/ingest ports default
+#   to safe stubs, so a stub run completes end-to-end through the running stack.
+#
+# Run from the repo root via `make up` (which adds `--project-directory .` so the
+# root `.env` is loaded and build contexts resolve against the repo root):
+#   docker compose --project-directory . -f infra/docker-compose.app.yml up -d --build --wait
+#
+# Every interpolation has a default, so it also boots with no `.env`.
+name: ${COMPOSE_PROJECT_NAME:-qa-automation}
+
+services:
+  # --- Postgres 16 + pgvector (persistent volume) ----------------------------
+  db:
+    image: pgvector/pgvector:0.8.0-pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-qa_platform}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-locally}
+      POSTGRES_DB: ${POSTGRES_DB:-qa_platform}
+    ports:
+      - "${POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # --- FastAPI control plane (applies migrations on start) -------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: runtime
+    # Apply migrations forward to head, then exec the server as PID 1 (so SIGTERM
+    # reaches uvicorn for graceful drain). The documented one-shot is `make migrate`.
+    command: ["sh", "-c", "alembic upgrade head && exec python -m app"]
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-qa_platform}:${POSTGRES_PASSWORD:-change-me-locally}@db:5432/${POSTGRES_DB:-qa_platform}
+      # Run/ingest composition — safe stubs by default (zero-cred boot). Flip to
+      # the real orchestrator/ingestor only with the toolchains in place (docs).
+      EXECUTOR_MODE: ${EXECUTOR_MODE:-stub}
+      INGESTOR_MODE: ${INGESTOR_MODE:-stub}
+      # Pluggable providers (not exercised by the stub path; documented switches).
+      AI_PROVIDER_MODE: ${AI_PROVIDER_MODE:-stub}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-stub}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    restart: unless-stopped
+
+  # --- Web: built SPA served single-origin, /api proxied to backend ----------
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: web
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  db_data:
