@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from typing import Any
 
 from sqlalchemy import select
@@ -15,6 +16,22 @@ from .base import ProjectScopedRepository
 
 class TestCaseRepository(ProjectScopedRepository[TestCase]):
     model = TestCase
+
+    async def get_many(
+        self, project_id: uuid.UUID, case_ids: Iterable[uuid.UUID]
+    ) -> dict[uuid.UUID, TestCase]:
+        """Fetch many cases by id in one query, keyed by id (scoped, no N+1).
+
+        Any version row is returned (evidence references the exact result's case),
+        not just the current one.
+        """
+        ids = set(case_ids)
+        if not ids:
+            return {}
+        stmt = select(TestCase).where(
+            TestCase.project_id == project_id, TestCase.id.in_(ids)
+        )
+        return {c.id: c for c in (await self.session.scalars(stmt)).all()}
 
     async def list_by_type(
         self, project_id: uuid.UUID, type_: TestType

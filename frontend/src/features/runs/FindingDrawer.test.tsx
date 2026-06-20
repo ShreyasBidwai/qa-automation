@@ -15,8 +15,37 @@ const richFinding: Finding = {
   status: "regression",
   oracle_source: "rule-derived",
   explains_count: 3,
-  location: { page: "/checkout", endpoints: ["POST api/orders"], tables: ["orders"] },
+  confidence_mixed: true,
+  location: {
+    anchor: {
+      node_type: "endpoint",
+      identifier: "POST api/orders",
+      label: "POST api/orders",
+    },
+    page: "/checkout",
+    endpoints: ["POST api/orders"],
+    tables: ["orders"],
+  },
   expected: { assertions: [{ kind: "status" }] },
+  evidence: [
+    {
+      summary: "Failed — expected status 500; checks status",
+      oracle_source: "rule-derived",
+      reference: "ev/trace-1.zip",
+    },
+    { summary: "Failed — checks body", oracle_source: "characterization", reference: null },
+    {
+      summary: "Errored — no recorded expectation",
+      oracle_source: "spec-grounded",
+      reference: null,
+    },
+  ],
+  history: {
+    classification: "regression",
+    occurrence_count: 3,
+    first_seen_run: "11111111-1111-1111-1111-111111111111",
+    last_seen_run: "22222222-2222-2222-2222-222222222222",
+  },
   evidence_ref: "ev/trace-123.zip",
 };
 
@@ -38,7 +67,6 @@ describe("FindingDrawer", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByText("Checkout 500")).toBeInTheDocument();
     expect(screen.getByText("Critical")).toBeInTheDocument();
-    expect(screen.getByText("Rule-derived")).toBeInTheDocument();
     expect(screen.getByText("api")).toBeInTheDocument();
     expect(screen.getByText("Regression")).toBeInTheDocument();
     expect(screen.getByText("explains 3 tests")).toBeInTheDocument();
@@ -49,29 +77,76 @@ describe("FindingDrawer", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("renders the cross-layer path and highlights the failing hop", () => {
+  it("renders the location anchor (the deepest failing node)", () => {
     render(<FindingDrawer finding={richFinding} onClose={vi.fn()} />);
 
-    const apiHop = screen.getByText("POST api/orders").parentElement!;
-    expect(within(apiHop).getByText("failing")).toBeInTheDocument();
+    expect(screen.getByText(/Failing node:/)).toBeInTheDocument();
+    expect(screen.getByText("(endpoint)")).toBeInTheDocument();
+  });
 
-    const pageHop = screen.getByText("/checkout").parentElement!;
-    expect(within(pageHop).queryByText("failing")).toBeNull();
+  it("renders the full cross-layer ribbon and highlights the failing hop", () => {
+    render(<FindingDrawer finding={richFinding} onClose={vi.fn()} />);
 
+    // All three tiers are present (UI page, API endpoint, DB table).
+    expect(screen.getByText("/checkout")).toBeInTheDocument();
     expect(screen.getByText("orders")).toBeInTheDocument();
+    // The failing hop is the API anchor (from the key), not the page.
+    const failingHop = screen.getByText("failing").parentElement!;
+    expect(within(failingHop).getByText("POST api/orders")).toBeInTheDocument();
     expect(screen.getByText(/Failing hop:/)).toBeInTheDocument();
   });
 
-  it("flags absent fields gracefully without crashing", () => {
+  it("renders the evidence list with a trust badge per failing assertion", () => {
+    render(<FindingDrawer finding={richFinding} onClose={vi.fn()} />);
+
+    // rule-derived → emerald (pass)
+    const ruleItem = screen
+      .getByText("Failed — expected status 500; checks status")
+      .closest("li")!;
+    expect(within(ruleItem).getByText("Rule-derived")).toHaveClass("bg-status-pass-bg");
+    expect(within(ruleItem).getByText("ev/trace-1.zip")).toBeInTheDocument();
+
+    // characterization → amber (flaky)
+    const charItem = screen.getByText("Failed — checks body").closest("li")!;
+    expect(within(charItem).getByText("Characterization")).toHaveClass(
+      "bg-status-flaky-bg",
+    );
+
+    // spec-grounded → blue (info)
+    const specItem = screen
+      .getByText("Errored — no recorded expectation")
+      .closest("li")!;
+    expect(within(specItem).getByText("Spec-grounded")).toHaveClass("bg-status-info-bg");
+  });
+
+  it("renders the history classification and occurrence count", () => {
+    render(<FindingDrawer finding={richFinding} onClose={vi.fn()} />);
+
+    expect(screen.getByText(/Regression — it had cleared/)).toBeInTheDocument();
+    expect(screen.getByText(/seen in 3 runs/)).toBeInTheDocument();
+    expect(
+      screen.getByText("11111111-1111-1111-1111-111111111111"),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show any 'not exposed yet' flags for the now-exposed fields", () => {
+    render(<FindingDrawer finding={richFinding} onClose={vi.fn()} />);
+
+    expect(screen.queryByText(/exposed/i)).toBeNull();
+    expect(screen.queryByText(/run-by-run timeline/i)).toBeNull();
+  });
+
+  it("degrades gracefully when detail fields are absent, without stale flags", () => {
     render(<FindingDrawer finding={bareFinding} onClose={vi.fn()} />);
 
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByText(/expected oracle/i)).toBeInTheDocument();
-    expect(screen.getByText(/No evidence reference is exposed/i)).toBeInTheDocument();
-    expect(screen.getByText(/No run-by-run timeline is exposed/i)).toBeInTheDocument();
-    // Cross-layer degrades to the failing node from the key (partial).
+    // Ribbon still degrades to the failing node parsed from the key.
     expect(screen.getByText("POST api/cart")).toBeInTheDocument();
     expect(screen.getByText(/showing the failing node/i)).toBeInTheDocument();
+    // Evidence + history degrade with plain language, not "not exposed yet".
+    expect(screen.getByText(/No failing assertions are recorded/i)).toBeInTheDocument();
+    expect(screen.getByText(/first seen in this run/i)).toBeInTheDocument();
+    expect(screen.queryByText(/exposed/i)).toBeNull();
   });
 
   it("toggles collapsible sections", () => {

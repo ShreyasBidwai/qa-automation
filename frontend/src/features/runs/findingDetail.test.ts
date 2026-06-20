@@ -51,7 +51,12 @@ describe("findingDetail", () => {
     const ribbon = buildRibbon(
       finding({
         root_cause_key: "table=orders#fail",
-        location: { page: "/p", endpoints: ["GET api/o"], tables: ["orders"] },
+        location: {
+          anchor: { node_type: "table", identifier: "orders", label: "orders" },
+          page: "/p",
+          endpoints: ["GET api/o"],
+          tables: ["orders"],
+        },
       }),
     );
     expect(ribbon.partial).toBe(false);

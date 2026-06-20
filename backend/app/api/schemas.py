@@ -84,6 +84,44 @@ class RunStatusResponse(BaseModel):
     summary: dict[str, Any] | None = None
 
 
+class FindingLocationAnchor(BaseModel):
+    """The deepest failing node (the grouping anchor) — what broke, structurally."""
+
+    node_type: str | None = None  # a NodeKind value: table / endpoint / page
+    identifier: str | None = None
+    label: str
+
+
+class FindingLocation(BaseModel):
+    """The anchor plus the full cross-layer blast path the ribbon renders."""
+
+    anchor: FindingLocationAnchor
+    page: str | None = None
+    endpoints: list[str] = Field(default_factory=list)
+    tables: list[str] = Field(default_factory=list)
+
+
+class EvidenceItem(BaseModel):
+    """One failing test: a short "what failed" line and the trust signal.
+
+    ``oracle_source`` (rule-derived / characterization / spec-grounded) is the
+    point — it says how much to trust the failure, surfaced as a trust badge.
+    """
+
+    summary: str
+    oracle_source: str
+    reference: str | None = None
+
+
+class FindingHistory(BaseModel):
+    """Cross-run history: the T7.4 classification + its supporting fields."""
+
+    classification: str  # new / known / regression / flaky
+    occurrence_count: int
+    first_seen_run: uuid.UUID | None = None
+    last_seen_run: uuid.UUID | None = None
+
+
 class FindingResponse(BaseModel):
     id: uuid.UUID
     root_cause_key: str
@@ -93,6 +131,13 @@ class FindingResponse(BaseModel):
     status: str
     oracle_source: str
     explains_count: int
+    confidence_mixed: bool
+    # Widened detail the engine already computed (finding-detail drawer).
+    expected: dict[str, Any]
+    location: FindingLocation
+    evidence: list[EvidenceItem]
+    history: FindingHistory
+    evidence_ref: str | None = None
 
 
 class FindingsResponse(BaseModel):

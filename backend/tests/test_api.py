@@ -37,9 +37,11 @@ from app.models.enums import (
     RunMode,
 )
 from app.models.finding import Finding
+from app.models.finding_result import FindingResult
 from app.models.model_node import ModelNode
 from app.modes.selection import SelectionStrategyKind, Target
 from app.repositories.finding_repository import FindingRepository
+from app.repositories.finding_result_repository import FindingResultRepository
 from app.repositories.node_repository import NodeRepository
 from app.repositories.result_repository import ResultRepository
 from app.repositories.run_repository import RunRepository
@@ -70,27 +72,44 @@ class _StubExecutor:
         if request.mode is RunMode.C:  # authoring → no run/findings
             return RunExecution(run_id=None, summary={"mode": "mode_c", "cases": 2})
         run = await RunRepository(session).add(make_run(project_id, status="failed"))
+        expected = {"status": 500, "assertions": [{"kind": "status"}]}
         case = await TestCaseRepository(session).add(
-            make_test_case(project_id, target_node=uuid.uuid4())
+            make_test_case(
+                project_id,
+                target_node=uuid.uuid4(),
+                oracle_source=OracleSource.RULE_DERIVED,
+                expected=expected,
+            )
         )
         result = await ResultRepository(session).add(
-            make_result(project_id, run.id, case.id, outcome=Outcome.FAIL)
+            make_result(
+                project_id,
+                run.id,
+                case.id,
+                outcome=Outcome.FAIL,
+                evidence_ref="ev/trace.zip",
+            )
         )
-        await FindingRepository(session).add(
+        finding = await FindingRepository(session).add(
             Finding(
                 project_id=project_id,
                 run_id=run.id,
                 result_id=result.id,
-                root_cause_key="endpoint=GET api/x#fail",
+                root_cause_key="endpoint=GET api/x#fail|status=500",
                 explains_count=1,
                 title="api failure at GET api/x",
                 layer=FindingLayer.API,
                 oracle_source=OracleSource.RULE_DERIVED,
                 confidence_mixed=False,
-                expected={},
-                location={},
+                expected=expected,
+                location={"endpoints": ["GET api/x"], "tables": ["x_rows"]},
                 severity="major",
                 status="new",
+            )
+        )
+        await FindingResultRepository(session).add(
+            FindingResult(
+                project_id=project_id, finding_id=finding.id, result_id=result.id
             )
         )
         return RunExecution(run_id=run.id, summary={"mode": "mode_b", "findings": 1})
@@ -242,6 +261,24 @@ async def test_run_findings_shape(
     assert finding["oracle_source"] == "rule-derived"
     assert finding["layer"] == "api"
     assert finding["explains_count"] == 1
+
+    # widened detail the drawer renders ------------------------------------
+    location = finding["location"]
+    assert location["anchor"]["node_type"] == "table"  # deepest node wins
+    assert location["anchor"]["identifier"] == "x_rows"
+    assert location["endpoints"] == ["GET api/x"]
+    assert location["tables"] == ["x_rows"]
+
+    assert len(finding["evidence"]) == 1
+    evidence = finding["evidence"][0]
+    assert evidence["oracle_source"] == "rule-derived"  # the per-assertion trust
+    assert evidence["summary"] == "Failed — expected status 500; checks status"
+    assert evidence["reference"] == "ev/trace.zip"
+
+    history = finding["history"]
+    assert history["classification"] == "new"
+    assert history["occurrence_count"] == 1
+    assert finding["expected"] == {"status": 500, "assertions": [{"kind": "status"}]}
 
 
 async def test_run_mode_c_has_no_findings(

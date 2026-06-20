@@ -7,7 +7,15 @@ import { Button } from "@/components/ui/button";
 import type { Finding } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
-import { confidenceSpec, layerSpec, severitySpec, statusSpec } from "./findingBadges";
+import type { EvidenceItem, FindingHistory, FindingLocation } from "@/lib/api/types";
+
+import {
+  confidenceSpec,
+  layerSpec,
+  oracleTrustSpec,
+  severitySpec,
+  statusSpec,
+} from "./findingBadges";
 import { CrossLayerRibbon } from "./CrossLayerRibbon";
 import { confidenceRationale, failureLine, statusMeaning } from "./findingDetail";
 
@@ -81,7 +89,7 @@ function FindingDetail({
                   {JSON.stringify(finding.expected, null, 2)}
                 </pre>
               ) : (
-                <Flag>The expected oracle isn&rsquo;t exposed in the API yet.</Flag>
+                <Flag>No expected oracle is recorded for this finding.</Flag>
               )}
             </Field>
             <Field label="Observed">
@@ -98,45 +106,34 @@ function FindingDetail({
           </div>
         </Section>
 
-        <Section title="Cross-layer path">
-          <CrossLayerRibbon finding={finding} />
+        <Section title="Location">
+          <LocationBlock location={finding.location ?? null} />
+          <div className="mt-3">
+            <CrossLayerRibbon finding={finding} />
+          </div>
         </Section>
 
         <Section title="Confidence">
           <p className="text-sm text-foreground">
             {confidenceRationale(finding.oracle_source)}
           </p>
+          {finding.confidence_mixed ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              The grouped tests disagree on oracle tier — the strongest sets the
+              badge above.
+            </p>
+          ) : null}
         </Section>
 
         <Section title="Evidence">
-          {finding.evidence_ref ? (
-            <EvidenceRef reference={finding.evidence_ref} />
-          ) : (
-            <Flag>No evidence reference is exposed for this finding yet.</Flag>
-          )}
+          <EvidenceList
+            evidence={finding.evidence ?? null}
+            reference={finding.evidence_ref ?? null}
+          />
         </Section>
 
         <Section title="History">
-          <p className="text-sm text-foreground">{statusMeaning(finding.status)}</p>
-          {finding.history && finding.history.length > 0 ? (
-            <ol className="mt-3 space-y-1.5">
-              {finding.history.map((entry, index) => (
-                <li
-                  key={`${entry.run_id}-${index}`}
-                  className="flex items-center gap-2 text-xs"
-                >
-                  <span className="font-mono text-muted-foreground">
-                    {entry.run_id}
-                  </span>
-                  <span className="text-foreground">{entry.status}</span>
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <p className="mt-2 text-xs text-muted-foreground">
-              No run-by-run timeline is exposed yet — showing the current status.
-            </p>
-          )}
+          <HistoryBlock history={finding.history ?? null} status={finding.status} />
         </Section>
       </div>
 
@@ -179,7 +176,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function Flag({ children }: { children: ReactNode }) {
-  // A "not exposed yet" note — graceful, never invented data.
+  // A graceful fallback note for a genuinely-absent field — never invented data.
   return (
     <p className="rounded-md border border-dashed border-border bg-background px-3 py-2 text-xs text-muted-foreground">
       {children}
@@ -206,6 +203,107 @@ function EvidenceRef({ reference }: { reference: string }) {
       <p className="text-xs text-muted-foreground">
         Embedding the Playwright trace is coming; this is the stored reference.
       </p>
+    </div>
+  );
+}
+
+function LocationBlock({ location }: { location: FindingLocation | null }) {
+  const anchor = location?.anchor ?? null;
+  if (!anchor || !anchor.node_type) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        The failing node couldn&rsquo;t be resolved for this finding.
+      </p>
+    );
+  }
+  return (
+    <p className="text-sm">
+      <span className="text-muted-foreground">Failing node: </span>
+      <span className="font-mono text-foreground">{anchor.label}</span>{" "}
+      <span className="text-xs text-muted-foreground">({anchor.node_type})</span>
+    </p>
+  );
+}
+
+function EvidenceList({
+  evidence,
+  reference,
+}: {
+  evidence: EvidenceItem[] | null;
+  reference: string | null;
+}) {
+  return (
+    <div className="space-y-3">
+      {evidence && evidence.length > 0 ? (
+        <ul className="space-y-2">
+          {evidence.map((item, index) => {
+            const trust = oracleTrustSpec(item.oracle_source);
+            return (
+              <li
+                key={`${item.reference ?? item.summary}-${index}`}
+                className="rounded-md border border-border bg-background p-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-[13px] text-foreground">{item.summary}</p>
+                  <Badge level={trust.level} className="shrink-0">
+                    {trust.label}
+                  </Badge>
+                </div>
+                {item.reference ? (
+                  <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
+                    {item.reference}
+                  </p>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          No failing assertions are recorded for this finding.
+        </p>
+      )}
+      {reference ? <EvidenceRef reference={reference} /> : null}
+    </div>
+  );
+}
+
+function HistoryBlock({
+  history,
+  status,
+}: {
+  history: FindingHistory | null;
+  status: string;
+}) {
+  const classification = history?.classification ?? status;
+  return (
+    <div className="space-y-2">
+      <p className="text-sm text-foreground">{statusMeaning(classification)}</p>
+      {history ? (
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+          <dt className="text-muted-foreground">Occurrences</dt>
+          <dd className="text-foreground">
+            seen in {history.occurrence_count}{" "}
+            {history.occurrence_count === 1 ? "run" : "runs"} (recent history)
+          </dd>
+          {history.first_seen_run ? (
+            <>
+              <dt className="text-muted-foreground">First seen</dt>
+              <dd className="break-all font-mono text-foreground">
+                {history.first_seen_run}
+              </dd>
+            </>
+          ) : null}
+          {history.last_seen_run ? (
+            <>
+              <dt className="text-muted-foreground">Last seen</dt>
+              <dd className="break-all font-mono text-foreground">
+                {history.last_seen_run}
+              </dd>
+            </>
+          ) : null}
+        </dl>
+      ) : null}
     </div>
   );
 }

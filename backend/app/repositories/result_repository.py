@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 from sqlalchemy import func, select
 
@@ -25,6 +25,16 @@ class ResultRepository(ProjectScopedRepository[Result]):
             .order_by(Result.created_at)
         )
         return list((await self.session.scalars(stmt)).all())
+
+    async def get_many(
+        self, project_id: uuid.UUID, result_ids: Iterable[uuid.UUID]
+    ) -> dict[uuid.UUID, Result]:
+        """Fetch many results by id in one query, keyed by id (scoped, no N+1)."""
+        ids = set(result_ids)
+        if not ids:
+            return {}
+        stmt = select(Result).where(Result.project_id == project_id, Result.id.in_(ids))
+        return {r.id: r for r in (await self.session.scalars(stmt)).all()}
 
     async def outcome_counts_for_runs(
         self, project_id: uuid.UUID, run_ids: Sequence[uuid.UUID]

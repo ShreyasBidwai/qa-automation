@@ -14,6 +14,14 @@ from .finding_assembler import (
     root_cause_key,
     strongest_oracle,
 )
+from .finding_detail import (
+    FindingDetail,
+    FindingDetailReader,
+    evidence_summary,
+    history_payload,
+    location_anchor,
+    location_payload,
+)
 from .history import HistoryClassifier, classify_history
 from .orchestrator import EndpointExtractor, run_walking_skeleton
 from .report import (
@@ -36,6 +44,8 @@ __all__ = [
     "EndpointExtractor",
     "FindingAssembler",
     "FindingAssemblyError",
+    "FindingDetail",
+    "FindingDetailReader",
     "HistoryClassifier",
     "ImpactResolver",
     "LocationResolver",
@@ -46,6 +56,10 @@ __all__ = [
     "blast_radius",
     "build_report",
     "classify_history",
+    "evidence_summary",
+    "history_payload",
+    "location_anchor",
+    "location_payload",
     "persist_coverage",
     "rank_findings",
     "rank_key",

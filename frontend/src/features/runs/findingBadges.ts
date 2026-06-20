@@ -42,6 +42,26 @@ export function confidenceSpec(oracleSource: string): BadgeSpec {
   }
 }
 
+/**
+ * The trust signal for one piece of evidence, by its oracle source
+ * (design-direction.md semantic colours): rule-derived → emerald (pass),
+ * spec-grounded → blue (info), characterization → amber (flaky). This is what
+ * makes "tests you can trust" visible per failing assertion — colour plus the
+ * source word, never colour alone.
+ */
+export function oracleTrustSpec(oracleSource: string): BadgeSpec {
+  switch (oracleSource) {
+    case "rule-derived":
+      return { level: "pass", label: "Rule-derived" };
+    case "spec-grounded":
+      return { level: "info", label: "Spec-grounded" };
+    case "characterization":
+      return { level: "flaky", label: "Characterization" };
+    default:
+      return { level: "neutral", label: oracleSource };
+  }
+}
+
 export function statusSpec(status: string): BadgeSpec {
   switch (status) {
     case "new":

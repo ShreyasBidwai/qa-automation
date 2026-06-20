@@ -54,3 +54,32 @@ class FindingRepository(ProjectScopedRepository[Finding]):
             .distinct()
         )
         return set((await self.session.scalars(stmt)).all())
+
+    async def runs_by_key(
+        self,
+        project_id: uuid.UUID,
+        run_ids: Sequence[uuid.UUID],
+        keys: Sequence[str],
+    ) -> dict[str, set[uuid.UUID]]:
+        """For each of ``keys``, which of ``run_ids`` had a finding for it (scoped).
+
+        The batched form of :meth:`run_ids_with_key` — one query covering every
+        key in a run, so cross-run history for a whole run's findings carries no
+        N+1. Keys absent from every run simply don't appear in the result.
+        """
+        key_set = set(keys)
+        if not run_ids or not key_set:
+            return {}
+        stmt = (
+            select(Finding.root_cause_key, Finding.run_id)
+            .where(
+                Finding.project_id == project_id,
+                Finding.run_id.in_(run_ids),
+                Finding.root_cause_key.in_(key_set),
+            )
+            .distinct()
+        )
+        out: dict[str, set[uuid.UUID]] = {}
+        for key, run_id in (await self.session.execute(stmt)).all():
+            out.setdefault(key, set()).add(run_id)
+        return out

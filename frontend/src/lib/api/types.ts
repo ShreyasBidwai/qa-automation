@@ -80,17 +80,34 @@ export interface RunStatus {
 
 // --- findings ---------------------------------------------------------------
 
-/** The cross-layer location of a finding (page → endpoint → table). */
+/** The deepest failing node (the grouping anchor) — what broke, structurally. */
+export interface FindingLocationAnchor {
+  node_type: string | null; // a NodeKind value: "table" | "endpoint" | "page"
+  identifier: string | null;
+  label: string;
+}
+
+/** The anchor plus the full cross-layer blast path (page → endpoint → table). */
 export interface FindingLocation {
+  anchor: FindingLocationAnchor;
   page?: string | null;
   endpoints?: string[];
   tables?: string[];
 }
 
-export interface FindingHistoryEntry {
-  run_id: string;
-  status: string;
-  at?: string | null;
+/** One failing test: a short "what failed" line + its oracle trust signal. */
+export interface EvidenceItem {
+  summary: string;
+  oracle_source: string; // "rule-derived" | "characterization" | "spec-grounded"
+  reference?: string | null;
+}
+
+/** Cross-run history: the T7.4 classification + its supporting fields. */
+export interface FindingHistory {
+  classification: string; // "new" | "known" | "regression" | "flaky"
+  occurrence_count: number;
+  first_seen_run?: string | null;
+  last_seen_run?: string | null;
 }
 
 export interface Finding {
@@ -102,14 +119,15 @@ export interface Finding {
   status: string;
   oracle_source: string;
   explains_count: number;
-  // Richer detail the backend model carries but FindingResponse does NOT expose
-  // yet — optional, so the detail drawer renders them when present and flags them
-  // when absent (T6.3: render gracefully, never invent).
+  // Widened detail (now exposed by FindingResponse). Optional on the type so the
+  // drawer still renders gracefully against an older/partial payload, but the
+  // live API always populates these (T6.3: render gracefully, never invent).
+  confidence_mixed?: boolean;
   expected?: Record<string, unknown> | null;
-  actual?: Record<string, unknown> | string | null;
   location?: FindingLocation | null;
+  evidence?: EvidenceItem[] | null;
+  history?: FindingHistory | null;
   evidence_ref?: string | null;
-  history?: FindingHistoryEntry[] | null;
 }
 
 export interface FindingsResponse {

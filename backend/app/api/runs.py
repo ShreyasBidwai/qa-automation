@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import Outcome
 from app.models.finding import Finding
-from app.reporting import rank_findings
+from app.reporting import FindingDetail, FindingDetailReader, rank_findings
 from app.repositories.finding_repository import FindingRepository
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.result_repository import ResultRepository
@@ -25,6 +25,9 @@ from .deps import get_jobs, get_run_executor, get_session
 from .jobs import JobKind, JobRegistry, run_run_job
 from .ports import RunExecutor, to_run_request
 from .schemas import (
+    EvidenceItem,
+    FindingHistory,
+    FindingLocation,
     FindingResponse,
     FindingsResponse,
     RunCreate,
@@ -46,7 +49,7 @@ def _pass_rate(counts: dict[Outcome, int] | None) -> float | None:
     return round(counts.get(Outcome.PASS, 0) / total, 4)
 
 
-def _finding_response(finding: Finding) -> FindingResponse:
+def _finding_response(finding: Finding, detail: FindingDetail) -> FindingResponse:
     return FindingResponse(
         id=finding.id,
         root_cause_key=finding.root_cause_key,
@@ -56,6 +59,12 @@ def _finding_response(finding: Finding) -> FindingResponse:
         status=finding.status,
         oracle_source=finding.oracle_source.value,
         explains_count=finding.explains_count,
+        confidence_mixed=finding.confidence_mixed,
+        expected=dict(finding.expected),
+        location=FindingLocation.model_validate(detail.location),
+        evidence=[EvidenceItem.model_validate(item) for item in detail.evidence],
+        history=FindingHistory.model_validate(detail.history),
+        evidence_ref=finding.evidence_ref,
     )
 
 
@@ -145,5 +154,8 @@ async def get_run_findings(
         return FindingsResponse(run_id=run_id, count=0, findings=[])
     findings = await FindingRepository(session).list_for_run(job.project_id, job.run_id)
     ranked = rank_findings(findings)
-    items = [_finding_response(f) for f in ranked]
+    detail = await FindingDetailReader(session).detail_for(
+        job.project_id, job.run_id, ranked
+    )
+    items = [_finding_response(f, detail[f.id]) for f in ranked]
     return FindingsResponse(run_id=run_id, count=len(items), findings=items)

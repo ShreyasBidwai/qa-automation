@@ -18,7 +18,7 @@ export function CrossLayerRibbon({ finding }: { finding: Finding }) {
   if (!ribbon.available) {
     return (
       <p className="text-sm text-muted-foreground">
-        The cross-layer location isn&rsquo;t exposed for this finding yet.
+        The cross-layer location couldn&rsquo;t be resolved for this finding.
       </p>
     );
   }
@@ -45,7 +45,7 @@ export function CrossLayerRibbon({ finding }: { finding: Finding }) {
       ) : null}
       {ribbon.partial ? (
         <p className="text-xs text-muted-foreground">
-          The full UI → API → DB path isn&rsquo;t exposed yet — showing the failing
+          The full UI → API → DB path couldn&rsquo;t be resolved — showing the failing
           node.
         </p>
       ) : null}
