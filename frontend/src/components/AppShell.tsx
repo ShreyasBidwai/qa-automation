@@ -1,20 +1,59 @@
+import { Activity, FolderGit2, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
-const APP_NAME = import.meta.env.VITE_APP_NAME ?? "QA Automation Platform";
+import { Link } from "@/components/Link";
+import { Wordmark } from "@/components/Wordmark";
+import { useIsActive } from "@/lib/router";
+import { cn } from "@/lib/utils";
 
+interface NavEntry {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+}
+
+const NAV: NavEntry[] = [
+  { to: "/projects", label: "Projects", icon: FolderGit2 },
+  { to: "/runs", label: "Runs", icon: Activity },
+];
+
+function NavItem({ entry }: { entry: NavEntry }) {
+  const active = useIsActive(entry.to);
+  const Icon = entry.icon;
+  return (
+    <Link
+      to={entry.to}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm",
+        active
+          ? "bg-background font-medium text-accent"
+          : "text-muted-foreground hover:bg-background hover:text-foreground",
+      )}
+    >
+      <Icon className="h-4 w-4" aria-hidden="true" />
+      {entry.label}
+    </Link>
+  );
+}
+
+/** The persistent app shell: quiet left sidebar + content column. */
 export function AppShell({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-10 border-b border-border bg-surface">
-        <div className="mx-auto flex h-14 max-w-5xl items-center gap-2 px-6">
-          <span
-            className="inline-block h-2.5 w-2.5 rounded-full bg-accent"
-            aria-hidden="true"
-          />
-          <span className="text-sm font-semibold tracking-tight">{APP_NAME}</span>
+    <div className="flex min-h-screen bg-background text-foreground">
+      <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-surface sm:flex">
+        <div className="px-5 py-4">
+          <Link to="/projects" aria-label="Polaris — home">
+            <Wordmark />
+          </Link>
         </div>
-      </header>
-      <main className="mx-auto max-w-5xl px-6 py-10">{children}</main>
+        <nav className="flex flex-col gap-0.5 px-3 py-2" aria-label="Primary">
+          {NAV.map((entry) => (
+            <NavItem key={entry.to} entry={entry} />
+          ))}
+        </nav>
+      </aside>
+      <div className="flex min-w-0 flex-1 flex-col">{children}</div>
     </div>
   );
 }

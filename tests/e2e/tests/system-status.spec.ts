@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
 
 test("system status page reports the backend as healthy", async ({ page }) => {
-  await page.goto("/");
+  // System status now lives at /status; the app root is the projects list.
+  await page.goto("/status");
 
   // The page must render.
   await expect(
