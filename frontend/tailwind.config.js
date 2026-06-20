@@ -46,7 +46,9 @@ export default {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
+        // UI: Inter (design-direction.md). Weights 400/500 only in product chrome.
         sans: [
+          "Inter",
           "ui-sans-serif",
           "system-ui",
           "-apple-system",
@@ -55,6 +57,15 @@ export default {
           "Helvetica",
           "Arial",
           "sans-serif",
+        ],
+        // Code / paths / IDs / endpoints: JetBrains Mono.
+        mono: [
+          "JetBrains Mono",
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "Consolas",
+          "monospace",
         ],
       },
     },
