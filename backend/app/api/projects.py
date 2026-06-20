@@ -11,7 +11,7 @@ import re
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Project
@@ -24,6 +24,8 @@ from .schemas import (
     IngestResponse,
     JobStatusResponse,
     ProjectCreate,
+    ProjectListItem,
+    ProjectListResponse,
     ProjectResponse,
 )
 
@@ -64,6 +66,34 @@ async def create_project(
     await ProjectRepository(session).add(project)
     await session.refresh(project)  # populate server-default created_at
     return _project_response(project)
+
+
+def _project_list_item(project: Project) -> ProjectListItem:
+    settings = project.settings
+    return ProjectListItem(
+        id=project.id,
+        name=project.name,
+        slug=project.slug,
+        repo_url=str(settings.get("repo_url", "")),
+        app_url=settings.get("app_url"),
+        created_at=project.created_at,
+    )
+
+
+@router.get("/projects", response_model=ProjectListResponse)
+async def list_projects(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> ProjectListResponse:
+    repo = ProjectRepository(session)
+    projects = await repo.list(limit=limit, offset=offset)
+    return ProjectListResponse(
+        items=[_project_list_item(project) for project in projects],
+        total=await repo.count(),
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/projects/{project_id}", response_model=ProjectResponse)

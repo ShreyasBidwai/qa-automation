@@ -99,3 +99,37 @@ class FindingsResponse(BaseModel):
     run_id: uuid.UUID
     count: int
     findings: list[FindingResponse]
+
+
+# --- list endpoints ---------------------------------------------------------
+
+
+class ProjectListItem(BaseModel):
+    id: uuid.UUID
+    name: str
+    slug: str
+    repo_url: str
+    app_url: str | None
+    created_at: datetime
+
+
+class ProjectListResponse(BaseModel):
+    items: list[ProjectListItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class RunListItem(BaseModel):
+    id: uuid.UUID
+    mode: str
+    status: str
+    created_at: datetime
+    pass_rate: float | None = None  # passed / total over the run's results
+
+
+class RunListResponse(BaseModel):
+    items: list[RunListItem]
+    total: int
+    limit: int
+    offset: int
