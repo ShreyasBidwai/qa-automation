@@ -4,9 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { projectApi } from "@/lib/api/client";
-import type { Project } from "@/lib/api/types";
 import { navigate } from "@/lib/router";
-import { rememberProject } from "@/lib/registry";
 
 interface FieldErrors {
   name?: string;
@@ -47,14 +45,8 @@ export function CreateProjectForm() {
     setSubmitting(false);
 
     if (result.ok && result.data) {
-      const project: Project = result.data;
-      rememberProject({
-        id: project.id,
-        name: project.name,
-        slug: project.slug,
-        createdAt: project.created_at,
-      });
-      navigate(`/projects/${project.id}`);
+      // The new project shows up in the list via GET /projects — no local stash.
+      navigate(`/projects/${result.data.id}`);
       return;
     }
     setSubmitError(result.error ?? "Could not register the project.");

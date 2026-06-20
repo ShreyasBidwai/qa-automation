@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 
 import { runApi } from "@/lib/api/client";
 import type { JobStatusValue } from "@/lib/api/types";
-import { updateRunStatus } from "@/lib/registry";
 
 import { isTerminal } from "./runStatus";
 
@@ -44,7 +43,6 @@ export function useRunStatus(runId: string): RunState {
       if (result.ok && result.data) {
         const { status, mode, summary } = result.data;
         setState({ status, mode, summary, error: null, loading: false });
-        updateRunStatus(runId, status);
         if (!isTerminal(status)) {
           timer.current = setTimeout(() => void poll(), POLL_INTERVAL_MS);
         }

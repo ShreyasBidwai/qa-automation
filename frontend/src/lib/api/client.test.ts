@@ -50,6 +50,24 @@ describe("api client", () => {
     expect(result.data?.id).toBe("p1");
   });
 
+  it("GET /projects?limit&offset builds the list URL", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ items: [], total: 0, limit: 20, offset: 40 }),
+    );
+    await projectApi.list({ limit: 20, offset: 40 });
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/projects?limit=20&offset=40");
+  });
+
+  it("GET /projects/:id/runs builds the scoped list URL", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ items: [], total: 0, limit: 10, offset: 0 }),
+    );
+    await runApi.list("p1", { limit: 10, offset: 0 });
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/v1/projects/p1/runs?limit=10&offset=0",
+    );
+  });
+
   it("GET /runs/:id parses the run status", async () => {
     fetchMock.mockResolvedValue(
       jsonResponse({ run_id: "r1", mode: "mode_b", status: "running", summary: null }),

@@ -3,10 +3,13 @@ import type {
   HealthzResponse,
   IngestResponse,
   JobStatus,
+  PageParams,
   Project,
   ProjectCreateBody,
+  ProjectListResponse,
   ReadyzResponse,
   RunCreateBody,
+  RunListResponse,
   RunResponse,
   RunStatus,
 } from "./types";
@@ -90,11 +93,18 @@ export const healthApi = {
   readiness: () => getJson<ReadyzResponse>("/readyz"),
 };
 
+function pageQuery({ limit, offset }: PageParams): string {
+  return `limit=${limit}&offset=${offset}`;
+}
+
 export const projectApi = {
   /** POST /projects — register a project. */
   create: (body: ProjectCreateBody) => postJson<Project>(`${API_BASE}/projects`, body),
   /** GET /projects/{id}. */
   get: (id: string) => getJson<Project>(`${API_BASE}/projects/${id}`),
+  /** GET /projects — list projects (bounded, newest first). */
+  list: (params: PageParams) =>
+    getJson<ProjectListResponse>(`${API_BASE}/projects?${pageQuery(params)}`),
   /** POST /projects/{id}/ingest — kick off Brain build (background job). */
   ingest: (id: string) =>
     postJson<IngestResponse>(`${API_BASE}/projects/${id}/ingest`, {}),
@@ -104,6 +114,11 @@ export const runApi = {
   /** POST /projects/{id}/runs — start a run (background job). */
   create: (projectId: string, body: RunCreateBody) =>
     postJson<RunResponse>(`${API_BASE}/projects/${projectId}/runs`, body),
+  /** GET /projects/{id}/runs — list a project's runs (bounded, newest first). */
+  list: (projectId: string, params: PageParams) =>
+    getJson<RunListResponse>(
+      `${API_BASE}/projects/${projectId}/runs?${pageQuery(params)}`,
+    ),
   /** GET /runs/{id} — status + summary. */
   get: (runId: string) => getJson<RunStatus>(`${API_BASE}/runs/${runId}`),
   /** GET /runs/{id}/findings — the ranked findings. */

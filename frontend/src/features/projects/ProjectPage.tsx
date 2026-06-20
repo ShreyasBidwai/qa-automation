@@ -38,7 +38,7 @@ export function ProjectPage({ projectId }: { projectId: string }) {
               <p className="text-sm text-muted-foreground">
                 Run autonomously across the model, or describe a scenario to test.
               </p>
-              <RunTriggerForm projectId={projectId} projectName={project.name} />
+              <RunTriggerForm projectId={projectId} />
             </section>
           </>
         )}

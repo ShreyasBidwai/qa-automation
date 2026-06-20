@@ -117,3 +117,41 @@ export interface FindingsResponse {
   count: number;
   findings: Finding[];
 }
+
+// --- list endpoints ---------------------------------------------------------
+
+export interface ProjectListItem {
+  id: string;
+  name: string;
+  slug: string;
+  repo_url: string;
+  app_url: string | null;
+  created_at: string;
+}
+
+export interface ProjectListResponse {
+  items: ProjectListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface RunListItem {
+  id: string;
+  mode: string; // the persisted Run.mode ("B" / "C")
+  status: string; // the persisted Run.status (passed/failed/errored/…)
+  created_at: string;
+  pass_rate: number | null;
+}
+
+export interface RunListResponse {
+  items: RunListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface PageParams {
+  limit: number;
+  offset: number;
+}

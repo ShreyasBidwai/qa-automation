@@ -7,18 +7,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { runApi } from "@/lib/api/client";
 import type { RunCreateBody, SelectionStrategy } from "@/lib/api/types";
 import { navigate } from "@/lib/router";
-import { rememberRun } from "@/lib/registry";
 
 type Mode = "mode_b" | "mode_c";
 
 /** Trigger a run: Mode B (full sweep / change impact) or Mode C (a prompt). */
-export function RunTriggerForm({
-  projectId,
-  projectName,
-}: {
-  projectId: string;
-  projectName: string;
-}) {
+export function RunTriggerForm({ projectId }: { projectId: string }) {
   const [mode, setMode] = useState<Mode>("mode_b");
   const [strategy, setStrategy] = useState<SelectionStrategy>("full_sweep");
   const [changeset, setChangeset] = useState("");
@@ -59,14 +52,6 @@ export function RunTriggerForm({
     setSubmitting(false);
 
     if (result.ok && result.data) {
-      rememberRun({
-        runId: result.data.run_id,
-        projectId,
-        projectName,
-        mode,
-        status: result.data.status,
-        startedAt: new Date().toISOString(),
-      });
       navigate(`/runs/${result.data.run_id}`);
       return;
     }
