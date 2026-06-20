@@ -53,3 +53,4 @@ This folder holds numbered Architecture Decision Records. Anything marked a
 | [ADR-0023](ADR-0023-history-classification.md) | Cross-run history classification — new vs regression vs flaky vs known | Accepted |
 | [ADR-0024](ADR-0024-change-impact-selection.md) | Change-impact test selection — widen on uncertainty | Accepted |
 | [ADR-0025](ADR-0025-mode-b-orchestration.md) | Mode B orchestration + selection-strategy model | Accepted |
+| [ADR-0026](ADR-0026-api-surface.md) | HTTP API surface + in-process background execution | Accepted |
