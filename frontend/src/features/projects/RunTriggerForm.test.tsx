@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api/client", () => ({ runApi: { create: vi.fn() } }));
 vi.mock("@/lib/router", () => ({ navigate: vi.fn() }));
-vi.mock("@/lib/registry", () => ({ rememberRun: vi.fn() }));
 
 import { runApi } from "@/lib/api/client";
 
@@ -20,7 +19,7 @@ describe("RunTriggerForm", () => {
   });
 
   it("starts a mode_b full-sweep run with the right body", async () => {
-    render(<RunTriggerForm projectId="p1" projectName="Demo" />);
+    render(<RunTriggerForm projectId="p1" />);
     fireEvent.click(screen.getByRole("button", { name: "Run tests" }));
 
     await waitFor(() =>
@@ -32,7 +31,7 @@ describe("RunTriggerForm", () => {
   });
 
   it("sends a change_impact changeset as an array of paths", async () => {
-    render(<RunTriggerForm projectId="p1" projectName="Demo" />);
+    render(<RunTriggerForm projectId="p1" />);
     fireEvent.change(screen.getByLabelText("Selection"), {
       target: { value: "change_impact" },
     });
@@ -51,7 +50,7 @@ describe("RunTriggerForm", () => {
   });
 
   it("sends a mode_c prompt body", async () => {
-    render(<RunTriggerForm projectId="p1" projectName="Demo" />);
+    render(<RunTriggerForm projectId="p1" />);
     fireEvent.change(screen.getByLabelText("Mode"), {
       target: { value: "mode_c" },
     });

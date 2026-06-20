@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api/client", () => ({ projectApi: { create: vi.fn() } }));
 vi.mock("@/lib/router", () => ({ navigate: vi.fn() }));
-vi.mock("@/lib/registry", () => ({ rememberProject: vi.fn() }));
 
 import { projectApi } from "@/lib/api/client";
 

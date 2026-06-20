@@ -3,7 +3,6 @@ import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api/client", () => ({ runApi: { get: vi.fn() } }));
-vi.mock("@/lib/registry", () => ({ updateRunStatus: vi.fn() }));
 
 import { runApi } from "@/lib/api/client";
 import type { JobStatusValue } from "@/lib/api/types";
