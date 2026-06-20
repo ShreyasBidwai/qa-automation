@@ -10,13 +10,16 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.enums import Outcome
 from app.models.finding import Finding
 from app.reporting import rank_findings
 from app.repositories.finding_repository import FindingRepository
 from app.repositories.project_repository import ProjectRepository
+from app.repositories.result_repository import ResultRepository
+from app.repositories.run_repository import RunRepository
 
 from .deps import get_jobs, get_run_executor, get_session
 from .jobs import JobKind, JobRegistry, run_run_job
@@ -25,11 +28,22 @@ from .schemas import (
     FindingResponse,
     FindingsResponse,
     RunCreate,
+    RunListItem,
+    RunListResponse,
     RunResponse,
     RunStatusResponse,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["runs"])
+
+
+def _pass_rate(counts: dict[Outcome, int] | None) -> float | None:
+    if not counts:
+        return None
+    total = sum(counts.values())
+    if total == 0:
+        return None
+    return round(counts.get(Outcome.PASS, 0) / total, 4)
 
 
 def _finding_response(finding: Finding) -> FindingResponse:
@@ -69,6 +83,38 @@ async def create_run(
         request=run_request,
     )
     return RunResponse(run_id=job.id, status=job.status.value)
+
+
+@router.get("/projects/{project_id}/runs", response_model=RunListResponse)
+async def list_project_runs(
+    project_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> RunListResponse:
+    if await ProjectRepository(session).get(project_id) is None:
+        raise HTTPException(status_code=404, detail="project not found")
+    run_repo = RunRepository(session)
+    runs = await run_repo.list_for_project(project_id, limit=limit, offset=offset)
+    counts = await ResultRepository(session).outcome_counts_for_runs(
+        project_id, [run.id for run in runs]
+    )
+    items = [
+        RunListItem(
+            id=run.id,
+            mode=run.mode.value,
+            status=run.status,
+            created_at=run.created_at,
+            pass_rate=_pass_rate(counts.get(run.id)),
+        )
+        for run in runs
+    ]
+    return RunListResponse(
+        items=items,
+        total=await run_repo.count_for_project(project_id),
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/runs/{run_id}", response_model=RunStatusResponse)

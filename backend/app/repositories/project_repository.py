@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Project
@@ -29,3 +29,17 @@ class ProjectRepository:
     async def get_by_slug(self, slug: str) -> Project | None:
         stmt = select(Project).where(Project.slug == slug)
         return (await self.session.scalars(stmt)).one_or_none()
+
+    async def list(self, *, limit: int, offset: int) -> list[Project]:
+        """A bounded page of projects, newest first (deterministic order)."""
+        stmt = (
+            select(Project)
+            .order_by(Project.created_at.desc(), Project.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list((await self.session.scalars(stmt)).all())
+
+    async def count(self) -> int:
+        stmt = select(func.count()).select_from(Project)
+        return int(await self.session.scalar(stmt) or 0)

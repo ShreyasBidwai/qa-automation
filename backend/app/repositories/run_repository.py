@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 
 from app.models.run import Run
 
@@ -13,6 +13,23 @@ from .base import ProjectScopedRepository
 
 class RunRepository(ProjectScopedRepository[Run]):
     model = Run
+
+    async def list_for_project(
+        self, project_id: uuid.UUID, *, limit: int, offset: int
+    ) -> list[Run]:
+        """A bounded page of a project's runs, newest first (deterministic)."""
+        stmt = (
+            select(Run)
+            .where(Run.project_id == project_id)
+            .order_by(Run.created_at.desc(), Run.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list((await self.session.scalars(stmt)).all())
+
+    async def count_for_project(self, project_id: uuid.UUID) -> int:
+        stmt = select(func.count()).select_from(Run).where(Run.project_id == project_id)
+        return int(await self.session.scalar(stmt) or 0)
 
     async def prior_run_ids(
         self, project_id: uuid.UUID, run_id: uuid.UUID, *, limit: int
