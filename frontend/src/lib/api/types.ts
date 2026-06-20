@@ -110,6 +110,27 @@ export interface FindingHistory {
   last_seen_run?: string | null;
 }
 
+export type TriageStatusValue =
+  | "open"
+  | "acknowledged"
+  | "resolved"
+  | "wont_fix"
+  | "false_positive";
+
+/** A finding's triage disposition (ADR-0027) — keyed by the logical issue, so it
+ *  persists across runs. Absent record = open; actor (who) is deferred to auth. */
+export interface Triage {
+  status: TriageStatusValue;
+  note?: string | null;
+  triaged_at?: string | null;
+}
+
+/** PATCH body to set a finding's triage disposition. */
+export interface TriagePatchBody {
+  status: TriageStatusValue;
+  note?: string | null;
+}
+
 export interface Finding {
   id: string;
   root_cause_key: string;
@@ -128,6 +149,7 @@ export interface Finding {
   evidence?: EvidenceItem[] | null;
   history?: FindingHistory | null;
   evidence_ref?: string | null;
+  triage?: Triage | null;
 }
 
 export interface FindingsResponse {

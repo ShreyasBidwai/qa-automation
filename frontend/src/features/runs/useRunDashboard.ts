@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { runApi } from "@/lib/api/client";
 import type { Finding, JobStatusValue } from "@/lib/api/types";
@@ -12,6 +12,12 @@ export interface DashboardState {
   error: string | null;
 }
 
+export interface DashboardController extends DashboardState {
+  /** Replace one finding in place (e.g. after a triage PATCH) — keeps the list
+   *  and the open drawer in sync without a refetch. */
+  replaceFinding: (updated: Finding) => void;
+}
+
 const INITIAL: DashboardState = {
   status: null,
   mode: "",
@@ -22,8 +28,15 @@ const INITIAL: DashboardState = {
 };
 
 /** Load a completed run's summary + ranked findings (GET /runs/{id}[, /findings]). */
-export function useRunDashboard(runId: string): DashboardState {
+export function useRunDashboard(runId: string): DashboardController {
   const [state, setState] = useState<DashboardState>(INITIAL);
+
+  const replaceFinding = useCallback((updated: Finding) => {
+    setState((prev) => ({
+      ...prev,
+      findings: prev.findings.map((f) => (f.id === updated.id ? updated : f)),
+    }));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,5 +80,5 @@ export function useRunDashboard(runId: string): DashboardState {
     };
   }, [runId]);
 
-  return state;
+  return { ...state, replaceFinding };
 }

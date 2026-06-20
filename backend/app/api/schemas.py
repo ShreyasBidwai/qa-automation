@@ -122,6 +122,25 @@ class FindingHistory(BaseModel):
     last_seen_run: uuid.UUID | None = None
 
 
+class TriageInfo(BaseModel):
+    """A finding's current triage disposition (ADR-0027). Absent record = open.
+
+    ``triaged_at`` is recorded; the actor (who triaged) is deferred to Tier-2 user
+    auth — not faked here.
+    """
+
+    status: str  # a TriageStatus value
+    note: str | None = None
+    triaged_at: datetime | None = None
+
+
+class TriagePatch(BaseModel):
+    """Set a finding's triage disposition (PATCH body). Bad status → 422."""
+
+    status: Literal["open", "acknowledged", "resolved", "wont_fix", "false_positive"]
+    note: str | None = Field(default=None, max_length=2000)
+
+
 class FindingResponse(BaseModel):
     id: uuid.UUID
     root_cause_key: str
@@ -138,6 +157,8 @@ class FindingResponse(BaseModel):
     evidence: list[EvidenceItem]
     history: FindingHistory
     evidence_ref: str | None = None
+    # Triage disposition, keyed by root_cause_key (ADR-0027); absent record = open.
+    triage: TriageInfo
 
 
 class FindingsResponse(BaseModel):

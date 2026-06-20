@@ -4,10 +4,16 @@ import { useState, type ReactNode } from "react";
 import { Drawer } from "@/components/Drawer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { Finding } from "@/lib/api/types";
+import { runApi } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
-import type { EvidenceItem, FindingHistory, FindingLocation } from "@/lib/api/types";
+import type {
+  EvidenceItem,
+  Finding,
+  FindingHistory,
+  FindingLocation,
+  TriageStatusValue,
+} from "@/lib/api/types";
 
 import {
   confidenceSpec,
@@ -15,6 +21,7 @@ import {
   oracleTrustSpec,
   severitySpec,
   statusSpec,
+  triageSpec,
 } from "./findingBadges";
 import { CrossLayerRibbon } from "./CrossLayerRibbon";
 import { confidenceRationale, failureLine, statusMeaning } from "./findingDetail";
@@ -22,10 +29,14 @@ import { confidenceRationale, failureLine, statusMeaning } from "./findingDetail
 /** The finding detail "fix view" — opens from a findings-list row (T6.3). */
 export function FindingDrawer({
   finding,
+  runId,
   onClose,
+  onTriaged,
 }: {
   finding: Finding | null;
+  runId: string;
   onClose: () => void;
+  onTriaged?: (updated: Finding) => void;
 }) {
   return (
     <Drawer
@@ -33,17 +44,28 @@ export function FindingDrawer({
       onClose={onClose}
       label={finding ? `Finding: ${finding.title}` : "Finding"}
     >
-      {finding ? <FindingDetail finding={finding} onClose={onClose} /> : null}
+      {finding ? (
+        <FindingDetail
+          finding={finding}
+          runId={runId}
+          onClose={onClose}
+          onTriaged={onTriaged}
+        />
+      ) : null}
     </Drawer>
   );
 }
 
 function FindingDetail({
   finding,
+  runId,
   onClose,
+  onTriaged,
 }: {
   finding: Finding;
+  runId: string;
   onClose: () => void;
+  onTriaged?: (updated: Finding) => void;
 }) {
   const severity = severitySpec(finding.severity);
   const layer = layerSpec(finding.layer);
@@ -137,7 +159,12 @@ function FindingDetail({
         </Section>
       </div>
 
-      <FindingActions />
+      <TriagePanel
+        key={finding.id}
+        finding={finding}
+        runId={runId}
+        onTriaged={onTriaged}
+      />
     </>
   );
 }
@@ -308,22 +335,110 @@ function HistoryBlock({
   );
 }
 
-function FindingActions() {
-  // Workflow actions, grouped apart from details (Sentry's lesson). Placeholder
-  // and clearly disabled until the backend wires them.
+// The triage dispositions a user can set (ADR-0027). "open" is the reopen action.
+const TRIAGE_ACTIONS: { value: TriageStatusValue; label: string }[] = [
+  { value: "acknowledged", label: "Acknowledge" },
+  { value: "resolved", label: "Resolved" },
+  { value: "wont_fix", label: "Won't fix" },
+  { value: "false_positive", label: "False positive" },
+  { value: "open", label: "Reopen" },
+];
+
+function TriagePanel({
+  finding,
+  runId,
+  onTriaged,
+}: {
+  finding: Finding;
+  runId: string;
+  onTriaged?: (updated: Finding) => void;
+}) {
+  // Reflect the disposition from the PATCH response (server is the source of
+  // truth); seeded from the finding's current triage.
+  const [status, setStatus] = useState<string>(finding.triage?.status ?? "open");
+  const [note, setNote] = useState(finding.triage?.note ?? "");
+  const [triagedAt, setTriagedAt] = useState<string | null>(
+    finding.triage?.triaged_at ?? null,
+  );
+  const [saving, setSaving] = useState<string | null>(null); // the status being saved
+  const [error, setError] = useState<string | null>(null);
+
+  async function set(next: TriageStatusValue) {
+    setSaving(next);
+    setError(null);
+    const result = await runApi.triage(runId, finding.id, {
+      status: next,
+      note: note.trim() ? note.trim() : null,
+    });
+    setSaving(null);
+    if (!result.ok || !result.data) {
+      setError(result.error ?? "Could not save triage. Try again.");
+      return;
+    }
+    setStatus(result.data.triage?.status ?? next);
+    setTriagedAt(result.data.triage?.triaged_at ?? null);
+    onTriaged?.(result.data);
+  }
+
+  const current = triageSpec(status);
   return (
     <div className="border-t border-border bg-background px-5 py-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button variant="outline" size="sm" disabled>
-          Export to tracker
-        </Button>
-        <Button variant="outline" size="sm" disabled>
-          Change status
-        </Button>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium text-foreground">Triage</span>
+        {status !== "open" ? <Badge level={current.level}>{current.label}</Badge> : null}
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">
-        Triage actions are coming in a later sprint.
-      </p>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {TRIAGE_ACTIONS.map((action) => {
+          const active = status === action.value;
+          return (
+            <Button
+              key={action.value}
+              variant={active ? "primary" : "outline"}
+              size="sm"
+              aria-pressed={active}
+              disabled={saving !== null}
+              onClick={() => set(action.value)}
+            >
+              {action.label}
+            </Button>
+          );
+        })}
+      </div>
+
+      <div className="mt-3">
+        <label
+          htmlFor="triage-note"
+          className="text-xs font-medium text-muted-foreground"
+        >
+          Note (optional)
+        </label>
+        <textarea
+          id="triage-note"
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          rows={2}
+          maxLength={2000}
+          placeholder="Why this disposition?"
+          className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        />
+      </div>
+
+      {error ? (
+        <p role="alert" className="mt-2 text-xs text-status-fail-fg">
+          {error}
+        </p>
+      ) : null}
+      {triagedAt ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Triaged {new Date(triagedAt).toLocaleString()}. Who triaged is recorded
+          once sign-in lands.
+        </p>
+      ) : (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Not triaged yet — disposition follows the issue across runs.
+        </p>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api/client", () => ({
-  runApi: { get: vi.fn(), findings: vi.fn() },
+  runApi: { get: vi.fn(), findings: vi.fn(), triage: vi.fn() },
 }));
 vi.mock("@/lib/router", () => ({ navigate: vi.fn() }));
 
@@ -169,5 +169,52 @@ describe("RunDashboard", () => {
     await waitFor(() =>
       expect(screen.getByRole("alert")).toHaveTextContent("Run not found."),
     );
+  });
+
+  it("badges the triage disposition and de-emphasizes muted findings", async () => {
+    vi.mocked(runApi.get).mockResolvedValue(summaryResult({}));
+    vi.mocked(runApi.findings).mockResolvedValue(
+      findingsResult([
+        finding({
+          id: "ack",
+          title: "Acknowledged issue",
+          triage: { status: "acknowledged" },
+        }),
+        finding({
+          id: "muted",
+          title: "Muted issue",
+          triage: { status: "wont_fix" },
+        }),
+      ]),
+    );
+
+    render(<RunDashboard runId="r1" />);
+
+    const ackRow = (await screen.findByText("Acknowledged issue")).closest("button")!;
+    expect(within(ackRow).getByText("Acknowledged")).toBeInTheDocument();
+    expect(ackRow).not.toHaveClass("opacity-60");
+
+    const mutedRow = screen.getByText("Muted issue").closest("button")!;
+    expect(within(mutedRow).getByText("Won't fix")).toBeInTheDocument();
+    expect(mutedRow).toHaveClass("opacity-60"); // muted → de-emphasized
+  });
+
+  it("hides muted findings when the 'hide muted' toggle is on", async () => {
+    vi.mocked(runApi.get).mockResolvedValue(summaryResult({}));
+    vi.mocked(runApi.findings).mockResolvedValue(
+      findingsResult([
+        finding({ id: "open", title: "Open issue" }),
+        finding({ id: "muted", title: "Muted issue", triage: { status: "wont_fix" } }),
+      ]),
+    );
+
+    render(<RunDashboard runId="r1" />);
+    await screen.findByText("Open issue");
+    expect(screen.getByText("Muted issue")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Hide muted"));
+
+    expect(screen.getByText("Open issue")).toBeInTheDocument();
+    expect(screen.queryByText("Muted issue")).toBeNull();
   });
 });

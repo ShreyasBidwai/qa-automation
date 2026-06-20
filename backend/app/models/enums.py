@@ -143,6 +143,22 @@ class Triage(str, enum.Enum):
     UNKNOWN = "unknown"
 
 
+class TriageStatus(str, enum.Enum):
+    """A logical issue's triage disposition, keyed by root_cause_key (ADR-0027).
+
+    Distinct from per-result ``Triage`` (a cause label) and from the derived
+    ``FindingStatus`` history (new/known/regression/flaky). Absent record = open;
+    ``known`` is intentionally omitted (it collides with the derived history) —
+    muting is ``wont_fix`` / ``false_positive``.
+    """
+
+    OPEN = "open"
+    ACKNOWLEDGED = "acknowledged"
+    RESOLVED = "resolved"
+    WONT_FIX = "wont_fix"
+    FALSE_POSITIVE = "false_positive"
+
+
 class CoverageDimension(str, enum.Enum):
     ENDPOINT = "endpoint"
     PAGE = "page"

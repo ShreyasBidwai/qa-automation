@@ -1,4 +1,5 @@
 import type {
+  Finding,
   FindingsResponse,
   HealthzResponse,
   IngestResponse,
@@ -12,6 +13,7 @@ import type {
   RunListResponse,
   RunResponse,
   RunStatus,
+  TriagePatchBody,
 } from "./types";
 
 /**
@@ -86,6 +88,14 @@ function postJson<T>(path: string, body: unknown): Promise<ApiResult<T>> {
   });
 }
 
+function patchJson<T>(path: string, body: unknown): Promise<ApiResult<T>> {
+  return request<T>(path, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 export const healthApi = {
   /** GET /healthz — liveness. */
   liveness: () => getJson<HealthzResponse>("/healthz"),
@@ -124,6 +134,9 @@ export const runApi = {
   /** GET /runs/{id}/findings — the ranked findings. */
   findings: (runId: string) =>
     getJson<FindingsResponse>(`${API_BASE}/runs/${runId}/findings`),
+  /** PATCH /runs/{id}/findings/{fid} — set triage disposition; returns the finding. */
+  triage: (runId: string, findingId: string, body: TriagePatchBody) =>
+    patchJson<Finding>(`${API_BASE}/runs/${runId}/findings/${findingId}`, body),
 };
 
 export const jobApi = {

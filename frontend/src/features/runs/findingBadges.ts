@@ -62,6 +62,34 @@ export function oracleTrustSpec(oracleSource: string): BadgeSpec {
   }
 }
 
+/**
+ * The triage disposition badge (ADR-0027), design-direction semantic colours:
+ * acknowledged → blue (info, in progress), resolved → emerald (pass, done),
+ * wont_fix / false_positive → neutral (muted, de-emphasised). ``open`` is the
+ * untriaged default and renders no badge.
+ */
+export function triageSpec(status: string): BadgeSpec {
+  switch (status) {
+    case "acknowledged":
+      return { level: "info", label: "Acknowledged" };
+    case "resolved":
+      return { level: "pass", label: "Resolved" };
+    case "wont_fix":
+      return { level: "neutral", label: "Won't fix" };
+    case "false_positive":
+      return { level: "neutral", label: "False positive" };
+    case "open":
+      return { level: "neutral", label: "Open" };
+    default:
+      return { level: "neutral", label: status };
+  }
+}
+
+/** Muted dispositions — the issue is intentionally silenced, so de-emphasise it. */
+export function isMutedTriage(status: string | null | undefined): boolean {
+  return status === "wont_fix" || status === "false_positive";
+}
+
 export function statusSpec(status: string): BadgeSpec {
   switch (status) {
     case "new":

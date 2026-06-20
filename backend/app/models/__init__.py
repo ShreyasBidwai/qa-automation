@@ -9,6 +9,7 @@ from .base import Base
 from .coverage import Coverage
 from .finding import Finding
 from .finding_result import FindingResult
+from .finding_triage import FindingTriage
 from .model_edge import ModelEdge
 from .model_node import ModelNode
 from .project import Project
@@ -30,4 +31,5 @@ __all__ = [
     "AuthChallengeLog",
     "Finding",
     "FindingResult",
+    "FindingTriage",
 ]

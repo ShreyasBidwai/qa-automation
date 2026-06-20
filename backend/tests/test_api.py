@@ -280,6 +280,116 @@ async def test_run_findings_shape(
     assert history["occurrence_count"] == 1
     assert finding["expected"] == {"status": 500, "assertions": [{"kind": "status"}]}
 
+    # untriaged finding defaults to the open disposition (ADR-0027).
+    assert finding["triage"] == {"status": "open", "note": None, "triaged_at": None}
+
+
+async def test_triage_finding_persists_and_shows_on_get(
+    api: tuple[AsyncClient, _StubExecutor, _StubIngestor],
+) -> None:
+    client, _, _ = api
+    project = await _create_project(client)
+    run_id = (
+        await client.post(
+            f"/api/v1/projects/{project['id']}/runs",
+            json={"mode": "mode_b", "strategy": "full_sweep"},
+        )
+    ).json()["run_id"]
+    finding_id = (await client.get(f"/api/v1/runs/{run_id}/findings")).json()[
+        "findings"
+    ][0]["id"]
+
+    patched = await client.patch(
+        f"/api/v1/runs/{run_id}/findings/{finding_id}",
+        json={"status": "acknowledged", "note": "owner is on it"},
+    )
+    assert patched.status_code == 200
+    triage = patched.json()["triage"]
+    assert triage["status"] == "acknowledged"
+    assert triage["note"] == "owner is on it"
+    assert triage["triaged_at"] is not None  # recorded; actor deferred to auth
+
+    # The disposition is on the GET response too.
+    again = (await client.get(f"/api/v1/runs/{run_id}/findings")).json()["findings"][0]
+    assert again["triage"]["status"] == "acknowledged"
+
+
+async def test_triage_bad_status_is_422(
+    api: tuple[AsyncClient, _StubExecutor, _StubIngestor],
+) -> None:
+    client, _, _ = api
+    project = await _create_project(client)
+    run_id = (
+        await client.post(
+            f"/api/v1/projects/{project['id']}/runs",
+            json={"mode": "mode_b", "strategy": "full_sweep"},
+        )
+    ).json()["run_id"]
+    finding_id = (await client.get(f"/api/v1/runs/{run_id}/findings")).json()[
+        "findings"
+    ][0]["id"]
+
+    bad = await client.patch(
+        f"/api/v1/runs/{run_id}/findings/{finding_id}",
+        json={"status": "known"},  # collides with derived history → not a triage value
+    )
+    assert bad.status_code == 422
+
+
+async def test_triage_missing_finding_is_404(
+    api: tuple[AsyncClient, _StubExecutor, _StubIngestor],
+) -> None:
+    client, _, _ = api
+    project = await _create_project(client)
+    run_id = (
+        await client.post(
+            f"/api/v1/projects/{project['id']}/runs",
+            json={"mode": "mode_b", "strategy": "full_sweep"},
+        )
+    ).json()["run_id"]
+
+    missing = await client.patch(
+        f"/api/v1/runs/{run_id}/findings/{uuid.uuid4()}",
+        json={"status": "resolved"},
+    )
+    assert missing.status_code == 404
+
+
+async def test_triage_disposition_follows_the_issue_across_runs(
+    api: tuple[AsyncClient, _StubExecutor, _StubIngestor],
+) -> None:
+    """CRITICAL (ADR-0027): a finding triaged wont_fix in one run keeps that
+    disposition in a LATER run producing the same root_cause_key — proving triage
+    follows the logical issue, not the per-run finding row."""
+    client, _, _ = api
+    project = await _create_project(client)
+
+    # Run 1 → finding with key X; mark it won't-fix.
+    run1 = (
+        await client.post(
+            f"/api/v1/projects/{project['id']}/runs",
+            json={"mode": "mode_b", "strategy": "full_sweep"},
+        )
+    ).json()["run_id"]
+    finding1 = (await client.get(f"/api/v1/runs/{run1}/findings")).json()["findings"][0]
+    await client.patch(
+        f"/api/v1/runs/{run1}/findings/{finding1['id']}",
+        json={"status": "wont_fix"},
+    )
+
+    # Run 2 (same project, same stub key X) → a DIFFERENT finding row.
+    run2 = (
+        await client.post(
+            f"/api/v1/projects/{project['id']}/runs",
+            json={"mode": "mode_b", "strategy": "full_sweep"},
+        )
+    ).json()["run_id"]
+    finding2 = (await client.get(f"/api/v1/runs/{run2}/findings")).json()["findings"][0]
+
+    assert finding2["id"] != finding1["id"]  # genuinely a later instance…
+    assert finding2["root_cause_key"] == finding1["root_cause_key"]  # …same issue
+    assert finding2["triage"]["status"] == "wont_fix"  # disposition carried over
+
 
 async def test_run_mode_c_has_no_findings(
     api: tuple[AsyncClient, _StubExecutor, _StubIngestor],

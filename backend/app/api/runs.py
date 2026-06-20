@@ -13,10 +13,12 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.enums import Outcome
+from app.models.enums import Outcome, TriageStatus
 from app.models.finding import Finding
+from app.models.finding_triage import FindingTriage
 from app.reporting import FindingDetail, FindingDetailReader, rank_findings
 from app.repositories.finding_repository import FindingRepository
+from app.repositories.finding_triage_repository import FindingTriageRepository
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.result_repository import ResultRepository
 from app.repositories.run_repository import RunRepository
@@ -35,6 +37,8 @@ from .schemas import (
     RunListResponse,
     RunResponse,
     RunStatusResponse,
+    TriageInfo,
+    TriagePatch,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["runs"])
@@ -49,7 +53,18 @@ def _pass_rate(counts: dict[Outcome, int] | None) -> float | None:
     return round(counts.get(Outcome.PASS, 0) / total, 4)
 
 
-def _finding_response(finding: Finding, detail: FindingDetail) -> FindingResponse:
+def _triage_info(record: FindingTriage | None) -> TriageInfo:
+    """The current disposition, or the open default when nothing is triaged."""
+    if record is None:
+        return TriageInfo(status=TriageStatus.OPEN.value)
+    return TriageInfo(
+        status=record.status.value, note=record.note, triaged_at=record.triaged_at
+    )
+
+
+def _finding_response(
+    finding: Finding, detail: FindingDetail, triage: FindingTriage | None
+) -> FindingResponse:
     return FindingResponse(
         id=finding.id,
         root_cause_key=finding.root_cause_key,
@@ -65,6 +80,7 @@ def _finding_response(finding: Finding, detail: FindingDetail) -> FindingRespons
         evidence=[EvidenceItem.model_validate(item) for item in detail.evidence],
         history=FindingHistory.model_validate(detail.history),
         evidence_ref=finding.evidence_ref,
+        triage=_triage_info(triage),
     )
 
 
@@ -157,5 +173,44 @@ async def get_run_findings(
     detail = await FindingDetailReader(session).detail_for(
         job.project_id, job.run_id, ranked
     )
-    items = [_finding_response(f, detail[f.id]) for f in ranked]
+    # Triage block merged in one batched lookup by root_cause_key (no N+1, ADR-0027).
+    triage = await FindingTriageRepository(session).get_for_keys(
+        job.project_id, [f.root_cause_key for f in ranked]
+    )
+    items = [
+        _finding_response(f, detail[f.id], triage.get(f.root_cause_key)) for f in ranked
+    ]
     return FindingsResponse(run_id=run_id, count=len(items), findings=items)
+
+
+@router.patch("/runs/{run_id}/findings/{finding_id}", response_model=FindingResponse)
+async def triage_finding(
+    run_id: uuid.UUID,
+    finding_id: uuid.UUID,
+    body: TriagePatch,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    jobs: Annotated[JobRegistry, Depends(get_jobs)],
+) -> FindingResponse:
+    """Set a finding's triage disposition, keyed by its root_cause_key (ADR-0027).
+
+    The disposition follows the logical issue, not this run's row, so a later run
+    producing the same root_cause_key inherits it. Bad status → 422 (schema);
+    unknown finding → 404.
+    """
+    job = jobs.get(run_id)
+    if job is None or job.kind is not JobKind.RUN or job.run_id is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    finding = await FindingRepository(session).get(job.project_id, finding_id)
+    if finding is None or finding.run_id != job.run_id:
+        raise HTTPException(status_code=404, detail="finding not found")
+
+    record = await FindingTriageRepository(session).upsert(
+        job.project_id,
+        finding.root_cause_key,
+        status=TriageStatus(body.status),
+        note=body.note,
+    )
+    detail = await FindingDetailReader(session).detail_for(
+        job.project_id, job.run_id, [finding]
+    )
+    return _finding_response(finding, detail[finding.id], record)

@@ -13,9 +13,11 @@ import { cn } from "@/lib/utils";
 
 import {
   confidenceSpec,
+  isMutedTriage,
   layerSpec,
   severitySpec,
   statusSpec,
+  triageSpec,
   type BadgeLevel,
 } from "./findingBadges";
 import {
@@ -42,16 +44,19 @@ export function RunDashboard({
   runId: string;
   onSelectFinding?: (finding: Finding) => void;
 }) {
-  const { summary, findings, loading, error } = useRunDashboard(runId);
+  const { summary, findings, loading, error, replaceFinding } =
+    useRunDashboard(runId);
   const [filters, setFilters] = useState<FindingFilters>(EMPTY_FILTERS);
-  const [selected, setSelected] = useState<Finding | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const metrics = readMetrics(summary);
   const delta = passRateDelta(metrics.passRate, metrics.priorPassRate);
   const visible = applyFilters(findings, filters);
+  // Derive the open finding from the list so a triage update reflects in the drawer.
+  const selected = findings.find((f) => f.id === selectedId) ?? null;
   // Open the detail drawer (progressive disclosure); still notify any listener.
   const select = (finding: Finding) => {
-    setSelected(finding);
+    setSelectedId(finding.id);
     onSelectFinding?.(finding);
   };
 
@@ -126,7 +131,12 @@ export function RunDashboard({
           </>
         )}
       </main>
-      <FindingDrawer finding={selected} onClose={() => setSelected(null)} />
+      <FindingDrawer
+        finding={selected}
+        runId={runId}
+        onClose={() => setSelectedId(null)}
+        onTriaged={replaceFinding}
+      />
     </>
   );
 }
@@ -266,6 +276,17 @@ function Filters({
           ["known", "Known"],
         ]}
       />
+      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <input
+          type="checkbox"
+          checked={filters.hideMuted}
+          onChange={(event) =>
+            onChange({ ...filters, hideMuted: event.target.checked })
+          }
+          className="h-3.5 w-3.5 rounded border-border text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        />
+        Hide muted
+      </label>
     </div>
   );
 }
@@ -315,11 +336,18 @@ function FindingRow({
   const layer = layerSpec(finding.layer);
   const confidence = confidenceSpec(finding.oracle_source);
   const status = statusSpec(finding.status);
+  const triageStatus = finding.triage?.status ?? "open";
+  const triage = triageSpec(triageStatus);
+  // Muted dispositions (wont_fix / false_positive) are intentionally silenced.
+  const muted = isMutedTriage(triageStatus);
   return (
     <button
       type="button"
       onClick={() => onSelect(finding)}
-      className="flex w-full items-center gap-3 border-b border-border px-4 py-3 text-left last:border-0 hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+      className={cn(
+        "flex w-full items-center gap-3 border-b border-border px-4 py-3 text-left last:border-0 hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+        muted && "opacity-60",
+      )}
     >
       <Badge level={severity.level}>{severity.label}</Badge>
       <div className="min-w-0 flex-1">
@@ -335,6 +363,9 @@ function FindingRow({
           </span>
         </div>
       </div>
+      {triageStatus !== "open" ? (
+        <Badge level={triage.level}>{triage.label}</Badge>
+      ) : null}
       <Badge level={status.level}>{status.label}</Badge>
       <ChevronRight
         className="h-4 w-4 shrink-0 text-muted-foreground"

@@ -1,7 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/lib/api/client", () => ({ runApi: { triage: vi.fn() } }));
+
+import { runApi } from "@/lib/api/client";
 import type { Finding } from "@/lib/api/types";
 
 import { FindingDrawer } from "./FindingDrawer";
@@ -61,8 +64,10 @@ const bareFinding: Finding = {
 };
 
 describe("FindingDrawer", () => {
+  beforeEach(() => vi.mocked(runApi.triage).mockReset());
+
   it("opens from a selected finding and renders the summary + badges", () => {
-    render(<FindingDrawer finding={richFinding} onClose={vi.fn()} />);
+    render(<FindingDrawer finding={richFinding} runId="r1" onClose={vi.fn()} />);
 
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByText("Checkout 500")).toBeInTheDocument();
@@ -73,46 +78,41 @@ describe("FindingDrawer", () => {
   });
 
   it("renders nothing when no finding is selected", () => {
-    render(<FindingDrawer finding={null} onClose={vi.fn()} />);
+    render(<FindingDrawer finding={null} runId="r1" onClose={vi.fn()} />);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("renders the location anchor (the deepest failing node)", () => {
-    render(<FindingDrawer finding={richFinding} onClose={vi.fn()} />);
+    render(<FindingDrawer finding={richFinding} runId="r1" onClose={vi.fn()} />);
 
     expect(screen.getByText(/Failing node:/)).toBeInTheDocument();
     expect(screen.getByText("(endpoint)")).toBeInTheDocument();
   });
 
   it("renders the full cross-layer ribbon and highlights the failing hop", () => {
-    render(<FindingDrawer finding={richFinding} onClose={vi.fn()} />);
+    render(<FindingDrawer finding={richFinding} runId="r1" onClose={vi.fn()} />);
 
-    // All three tiers are present (UI page, API endpoint, DB table).
     expect(screen.getByText("/checkout")).toBeInTheDocument();
     expect(screen.getByText("orders")).toBeInTheDocument();
-    // The failing hop is the API anchor (from the key), not the page.
     const failingHop = screen.getByText("failing").parentElement!;
     expect(within(failingHop).getByText("POST api/orders")).toBeInTheDocument();
     expect(screen.getByText(/Failing hop:/)).toBeInTheDocument();
   });
 
   it("renders the evidence list with a trust badge per failing assertion", () => {
-    render(<FindingDrawer finding={richFinding} onClose={vi.fn()} />);
+    render(<FindingDrawer finding={richFinding} runId="r1" onClose={vi.fn()} />);
 
-    // rule-derived → emerald (pass)
     const ruleItem = screen
       .getByText("Failed — expected status 500; checks status")
       .closest("li")!;
     expect(within(ruleItem).getByText("Rule-derived")).toHaveClass("bg-status-pass-bg");
     expect(within(ruleItem).getByText("ev/trace-1.zip")).toBeInTheDocument();
 
-    // characterization → amber (flaky)
     const charItem = screen.getByText("Failed — checks body").closest("li")!;
     expect(within(charItem).getByText("Characterization")).toHaveClass(
       "bg-status-flaky-bg",
     );
 
-    // spec-grounded → blue (info)
     const specItem = screen
       .getByText("Errored — no recorded expectation")
       .closest("li")!;
@@ -120,7 +120,7 @@ describe("FindingDrawer", () => {
   });
 
   it("renders the history classification and occurrence count", () => {
-    render(<FindingDrawer finding={richFinding} onClose={vi.fn()} />);
+    render(<FindingDrawer finding={richFinding} runId="r1" onClose={vi.fn()} />);
 
     expect(screen.getByText(/Regression — it had cleared/)).toBeInTheDocument();
     expect(screen.getByText(/seen in 3 runs/)).toBeInTheDocument();
@@ -130,27 +130,94 @@ describe("FindingDrawer", () => {
   });
 
   it("does not show any 'not exposed yet' flags for the now-exposed fields", () => {
-    render(<FindingDrawer finding={richFinding} onClose={vi.fn()} />);
+    render(<FindingDrawer finding={richFinding} runId="r1" onClose={vi.fn()} />);
 
     expect(screen.queryByText(/exposed/i)).toBeNull();
     expect(screen.queryByText(/run-by-run timeline/i)).toBeNull();
   });
 
   it("degrades gracefully when detail fields are absent, without stale flags", () => {
-    render(<FindingDrawer finding={bareFinding} onClose={vi.fn()} />);
+    render(<FindingDrawer finding={bareFinding} runId="r1" onClose={vi.fn()} />);
 
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    // Ribbon still degrades to the failing node parsed from the key.
     expect(screen.getByText("POST api/cart")).toBeInTheDocument();
     expect(screen.getByText(/showing the failing node/i)).toBeInTheDocument();
-    // Evidence + history degrade with plain language, not "not exposed yet".
     expect(screen.getByText(/No failing assertions are recorded/i)).toBeInTheDocument();
     expect(screen.getByText(/first seen in this run/i)).toBeInTheDocument();
     expect(screen.queryByText(/exposed/i)).toBeNull();
   });
 
+  // --- triage actions (ADR-0027) -------------------------------------------
+
+  it("fires a triage PATCH with the note and reflects the disposition", async () => {
+    const updated: Finding = {
+      ...richFinding,
+      triage: { status: "wont_fix", note: "dup of #12", triaged_at: "2026-06-20T10:00:00Z" },
+    };
+    vi.mocked(runApi.triage).mockResolvedValue({ ok: true, status: 200, data: updated });
+    const onTriaged = vi.fn();
+
+    render(
+      <FindingDrawer
+        finding={richFinding}
+        runId="r99"
+        onClose={vi.fn()}
+        onTriaged={onTriaged}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Note (optional)"), {
+      target: { value: "dup of #12" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Won't fix" }));
+
+    await waitFor(() =>
+      expect(runApi.triage).toHaveBeenCalledWith("r99", "a", {
+        status: "wont_fix",
+        note: "dup of #12",
+      }),
+    );
+    // Reflects the saved disposition (button active + triaged_at shown).
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Won't fix" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
+    );
+    expect(screen.getByText(/Triaged/)).toBeInTheDocument();
+    expect(onTriaged).toHaveBeenCalledWith(updated);
+  });
+
+  it("shows the current disposition + triaged_at for an already-triaged finding", () => {
+    const triaged: Finding = {
+      ...richFinding,
+      triage: { status: "acknowledged", note: null, triaged_at: "2026-06-20T10:00:00Z" },
+    };
+    render(<FindingDrawer finding={triaged} runId="r1" onClose={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "Acknowledge" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByText(/Triaged/)).toBeInTheDocument();
+  });
+
+  it("surfaces an error when the triage PATCH fails", async () => {
+    vi.mocked(runApi.triage).mockResolvedValue({
+      ok: false,
+      status: 500,
+      data: null,
+      error: "Server boom",
+    });
+
+    render(<FindingDrawer finding={richFinding} runId="r1" onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Resolved" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Server boom");
+  });
+
   it("toggles collapsible sections", () => {
-    render(<FindingDrawer finding={richFinding} onClose={vi.fn()} />);
+    render(<FindingDrawer finding={richFinding} runId="r1" onClose={vi.fn()} />);
 
     const header = screen.getByRole("button", { name: "Confidence" });
     expect(screen.getByText(/Rule-derived — this breaks/)).toBeInTheDocument();
@@ -164,7 +231,7 @@ describe("FindingDrawer", () => {
 
   it("closes on Escape and moves focus to the close button on open", () => {
     const onClose = vi.fn();
-    render(<FindingDrawer finding={richFinding} onClose={onClose} />);
+    render(<FindingDrawer finding={richFinding} runId="r1" onClose={onClose} />);
 
     expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
 
@@ -180,7 +247,11 @@ describe("FindingDrawer", () => {
           <button type="button" onClick={() => setFinding(richFinding)}>
             Open
           </button>
-          <FindingDrawer finding={finding} onClose={() => setFinding(null)} />
+          <FindingDrawer
+            finding={finding}
+            runId="r1"
+            onClose={() => setFinding(null)}
+          />
         </>
       );
     }
