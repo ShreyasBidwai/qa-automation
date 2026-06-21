@@ -12,11 +12,14 @@ from .finding_result import FindingResult
 from .finding_triage import FindingTriage
 from .model_edge import ModelEdge
 from .model_node import ModelNode
+from .password_reset_token import PasswordResetToken
 from .project import Project
 from .result import Result
 from .run import Run
 from .test_case import TestCase
 from .test_script import TestScript
+from .user import User
+from .user_session import UserSession
 
 __all__ = [
     "Base",
@@ -32,4 +35,7 @@ __all__ = [
     "Finding",
     "FindingResult",
     "FindingTriage",
+    "User",
+    "UserSession",
+    "PasswordResetToken",
 ]

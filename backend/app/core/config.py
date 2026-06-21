@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     # --- Graceful shutdown ---
     shutdown_drain_timeout_seconds: float = 30.0
 
+    # --- Authentication (B2; ADR-0030) ----------------------------------------
+    # Server-side opaque sessions: a bearer token (hashed at rest) valid for this
+    # long; password-reset tokens are single-use and short-lived.
+    session_ttl_seconds: int = 1_209_600  # 14 days
+    password_reset_ttl_seconds: int = 3_600  # 1 hour
+
     # --- Run / ingest composition (packaging; docs/running.md) ----------------
     # What the API's run-executor and ingestor ports resolve to at server start
     # (composed in app.__main__, NOT create_app — tests stub the ports per-test).

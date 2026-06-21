@@ -48,6 +48,24 @@ class InvalidCaseSpecError(ServiceError):
     """
 
 
+class EmailAlreadyRegisteredError(ServiceError):
+    """Sign-up with an email that already has an account. Boundary → 409."""
+
+
+class InvalidCredentialsError(ServiceError):
+    """Sign-in with an unknown email or wrong password. Boundary → 401.
+
+    Deliberately does not distinguish the two cases (no account enumeration).
+    """
+
+
+class InvalidResetTokenError(ServiceError):
+    """A password-reset token is unknown, already used, or expired. → 400.
+
+    Single error for all three so a caller cannot probe token validity/state.
+    """
+
+
 class ProposalAlreadyResolvedError(ServiceError):
     """A proposal was accepted/rejected but is no longer pending.
 

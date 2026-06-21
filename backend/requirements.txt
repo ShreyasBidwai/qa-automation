@@ -12,3 +12,6 @@ pydantic-settings==2.6.1
 # (the `vector` extension itself is enabled in migration 0001). Pure-Python,
 # light — the heavy fastembed runtime lives in requirements-embed.txt.
 pgvector==0.3.6
+# Password hashing (B2 auth): argon2id — memory-hard, modern, no bcrypt 72-byte
+# truncation (ADR-0030). Ships manylinux wheels (cffi); installs in the slim image.
+argon2-cffi==23.1.0

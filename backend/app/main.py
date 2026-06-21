@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from .api.auth import router as auth_router
 from .api.findings import router as findings_router
 from .api.health import router as health_router
 from .api.jobs import JobRegistry
@@ -17,6 +18,7 @@ from .core.config import get_settings
 from .core.errors import register_exception_handlers
 from .core.lifespan import lifespan
 from .middleware.request_id import RequestIdMiddleware
+from .services.mailer import build_mailer
 
 
 def create_app() -> FastAPI:
@@ -34,10 +36,14 @@ def create_app() -> FastAPI:
     app.state.jobs = JobRegistry()
     app.state.run_executor = None
     app.state.ingestor = None
+    # Transactional mailer (B2): the dev stub logs the reset link; a test overrides
+    # this to capture it. Real SMTP is composed in later (no creds needed to boot).
+    app.state.mailer = build_mailer()
 
     # Liveness/readiness are unversioned, top-level endpoints (TRD §4).
     app.include_router(health_router)
-    # Versioned API (`/api/v1`): project config, ingest, runs, findings.
+    # Versioned API (`/api/v1`): auth, project config, ingest, runs, findings.
+    app.include_router(auth_router)
     app.include_router(projects_router)
     app.include_router(runs_router)
     app.include_router(findings_router)

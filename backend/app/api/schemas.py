@@ -11,7 +11,21 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AfterValidator, BaseModel, Field, model_validator
+
+
+def _normalize_email(value: str) -> str:
+    value = value.strip().lower()
+    if "@" not in value or "." not in value.rsplit("@", 1)[-1]:
+        raise ValueError("invalid email address")
+    return value
+
+
+# A lower-cased, lightly-validated email (no extra dependency; format is not the
+# security boundary — the reset flow only matches stored records).
+Email = Annotated[
+    str, Field(min_length=3, max_length=320), AfterValidator(_normalize_email)
+]
 
 
 class ProjectCreate(BaseModel):
@@ -46,6 +60,42 @@ class ProjectResponse(BaseModel):
     auth_config_ref: str | None
     stack: str | None = None
     created_at: datetime
+
+
+# --- auth (B2) --------------------------------------------------------------
+
+
+class SignUpRequest(BaseModel):
+    email: Email
+    password: str = Field(min_length=8, max_length=128)
+
+
+class SignInRequest(BaseModel):
+    email: Email
+    password: str = Field(min_length=1, max_length=128)
+
+
+class UserResponse(BaseModel):
+    id: uuid.UUID
+    email: str
+    created_at: datetime
+
+
+class AuthTokenResponse(BaseModel):
+    """Sign-up / sign-in result: the bearer token + the authenticated user."""
+
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+
+
+class PasswordResetRequestBody(BaseModel):
+    email: Email
+
+
+class PasswordResetConfirmBody(BaseModel):
+    token: str = Field(min_length=1, max_length=512)
+    password: str = Field(min_length=8, max_length=128)
 
 
 class IngestResponse(BaseModel):
