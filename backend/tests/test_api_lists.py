@@ -28,9 +28,23 @@ async def _clear_projects(app: FastAPI) -> None:
         await session.commit()
 
 
-async def _seed_project(app: FastAPI, *, name: str, hour: int) -> uuid.UUID:
+async def _personal_org_id(client: AsyncClient) -> uuid.UUID:
+    """The authed user's personal org — projects must live in an org they're in
+    (B3, ADR-0032/0033) for the list/run endpoints to return them."""
+    body = (await client.get("/api/v1/orgs")).json()
+    for org in body["items"]:
+        if org["is_personal"]:
+            return uuid.UUID(org["id"])
+    raise AssertionError("authed user has no personal org")
+
+
+async def _seed_project(
+    app: FastAPI, *, name: str, hour: int, org_id: uuid.UUID
+) -> uuid.UUID:
     async with app.state.sessionmaker() as session:
-        project = make_project(name=name, created_at=_BASE + timedelta(hours=hour))
+        project = make_project(
+            name=name, org_id=org_id, created_at=_BASE + timedelta(hours=hour)
+        )
         session.add(project)
         await session.flush()
         project_id = project.id
@@ -85,9 +99,10 @@ async def test_list_projects_newest_first(
 ) -> None:
     client, app = authed_client
     await _clear_projects(app)
-    await _seed_project(app, name="Alpha", hour=1)
-    await _seed_project(app, name="Beta", hour=2)
-    await _seed_project(app, name="Gamma", hour=3)
+    org_id = await _personal_org_id(client)
+    await _seed_project(app, name="Alpha", hour=1, org_id=org_id)
+    await _seed_project(app, name="Beta", hour=2, org_id=org_id)
+    await _seed_project(app, name="Gamma", hour=3, org_id=org_id)
 
     body = (await client.get("/api/v1/projects")).json()
     assert [item["name"] for item in body["items"]] == ["Gamma", "Beta", "Alpha"]
@@ -99,8 +114,9 @@ async def test_list_projects_pagination_and_bounds(
 ) -> None:
     client, app = authed_client
     await _clear_projects(app)
+    org_id = await _personal_org_id(client)
     for hour, name in [(1, "P1"), (2, "P2"), (3, "P3")]:
-        await _seed_project(app, name=name, hour=hour)
+        await _seed_project(app, name=name, hour=hour, org_id=org_id)
 
     page1 = (await client.get("/api/v1/projects?limit=2")).json()
     assert [item["name"] for item in page1["items"]] == ["P3", "P2"]
@@ -122,8 +138,9 @@ async def test_list_project_runs_newest_first_and_scoped(
     authed_client: tuple[AsyncClient, FastAPI],
 ) -> None:
     client, app = authed_client
-    project_a = await _seed_project(app, name="A", hour=1)
-    project_b = await _seed_project(app, name="B", hour=1)
+    org_id = await _personal_org_id(client)
+    project_a = await _seed_project(app, name="A", hour=1, org_id=org_id)
+    project_b = await _seed_project(app, name="B", hour=1, org_id=org_id)
     r1 = await _seed_run(app, project_a, hour=1)
     r2 = await _seed_run(app, project_a, hour=2)
     r3 = await _seed_run(app, project_a, hour=3)
@@ -153,7 +170,8 @@ async def test_list_project_runs_pass_rate(
     authed_client: tuple[AsyncClient, FastAPI],
 ) -> None:
     client, app = authed_client
-    project_id = await _seed_project(app, name="PR", hour=1)
+    org_id = await _personal_org_id(client)
+    project_id = await _seed_project(app, name="PR", hour=1, org_id=org_id)
     scored = await _seed_run(
         app, project_id, hour=2, outcomes=[Outcome.PASS, Outcome.PASS, Outcome.FAIL]
     )
@@ -173,7 +191,8 @@ async def test_list_project_runs_pagination(
     authed_client: tuple[AsyncClient, FastAPI],
 ) -> None:
     client, app = authed_client
-    project_id = await _seed_project(app, name="Pager", hour=1)
+    org_id = await _personal_org_id(client)
+    project_id = await _seed_project(app, name="Pager", hour=1, org_id=org_id)
     r1 = await _seed_run(app, project_id, hour=1)
     r2 = await _seed_run(app, project_id, hour=2)
     r3 = await _seed_run(app, project_id, hour=3)

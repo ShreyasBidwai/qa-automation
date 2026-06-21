@@ -14,8 +14,9 @@ grouped per ``(project, latest_run)``.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 
-from sqlalchemy import or_, select, tuple_
+from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import TriageStatus
@@ -49,13 +50,16 @@ class OpenFindingsReader:
         self._session = session
 
     async def latest_run_ids(
-        self, project_id: uuid.UUID | None, accessor_id: uuid.UUID | None = None
+        self,
+        project_id: uuid.UUID | None,
+        org_ids: Sequence[uuid.UUID] | None = None,
     ) -> list[uuid.UUID]:
-        """The single most-recent run id per (live, accessible) project.
+        """The single most-recent run id per (live, in-scope) project.
 
         One ``DISTINCT ON``. Scoped to one project when ``project_id`` is given,
-        else all live projects; an ``accessor_id`` restricts to projects the user
-        can access — unowned or owned by them (ADR-0031).
+        else all live projects; ``org_ids`` restricts to projects in those orgs —
+        the orgs the caller may VIEW (ADR-0032/0033). ``org_ids=None`` skips the
+        org filter (trusted internal callers only).
         """
         stmt = (
             select(Run.id)
@@ -66,10 +70,8 @@ class OpenFindingsReader:
         )
         if project_id is not None:
             stmt = stmt.where(Run.project_id == project_id)
-        if accessor_id is not None:
-            stmt = stmt.where(
-                or_(Project.owner_id.is_(None), Project.owner_id == accessor_id)
-            )
+        if org_ids is not None:
+            stmt = stmt.where(Project.org_id.in_(org_ids))
         return list((await self._session.scalars(stmt)).all())
 
     async def open_findings(
@@ -78,15 +80,15 @@ class OpenFindingsReader:
         *,
         limit: int,
         offset: int,
-        accessor_id: uuid.UUID | None = None,
+        org_ids: Sequence[uuid.UUID] | None = None,
     ) -> tuple[list[OpenFinding], int]:
         """A severity-ranked page of currently-open findings + the total.
 
         Batched: one DISTINCT-ON for latest runs, one findings read, one triage
         read — constant statements regardless of finding count (no N+1). Scoped to
-        the accessor's accessible projects when ``accessor_id`` is given.
+        the caller's viewable orgs when ``org_ids`` is given (ADR-0033).
         """
-        run_ids = await self.latest_run_ids(project_id, accessor_id)
+        run_ids = await self.latest_run_ids(project_id, org_ids)
         if not run_ids:
             return [], 0
 

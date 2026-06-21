@@ -22,9 +22,12 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.permissions import Permission
 from app.models.project import Project
+from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.project_repository import ProjectRepository
 
+from .authz import authorize_org, authorize_project
 from .deps import CurrentUser, get_ingestor, get_jobs, get_session
 from .jobs import JobKind, JobRegistry, run_ingest_job
 from .ports import Ingestor
@@ -66,11 +69,25 @@ async def create_project(
     current_user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> ProjectResponse:
+    # Target org: the named one, else the caller's personal org (ADR-0032). The
+    # caller must have MANAGE_PROJECT there (404 if not a member, 403 if viewer).
+    if body.org_id is not None:
+        org_id = body.org_id
+    else:
+        personal = await OrganizationRepository(session).get_personal_org(
+            current_user.id
+        )
+        if personal is None:  # every user gets one on signup; defensive
+            raise HTTPException(status_code=409, detail="no personal organization")
+        org_id = personal.id
+    await authorize_org(session, org_id, current_user, Permission.MANAGE_PROJECT)
+
     project = Project(
         name=body.name,
         slug=_slug(body.name),
         app_url=body.app_url,  # first-class column (Sprint B1)
-        owner_id=current_user.id,  # created owned (ADR-0031)
+        org_id=org_id,  # org-scoped (ADR-0032)
+        created_by=current_user.id,  # provenance only
         settings={
             "repo_url": body.repo_url,
             "auth_config_ref": body.auth_config_ref,
@@ -101,11 +118,12 @@ async def list_projects(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ProjectListResponse:
+    org_ids = await OrganizationRepository(session).member_org_ids(current_user.id)
     repo = ProjectRepository(session)
-    projects = await repo.list(limit=limit, offset=offset, accessor_id=current_user.id)
+    projects = await repo.list(limit=limit, offset=offset, org_ids=org_ids)
     return ProjectListResponse(
         items=[_project_list_item(project) for project in projects],
-        total=await repo.count(accessor_id=current_user.id),
+        total=await repo.count(org_ids=org_ids),
         limit=limit,
         offset=offset,
     )
@@ -117,9 +135,9 @@ async def get_project(
     current_user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> ProjectResponse:
-    project = await ProjectRepository(session).get(project_id, current_user.id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="project not found")
+    project = await authorize_project(
+        session, project_id, current_user, Permission.VIEW
+    )
     return _project_response(project)
 
 
@@ -136,10 +154,9 @@ async def update_project(
     null to clear them; ``name`` / ``repo_url`` are required-if-present (a null is
     ignored rather than nulling a needed field).
     """
-    repo = ProjectRepository(session)
-    project = await repo.get(project_id, current_user.id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="project not found")
+    project = await authorize_project(
+        session, project_id, current_user, Permission.MANAGE_PROJECT
+    )
 
     changes = body.model_dump(exclude_unset=True)
     if changes.get("name") is not None:
@@ -166,8 +183,10 @@ async def delete_project(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> Response:
     """Soft-delete a project (ADR-0029): hidden from reads, history preserved."""
-    if not await ProjectRepository(session).soft_delete(project_id, current_user.id):
-        raise HTTPException(status_code=404, detail="project not found")
+    await authorize_project(
+        session, project_id, current_user, Permission.MANAGE_PROJECT
+    )
+    await ProjectRepository(session).soft_delete(project_id)
     return Response(status_code=204)
 
 
@@ -183,8 +202,7 @@ async def ingest(
     jobs: Annotated[JobRegistry, Depends(get_jobs)],
     ingestor: Annotated[Ingestor, Depends(get_ingestor)],
 ) -> IngestResponse:
-    if await ProjectRepository(session).get(project_id, current_user.id) is None:
-        raise HTTPException(status_code=404, detail="project not found")
+    await authorize_project(session, project_id, current_user, Permission.RUN)
     job = jobs.create(kind=JobKind.INGEST, project_id=project_id)
     background_tasks.add_task(
         run_ingest_job,

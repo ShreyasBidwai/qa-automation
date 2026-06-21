@@ -12,18 +12,20 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_, select
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.permissions import Permission, role_can
 from app.models.enums import TriageStatus
 from app.models.finding import Finding
 from app.models.project import Project
 from app.reporting import FindingDetail, FindingDetailReader, OpenFinding
 from app.reporting.open_findings import OpenFindingsReader
 from app.repositories.finding_triage_repository import FindingTriageRepository
-from app.repositories.project_repository import ProjectRepository
+from app.repositories.organization_repository import OrganizationRepository
 
+from .authz import authorize_project
 from .deps import CurrentUser, get_session
 from .finding_view import build_finding_response
 from .schemas import (
@@ -70,9 +72,10 @@ async def list_open_findings(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> OpenFindingsResponse:
-    """The global inbox: what's broken across the user's accessible projects."""
+    """The global inbox: what's broken across the user's viewable orgs (ADR-0033)."""
+    org_ids = await OrganizationRepository(session).member_org_ids(current_user.id)
     page, total = await OpenFindingsReader(session).open_findings(
-        None, limit=limit, offset=offset, accessor_id=current_user.id
+        None, limit=limit, offset=offset, org_ids=org_ids
     )
     return OpenFindingsResponse(
         items=await _enrich(session, page), total=total, limit=limit, offset=offset
@@ -88,10 +91,9 @@ async def list_project_open_findings(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> OpenFindingsResponse:
     """The currently-open findings for one project (404 if unknown/inaccessible)."""
-    if await ProjectRepository(session).get(project_id, current_user.id) is None:
-        raise HTTPException(status_code=404, detail="project not found")
+    await authorize_project(session, project_id, current_user, Permission.VIEW)
     page, total = await OpenFindingsReader(session).open_findings(
-        project_id, limit=limit, offset=offset, accessor_id=current_user.id
+        project_id, limit=limit, offset=offset
     )
     return OpenFindingsResponse(
         items=await _enrich(session, page), total=total, limit=limit, offset=offset
@@ -106,11 +108,20 @@ async def bulk_triage(
 ) -> BulkTriageResponse:
     """Apply one disposition to many findings (ADR-0027/0028). Bad status → 422.
 
-    Partial failure: ids that don't exist *or aren't in an accessible project*
-    (ADR-0031) are reported in ``not_found`` while the valid ones are still triaged
-    (200). Findings are resolved to their ``(project_id, root_cause_key)`` and
-    deduped, so N ids touching one issue is a single upsert.
+    Partial failure: ids that don't exist *or are in a project the caller can't
+    triage* (not a member, or a viewer — ADR-0033) are reported in ``not_found``
+    while the valid ones are still triaged (200). Findings are resolved to their
+    ``(project_id, root_cause_key)`` and deduped, so N ids touching one issue is a
+    single upsert.
     """
+    # The orgs where the caller's role permits TRIAGE (owner/admin/member).
+    triage_org_ids = [
+        org.id
+        for org, role in await OrganizationRepository(session).list_orgs_for_user(
+            current_user.id
+        )
+        if role_can(role, Permission.TRIAGE)
+    ]
     rows = (
         await session.execute(
             select(Finding.id, Finding.project_id, Finding.root_cause_key)
@@ -118,10 +129,7 @@ async def bulk_triage(
             .where(
                 Finding.id.in_(body.finding_ids),
                 Project.deleted_at.is_(None),
-                or_(
-                    Project.owner_id.is_(None),
-                    Project.owner_id == current_user.id,
-                ),
+                Project.org_id.in_(triage_org_ids),
             )
         )
     ).all()

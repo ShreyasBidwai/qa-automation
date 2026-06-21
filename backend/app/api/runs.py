@@ -13,14 +13,16 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.permissions import Permission
 from app.models.enums import Outcome, TriageStatus
+from app.models.user import User
 from app.reporting import FindingDetailReader, rank_findings
 from app.repositories.finding_repository import FindingRepository
 from app.repositories.finding_triage_repository import FindingTriageRepository
-from app.repositories.project_repository import ProjectRepository
 from app.repositories.result_repository import ResultRepository
 from app.repositories.run_repository import RunRepository
 
+from .authz import authorize_project
 from .deps import CurrentUser, get_jobs, get_run_executor, get_session
 from .finding_view import build_finding_response
 from .jobs import Job, JobKind, JobRegistry, run_run_job
@@ -48,19 +50,23 @@ def _pass_rate(counts: dict[Outcome, int] | None) -> float | None:
     return round(counts.get(Outcome.PASS, 0) / total, 4)
 
 
-async def _owned_run_job(
+async def _authorized_run_job(
     run_id: uuid.UUID,
     *,
     jobs: JobRegistry,
     session: AsyncSession,
-    user_id: uuid.UUID,
+    user: User,
+    permission: Permission,
 ) -> Job:
-    """Resolve a RUN job whose project the user can access, else 404 (ADR-0031)."""
+    """Resolve a RUN job and RBAC-check its project (ADR-0033).
+
+    404 for an unknown run OR a non-member of the project's org (existence not
+    leaked); 403 if the caller is in the org but the role lacks ``permission``.
+    """
     job = jobs.get(run_id)
     if job is None or job.kind is not JobKind.RUN:
         raise HTTPException(status_code=404, detail="run not found")
-    if await ProjectRepository(session).get(job.project_id, user_id) is None:
-        raise HTTPException(status_code=404, detail="run not found")
+    await authorize_project(session, job.project_id, user, permission)
     return job
 
 
@@ -75,8 +81,7 @@ async def create_run(
     jobs: Annotated[JobRegistry, Depends(get_jobs)],
     executor: Annotated[RunExecutor, Depends(get_run_executor)],
 ) -> RunResponse:
-    if await ProjectRepository(session).get(project_id, current_user.id) is None:
-        raise HTTPException(status_code=404, detail="project not found")
+    await authorize_project(session, project_id, current_user, Permission.RUN)
     run_request = to_run_request(body)
     job = jobs.create(kind=JobKind.RUN, project_id=project_id, mode=body.mode)
     background_tasks.add_task(
@@ -99,8 +104,7 @@ async def list_project_runs(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> RunListResponse:
-    if await ProjectRepository(session).get(project_id, current_user.id) is None:
-        raise HTTPException(status_code=404, detail="project not found")
+    await authorize_project(session, project_id, current_user, Permission.VIEW)
     run_repo = RunRepository(session)
     runs = await run_repo.list_for_project(project_id, limit=limit, offset=offset)
     counts = await ResultRepository(session).outcome_counts_for_runs(
@@ -131,8 +135,12 @@ async def get_run(
     session: Annotated[AsyncSession, Depends(get_session)],
     jobs: Annotated[JobRegistry, Depends(get_jobs)],
 ) -> RunStatusResponse:
-    job = await _owned_run_job(
-        run_id, jobs=jobs, session=session, user_id=current_user.id
+    job = await _authorized_run_job(
+        run_id,
+        jobs=jobs,
+        session=session,
+        user=current_user,
+        permission=Permission.VIEW,
     )
     return RunStatusResponse(
         run_id=job.id,
@@ -149,8 +157,12 @@ async def get_run_findings(
     session: Annotated[AsyncSession, Depends(get_session)],
     jobs: Annotated[JobRegistry, Depends(get_jobs)],
 ) -> FindingsResponse:
-    job = await _owned_run_job(
-        run_id, jobs=jobs, session=session, user_id=current_user.id
+    job = await _authorized_run_job(
+        run_id,
+        jobs=jobs,
+        session=session,
+        user=current_user,
+        permission=Permission.VIEW,
     )
     if job.run_id is None:  # not executed yet, or an authoring (mode_c) run
         return FindingsResponse(run_id=run_id, count=0, findings=[])
@@ -182,11 +194,15 @@ async def triage_finding(
     """Set a finding's triage disposition, keyed by its root_cause_key (ADR-0027).
 
     The disposition follows the logical issue, not this run's row, so a later run
-    producing the same root_cause_key inherits it. Bad status → 422 (schema);
-    unknown finding → 404.
+    producing the same root_cause_key inherits it. Requires the TRIAGE permission
+    (a viewer is denied → 403); bad status → 422 (schema); unknown finding → 404.
     """
-    job = await _owned_run_job(
-        run_id, jobs=jobs, session=session, user_id=current_user.id
+    job = await _authorized_run_job(
+        run_id,
+        jobs=jobs,
+        session=session,
+        user=current_user,
+        permission=Permission.TRIAGE,
     )
     if job.run_id is None:
         raise HTTPException(status_code=404, detail="run not found")

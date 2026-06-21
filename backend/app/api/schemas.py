@@ -29,13 +29,18 @@ Email = Annotated[
 
 
 class ProjectCreate(BaseModel):
-    """Register a project: its repo source, running app, and auth config ref."""
+    """Register a project: its repo source, running app, and auth config ref.
+
+    ``org_id`` chooses the owning team (ADR-0032); omit it to use the caller's
+    personal org. The caller must have ``MANAGE_PROJECT`` in the target org.
+    """
 
     name: str = Field(min_length=1, max_length=255)
     repo_url: str = Field(min_length=1, max_length=2048)
     app_url: str | None = Field(default=None, max_length=2048)
     auth_config_ref: str | None = Field(default=None, max_length=512)
     stack: str | None = Field(default=None, max_length=64)
+    org_id: uuid.UUID | None = None
 
 
 class ProjectUpdate(BaseModel):
@@ -78,6 +83,7 @@ class SignInRequest(BaseModel):
 class UserResponse(BaseModel):
     id: uuid.UUID
     email: str
+    name: str | None = None
     created_at: datetime
 
 
@@ -96,6 +102,95 @@ class PasswordResetRequestBody(BaseModel):
 class PasswordResetConfirmBody(BaseModel):
     token: str = Field(min_length=1, max_length=512)
     password: str = Field(min_length=8, max_length=128)
+
+
+# --- account profile (B3) ---------------------------------------------------
+
+
+class ProfileUpdate(BaseModel):
+    """Partial account-profile update (PATCH /auth/me). Only provided fields change.
+
+    ``name`` may be sent as null to clear it; ``email`` (if provided) must be valid
+    and unused.
+    """
+
+    name: str | None = Field(default=None, max_length=255)
+    email: Email | None = None
+
+
+class ChangePasswordBody(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+# --- organizations / membership / invites (B3, ADR-0032/0033) ---------------
+
+# The role names on the wire (the OrgRole enum values).
+OrgRoleName = Literal["owner", "admin", "member", "viewer"]
+
+
+class OrgCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+
+
+class OrgResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    is_personal: bool
+    role: OrgRoleName  # the caller's role in this org
+    created_at: datetime
+
+
+class OrgListResponse(BaseModel):
+    items: list[OrgResponse]
+    total: int
+
+
+class MemberResponse(BaseModel):
+    user_id: uuid.UUID
+    email: str
+    name: str | None = None
+    role: OrgRoleName
+    created_at: datetime  # when they joined the org
+
+
+class MemberListResponse(BaseModel):
+    items: list[MemberResponse]
+    total: int
+
+
+class RoleUpdate(BaseModel):
+    role: OrgRoleName
+
+
+class InviteCreate(BaseModel):
+    email: Email
+    role: OrgRoleName = "member"
+
+
+class InviteResponse(BaseModel):
+    """A pending/accepted invite — deliberately WITHOUT the token (ADR-0033)."""
+
+    id: uuid.UUID
+    email: str
+    role: OrgRoleName
+    expires_at: datetime
+    accepted_at: datetime | None = None
+    created_at: datetime
+
+
+class InviteListResponse(BaseModel):
+    items: list[InviteResponse]
+    total: int
+
+
+class InviteAccept(BaseModel):
+    token: str = Field(min_length=1, max_length=512)
+
+
+class InviteAcceptResponse(BaseModel):
+    org_id: uuid.UUID
+    role: OrgRoleName
 
 
 class IngestResponse(BaseModel):

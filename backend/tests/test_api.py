@@ -39,6 +39,7 @@ from app.models.enums import (
 from app.models.finding import Finding
 from app.models.finding_result import FindingResult
 from app.models.model_node import ModelNode
+from app.models.organization import Organization
 from app.models.project import Project
 from app.modes.selection import SelectionStrategyKind, Target
 from app.repositories.finding_repository import FindingRepository
@@ -771,24 +772,29 @@ async def test_project_ownership_is_enforced(
     assert patched.status_code == 404
 
 
-async def test_legacy_unowned_project_is_shared(
+async def test_project_in_foreign_org_is_404(
     authed_client: tuple[AsyncClient, FastAPI],
 ) -> None:
-    """Migration preserves data: a pre-auth (owner_id NULL) project stays reachable."""
+    """Org tenancy (ADR-0032/0033): a project in an org the caller does NOT belong
+    to is 404 — existence is not leaked. (The legacy NULL-owner → Legacy-org
+    migration is covered in test_org_migration.py.)"""
     client, app = authed_client
     async with app.state.sessionmaker() as session:
+        org = Organization(name="Foreign", is_personal=False)
+        session.add(org)
+        await session.flush()
         project = Project(
-            name="Legacy",
-            slug=f"legacy-{uuid.uuid4().hex[:8]}",
-            settings={"repo_url": "https://git/legacy.git"},
+            name="Foreign",
+            slug=f"foreign-{uuid.uuid4().hex[:8]}",
+            org_id=org.id,
+            settings={"repo_url": "https://git/foreign.git"},
         )
         session.add(project)
         await session.flush()
         project_id = project.id
         await session.commit()
-    assert project.owner_id is None  # unowned (legacy)
     got = await client.get(f"/api/v1/projects/{project_id}")
-    assert got.status_code == 200  # any signed-in user can access shared/legacy data
+    assert got.status_code == 404  # not a member of the project's org → leak-safe
 
 
 # --- the real OrchestratorRunExecutor wiring (stub collaborators) ------------
