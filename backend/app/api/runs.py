@@ -25,10 +25,10 @@ from app.repositories.run_repository import RunRepository
 from app.services.job_queue import JobQueue
 
 from .authz import authorize_project
-from .deps import CurrentUser, get_run_executor, get_session
+from .deps import CurrentUser, get_session
 from .finding_view import build_finding_response
 from .jobs import dispatch_job
-from .ports import RunExecutor, run_request_to_payload, to_run_request
+from .ports import run_request_to_payload, to_run_request
 from .schemas import (
     FindingResponse,
     FindingsResponse,
@@ -79,7 +79,6 @@ async def create_run(
     request: Request,
     background_tasks: BackgroundTasks,
     session: Annotated[AsyncSession, Depends(get_session)],
-    executor: Annotated[RunExecutor, Depends(get_run_executor)],
 ) -> RunResponse:
     await authorize_project(session, project_id, current_user, Permission.RUN)
     run_request = to_run_request(body)
@@ -93,15 +92,19 @@ async def create_run(
         payload=run_request_to_payload(run_request),
         max_attempts=1,
     )
-    # Commit now so the durable row is visible to the dispatch task (which runs in
-    # its own session, possibly before the request session's own commit).
+    # Commit now so the durable row is visible to whoever executes it.
     await session.commit()
-    background_tasks.add_task(
-        dispatch_job,
-        sessionmaker=request.app.state.sessionmaker,
-        job_id=job.id,
-        executor=executor,
-    )
+    # Decoupled topology (B5, ADR-0036): only dispatch in-process if THIS node
+    # carries an executor (single-box stub). The slim/control-plane backend has
+    # none — the run stays queued for a toolchain-present runner worker to claim.
+    executor = getattr(request.app.state, "run_executor", None)
+    if executor is not None:
+        background_tasks.add_task(
+            dispatch_job,
+            sessionmaker=request.app.state.sessionmaker,
+            job_id=job.id,
+            executor=executor,
+        )
     return RunResponse(run_id=job.id, status=job.status.value)
 
 

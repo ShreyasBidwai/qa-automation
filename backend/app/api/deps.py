@@ -18,8 +18,6 @@ from app.models.user import User
 from app.repositories.session_repository import SessionRepository
 from app.repositories.user_repository import UserRepository
 
-from .ports import Ingestor, RunExecutor
-
 # 401 with the standard challenge header — the same body for every auth failure so
 # nothing leaks why (no account / bad token / expired all look identical).
 _UNAUTHENTICATED = HTTPException(
@@ -90,17 +88,3 @@ async def get_operator_user(
 
 
 OperatorUser = Annotated[User, Depends(get_operator_user)]
-
-
-def get_run_executor(request: Request) -> RunExecutor:
-    executor: RunExecutor | None = getattr(request.app.state, "run_executor", None)
-    if executor is None:
-        raise HTTPException(status_code=503, detail="run executor not configured")
-    return executor
-
-
-def get_ingestor(request: Request) -> Ingestor:
-    ingestor: Ingestor | None = getattr(request.app.state, "ingestor", None)
-    if ingestor is None:
-        raise HTTPException(status_code=503, detail="ingestor not configured")
-    return ingestor

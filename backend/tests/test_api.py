@@ -482,25 +482,33 @@ async def test_runs_and_findings_are_project_scoped(
     assert findings_a["findings"][0]["id"] != findings_b["findings"][0]["id"]
 
 
-async def test_run_executor_not_configured_is_503(
+async def test_slim_backend_enqueues_run_without_a_local_executor(
     authed_client: tuple[AsyncClient, FastAPI],
 ) -> None:
+    """B5 (ADR-0036): the toolchain-free control plane still enqueues a run — it is
+    not dispatched in-process (no executor), it stays queued for a runner worker."""
     client, _ = authed_client  # no api fixture → run_executor stays None
     project = await _create_project(client)
     resp = await client.post(
         f"/api/v1/projects/{project['id']}/runs",
         json={"mode": "mode_b", "strategy": "full_sweep"},
     )
-    assert resp.status_code == 503
+    assert resp.status_code == 202
+    job_id = resp.json()["run_id"]
+    # No local executor ran it → it is durably queued, awaiting a worker.
+    status = await client.get(f"/api/v1/runs/{job_id}")
+    assert status.json()["status"] == "queued"
 
 
-async def test_ingestor_not_configured_is_503(
+async def test_slim_backend_enqueues_ingest_without_a_local_ingestor(
     authed_client: tuple[AsyncClient, FastAPI],
 ) -> None:
     client, _ = authed_client
     project = await _create_project(client)
     resp = await client.post(f"/api/v1/projects/{project['id']}/ingest")
-    assert resp.status_code == 503
+    assert resp.status_code == 202
+    status = await client.get(f"/api/v1/jobs/{resp.json()['job_id']}")
+    assert status.json()["status"] == "queued"
 
 
 class _Failing:

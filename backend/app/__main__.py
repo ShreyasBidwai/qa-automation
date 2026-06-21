@@ -56,8 +56,18 @@ def main() -> None:
     # Compose the run/ingest ports (stubs by default → zero-cred boot). create_app
     # leaves them None so the fast lane stubs them per-test; the real server wires
     # them here from settings (docs/running.md).
-    app.state.run_executor = build_run_executor(settings)
-    app.state.ingestor = build_ingestor(settings)
+    #
+    # Decoupled topology (B5, ADR-0036): in `orchestrator` mode the backend is the
+    # toolchain-free control plane — it enqueues and runner workers (python -m
+    # app.worker) execute — so it composes NO executor/ingestor and stays slim. In
+    # `stub` mode it runs them in-process (single box).
+    if settings.executor_mode == "orchestrator":
+        logger.info(
+            "startup: orchestrator topology — runs dispatched to runner workers"
+        )
+    else:
+        app.state.run_executor = build_run_executor(settings)
+        app.state.ingestor = build_ingestor(settings)
 
     config = uvicorn.Config(
         app=app,

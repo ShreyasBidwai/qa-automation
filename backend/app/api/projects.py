@@ -30,9 +30,8 @@ from app.repositories.project_repository import ProjectRepository
 from app.services.job_queue import JobQueue
 
 from .authz import authorize_org, authorize_project
-from .deps import CurrentUser, get_ingestor, get_session
+from .deps import CurrentUser, get_session
 from .jobs import dispatch_job
-from .ports import Ingestor
 from .schemas import (
     IngestResponse,
     JobStatusResponse,
@@ -201,7 +200,6 @@ async def ingest(
     request: Request,
     background_tasks: BackgroundTasks,
     session: Annotated[AsyncSession, Depends(get_session)],
-    ingestor: Annotated[Ingestor, Depends(get_ingestor)],
 ) -> IngestResponse:
     await authorize_project(session, project_id, current_user, Permission.RUN)
     # Single attempt — ingest rebuilds the Brain (non-idempotent); the queue still
@@ -209,14 +207,18 @@ async def ingest(
     job = await JobQueue(session).enqueue(
         kind=JobKind.INGEST, project_id=project_id, max_attempts=1
     )
-    # Commit now so the durable row is visible to the dispatch task (own session).
+    # Commit now so the durable row is visible to whoever executes it.
     await session.commit()
-    background_tasks.add_task(
-        dispatch_job,
-        sessionmaker=request.app.state.sessionmaker,
-        job_id=job.id,
-        ingestor=ingestor,
-    )
+    # Decoupled topology (B5, ADR-0036): dispatch in-process only if this node has
+    # an ingestor (single-box stub); otherwise a runner worker claims it.
+    ingestor = getattr(request.app.state, "ingestor", None)
+    if ingestor is not None:
+        background_tasks.add_task(
+            dispatch_job,
+            sessionmaker=request.app.state.sessionmaker,
+            job_id=job.id,
+            ingestor=ingestor,
+        )
     return IngestResponse(job_id=job.id, status=job.status.value)
 
 

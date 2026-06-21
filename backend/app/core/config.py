@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     job_poll_interval_seconds: float = 1.0
     job_backoff_base_seconds: float = 2.0
     job_stuck_after_seconds: int = 300  # a running job older than this is "stuck"
+    # Identifies the claiming worker in the job lease (B5, ADR-0036).
+    worker_id: str = "runner"
 
     # --- Run / ingest composition (packaging; docs/running.md) ----------------
     # What the API's run-executor and ingestor ports resolve to at server start
