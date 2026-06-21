@@ -12,6 +12,9 @@ from .finding_result import FindingResult
 from .finding_triage import FindingTriage
 from .model_edge import ModelEdge
 from .model_node import ModelNode
+from .organization import Organization
+from .organization_invite import OrganizationInvite
+from .organization_member import OrganizationMember
 from .password_reset_token import PasswordResetToken
 from .project import Project
 from .result import Result
@@ -38,4 +41,7 @@ __all__ = [
     "User",
     "UserSession",
     "PasswordResetToken",
+    "Organization",
+    "OrganizationMember",
+    "OrganizationInvite",
 ]

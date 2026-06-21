@@ -23,10 +23,20 @@ class Project(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     slug: Mapped[str] = mapped_column(
         String(255), nullable=False, unique=True, index=True
     )
-    # The owning user (B2, ADR-0031). NULL = legacy/shared (pre-auth data); new
-    # projects are created owned. ON DELETE SET NULL → a deleted user's projects
-    # become shared rather than cascade-deleting their work.
-    owner_id: Mapped[uuid.UUID | None] = mapped_column(
+    # The owning organization (B3, ADR-0032) — the tenancy root. Access is decided
+    # by the caller's membership + role in this org (ADR-0033). ON DELETE CASCADE:
+    # deleting an org removes its projects (owner-gated; personal orgs can't be
+    # deleted).
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Who first created the project (B2's owner_id, renamed in 0019). Provenance
+    # only — it does NOT govern access (org_id does). ON DELETE SET NULL so a
+    # deleted creator doesn't cascade-delete the project.
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,

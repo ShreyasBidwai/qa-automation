@@ -17,11 +17,34 @@ import pytest
 import pytest_asyncio
 from asgi_lifespan import LifespanManager
 from fastapi import FastAPI
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import Session as SyncSession
 
 from app.core.config import get_settings
+from app.models.organization import Organization
+from app.models.project import Project
+
+
+@event.listens_for(SyncSession, "before_flush")
+def _auto_org_for_bare_test_projects(
+    session: SyncSession, flush_context: object, instances: object
+) -> None:
+    """Give every factory-made project an org (B3, ADR-0032 makes ``org_id`` NOT
+    NULL).
+
+    Test-only: the legacy unit tests build bare ``Project`` rows via
+    ``tests.factories`` with no org. Rather than thread an org through ~90 call
+    sites, any pending project without an ``org_id`` gets a fresh throwaway org
+    here. Production is unaffected (this module is only imported under pytest); a
+    client-side UUID avoids needing a nested flush to resolve the FK.
+    """
+    for obj in list(session.new):
+        if isinstance(obj, Project) and obj.org_id is None:
+            org = Organization(id=uuid.uuid4(), name="test-org", is_personal=False)
+            session.add(org)
+            obj.org_id = org.id
 
 
 @pytest.fixture(scope="session")

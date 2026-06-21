@@ -218,3 +218,17 @@ class AuthChallenge(str, enum.Enum):
     NONE = "none"
     OTP = "otp"
     TWO_FA = "2fa"
+
+
+class OrgRole(str, enum.Enum):
+    """A user's role within an organization (B3, ADR-0033).
+
+    Ordered most→least privileged. Persisted as the ``org_role`` pg enum; the
+    permission matrix that maps each role to allowed actions lives in
+    ``app.core.permissions``.
+    """
+
+    OWNER = "owner"
+    ADMIN = "admin"
+    MEMBER = "member"
+    VIEWER = "viewer"

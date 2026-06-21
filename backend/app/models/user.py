@@ -18,6 +18,8 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     email: Mapped[str] = mapped_column(
         String(320), nullable=False, unique=True, index=True
     )
+    # Optional display name (B3 account profile); set/edited via PATCH /auth/me.
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true")

@@ -1,4 +1,4 @@
-"""Migrations 0002–0018 applied cleanly and additively in the compose stack."""
+"""Migrations 0002–0019 applied cleanly and additively in the compose stack."""
 
 from __future__ import annotations
 
@@ -21,6 +21,9 @@ EXPECTED_TABLES = {
     "users",
     "sessions",
     "password_reset_tokens",
+    "organizations",
+    "organization_members",
+    "organization_invites",
 }
 EXPECTED_ENUMS = {
     "test_type",
@@ -40,6 +43,7 @@ EXPECTED_ENUMS = {
     "auth_challenge",
     "finding_layer",
     "triage_status",
+    "org_role",
 }
 
 
@@ -47,7 +51,7 @@ async def test_migration_at_head(db_session: AsyncSession) -> None:
     revision = (
         await db_session.execute(text("SELECT version_num FROM alembic_version"))
     ).scalar_one()
-    assert revision == "0018_project_owner"
+    assert revision == "0019_orgs_rbac"
 
 
 async def test_projects_has_app_url_and_soft_delete_columns(
@@ -66,7 +70,9 @@ async def test_projects_has_app_url_and_soft_delete_columns(
         .all()
     )
     assert {"app_url", "deleted_at"} <= columns  # Sprint B1 (0016)
-    assert "owner_id" in columns  # Sprint B2 ownership (0018)
+    # B3 (0019): org-scoped; owner_id renamed to created_by (ADR-0032).
+    assert {"org_id", "created_by"} <= columns
+    assert "owner_id" not in columns
 
 
 async def test_model_nodes_has_embedding_column_and_hnsw_index(
