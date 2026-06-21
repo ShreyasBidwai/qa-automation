@@ -44,13 +44,15 @@ services:
       APP_ENV: ${APP_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-qa_platform}:${POSTGRES_PASSWORD:-change-me-locally}@db:5432/${POSTGRES_DB:-qa_platform}
-      # Run/ingest composition — safe stubs by default (zero-cred boot). Flip to
-      # the real orchestrator/ingestor only with the toolchains in place (docs).
-      EXECUTOR_MODE: ${EXECUTOR_MODE:-stub}
+      # Decoupled execution topology (B5, ADR-0036): the backend is the slim,
+      # toolchain-free control plane — `orchestrator` mode means it ENQUEUES runs
+      # and the runner worker(s) below execute them. Set EXECUTOR_MODE=stub for the
+      # legacy single-box mode (backend runs the stub in-process; no runner needed).
+      EXECUTOR_MODE: ${EXECUTOR_MODE:-orchestrator}
       INGESTOR_MODE: ${INGESTOR_MODE:-stub}
-      # Durable job queue (B4, ADR-0034): run the in-process worker poller so jobs
-      # drain + recover after a restart. The DB-backed queue needs no extra infra.
-      JOB_WORKER_ENABLED: ${JOB_WORKER_ENABLED:-true}
+      # The dedicated runner worker drains the queue, so the backend's in-lifespan
+      # poller stays OFF in the decoupled topology (flip on only for single-box).
+      JOB_WORKER_ENABLED: ${JOB_WORKER_ENABLED:-false}
       # Pluggable providers (not exercised by the stub path; documented switches).
       AI_PROVIDER_MODE: ${AI_PROVIDER_MODE:-stub}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-stub}
@@ -63,6 +65,33 @@ services:
       timeout: 5s
       retries: 5
       start_period: 25s
+    restart: unless-stopped
+
+  # --- Runner worker (execution plane) — drains the durable queue ------------
+  # Separate from the slim backend (B5, ADR-0036): claims run/ingest jobs from the
+  # same DB queue and executes them in its OWN environment, writing results back.
+  # This default worker runs from the slim backend image with the round-trip stub
+  # executor (zero toolchains) — it proves the decoupled path end-to-end. For REAL
+  # execution, build it from a toolchain image (runners/playwright/Dockerfile or
+  # runners/laravel/Dockerfile) and set RUNNER_EXECUTOR_MODE=orchestrator.
+  runner:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: runtime
+    command: ["python", "-m", "app.worker"]
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-qa_platform}:${POSTGRES_PASSWORD:-change-me-locally}@db:5432/${POSTGRES_DB:-qa_platform}
+      EXECUTOR_MODE: ${RUNNER_EXECUTOR_MODE:-stub}
+      INGESTOR_MODE: ${RUNNER_INGESTOR_MODE:-stub}
+      WORKER_ID: ${WORKER_ID:-runner-1}
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
     restart: unless-stopped
 
   # --- Web: built SPA served single-origin, /api proxied to backend ----------
