@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     # long; password-reset tokens are single-use and short-lived.
     session_ttl_seconds: int = 1_209_600  # 14 days
     password_reset_ttl_seconds: int = 3_600  # 1 hour
+    org_invite_ttl_seconds: int = 604_800  # 7 days (B3; ADR-0033)
 
     # --- Run / ingest composition (packaging; docs/running.md) ----------------
     # What the API's run-executor and ingestor ports resolve to at server start

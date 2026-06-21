@@ -19,9 +19,12 @@ from app.core.security import (
     hash_token,
     verify_password,
 )
+from app.models.enums import OrgRole
+from app.models.organization import Organization
 from app.models.password_reset_token import PasswordResetToken
 from app.models.user import User
 from app.models.user_session import UserSession
+from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.password_reset_token_repository import (
     PasswordResetTokenRepository,
 )
@@ -52,19 +55,66 @@ class AuthService:
         self._users = UserRepository(session)
         self._sessions = SessionRepository(session)
         self._resets = PasswordResetTokenRepository(session)
+        self._orgs = OrganizationRepository(session)
         self._mailer = mailer
         self._session_ttl = session_ttl_seconds
         self._reset_ttl = reset_ttl_seconds
 
     async def sign_up(self, email: str, password: str) -> tuple[User, str]:
-        """Create a user and an initial session. Raises if the email is taken."""
+        """Create a user, their personal org, and an initial session (ADR-0032).
+
+        Every user gets a personal organization they own, so a solo user keeps
+        working with no "make a team first" step. Raises if the email is taken.
+        """
         email = normalize_email(email)
         if await self._users.get_by_email(email) is not None:
             raise EmailAlreadyRegisteredError(email)
         user = await self._users.add(
             User(email=email, password_hash=hash_password(password))
         )
+        org = await self._orgs.add(
+            Organization(name=email.split("@", 1)[0] or "personal", is_personal=True)
+        )
+        await self._orgs.add_member(org.id, user.id, OrgRole.OWNER)
         return user, await self._issue_session(user.id)
+
+    async def update_profile(self, user: User, changes: dict[str, str | None]) -> User:
+        """Update the account profile (B3): display name and/or email.
+
+        Only keys present in ``changes`` are touched. ``name`` may be set to None to
+        clear it; an ``email`` change is checked for uniqueness (→ 409 at the
+        boundary). The email is already normalized by the request schema.
+        """
+        if "email" in changes and changes["email"]:
+            new_email = normalize_email(changes["email"])
+            if new_email != user.email:
+                if await self._users.get_by_email(new_email) is not None:
+                    raise EmailAlreadyRegisteredError(new_email)
+                user.email = new_email
+        if "name" in changes:
+            user.name = changes["name"]
+        await self._session.flush()
+        return user
+
+    async def change_password(
+        self,
+        user: User,
+        *,
+        current_password: str,
+        new_password: str,
+        current_token: str,
+    ) -> None:
+        """Change the password after re-verifying the current one (B3).
+
+        Wrong current password → ``InvalidCredentialsError``. On success every other
+        session is revoked (the current device stays signed in); a stolen old token
+        elsewhere dies, mirroring the reset flow's revocation (ADR-0030).
+        """
+        if not verify_password(user.password_hash, current_password):
+            raise InvalidCredentialsError
+        user.password_hash = hash_password(new_password)
+        await self._sessions.delete_for_user_except(user.id, hash_token(current_token))
+        await self._session.flush()
 
     async def sign_in(self, email: str, password: str) -> tuple[User, str]:
         """Verify credentials and issue a session. Raises on any mismatch."""

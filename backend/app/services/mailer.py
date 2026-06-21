@@ -19,14 +19,31 @@ class Mailer(Protocol):
 
     async def send_password_reset(self, *, email: str, token: str) -> None: ...
 
+    async def send_org_invite(
+        self, *, email: str, token: str, org_name: str, role: str
+    ) -> None: ...
+
 
 class StubMailer:
-    """Dev mailer: logs the reset token instead of sending an email."""
+    """Dev mailer: logs the token instead of sending an email."""
 
     async def send_password_reset(self, *, email: str, token: str) -> None:
         logger.info(
             "dev_mailer.password_reset (DEV ONLY — stands in for a sent email)",
             extra={"email": email, "reset_token": token},
+        )
+
+    async def send_org_invite(
+        self, *, email: str, token: str, org_name: str, role: str
+    ) -> None:
+        logger.info(
+            "dev_mailer.org_invite (DEV ONLY — stands in for a sent email)",
+            extra={
+                "email": email,
+                "invite_token": token,
+                "org_name": org_name,
+                "role": role,
+            },
         )
 
 

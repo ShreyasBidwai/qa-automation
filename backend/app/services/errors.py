@@ -66,6 +66,37 @@ class InvalidResetTokenError(ServiceError):
     """
 
 
+class InvalidInviteError(ServiceError):
+    """An org invite token is unknown, already accepted, or expired (B3). → 400.
+
+    One error for all three (no probing token validity/state), mirroring
+    ``InvalidResetTokenError`` (ADR-0030/0033).
+    """
+
+
+class AlreadyMemberError(ServiceError):
+    """An invite targets an email whose account is already in the org. → 409."""
+
+
+class MemberNotFoundError(ServiceError):
+    """A member-management action named a user who is not in the org. → 404."""
+
+
+class LastOwnerError(ServiceError):
+    """Demoting/removing the last owner would orphan the org (ADR-0033). → 409."""
+
+
+class RoleManagementError(ServiceError):
+    """An admin tried to manage an owner or grant the owner role (ADR-0033). → 403.
+
+    Only an owner may create/modify/remove owners; an admin cannot.
+    """
+
+
+class CannotDeletePersonalOrgError(ServiceError):
+    """A personal (per-user) org cannot be deleted (ADR-0032). → 400."""
+
+
 class ProposalAlreadyResolvedError(ServiceError):
     """A proposal was accepted/rejected but is no longer pending.
 

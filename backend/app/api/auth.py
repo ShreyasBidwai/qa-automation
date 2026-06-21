@@ -23,8 +23,10 @@ from app.services.errors import (
 from .deps import CurrentUser, bearer_token, get_session
 from .schemas import (
     AuthTokenResponse,
+    ChangePasswordBody,
     PasswordResetConfirmBody,
     PasswordResetRequestBody,
+    ProfileUpdate,
     SignInRequest,
     SignUpRequest,
     UserResponse,
@@ -44,7 +46,9 @@ def _service(request: Request, session: AsyncSession) -> AuthService:
 
 
 def _user_response(user: User) -> UserResponse:
-    return UserResponse(id=user.id, email=user.email, created_at=user.created_at)
+    return UserResponse(
+        id=user.id, email=user.email, name=user.name, created_at=user.created_at
+    )
 
 
 def _token_response(user: User, token: str) -> AuthTokenResponse:
@@ -128,3 +132,51 @@ async def confirm_password_reset(
 async def me(current_user: CurrentUser) -> UserResponse:
     """The current user (protected — 401 without a valid session)."""
     return _user_response(current_user)
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_me(
+    body: ProfileUpdate,
+    current_user: CurrentUser,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> UserResponse:
+    """Update the account profile (B3): display name and/or email. 409 on a taken
+    email; only provided fields change."""
+    try:
+        user = await _service(request, session).update_profile(
+            current_user, body.model_dump(exclude_unset=True)
+        )
+    except EmailAlreadyRegisteredError:
+        raise HTTPException(
+            status_code=409, detail="email already registered"
+        ) from None
+    return _user_response(user)
+
+
+@router.post("/change-password", status_code=204)
+async def change_password(
+    body: ChangePasswordBody,
+    current_user: CurrentUser,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    authorization: Annotated[str | None, Header()] = None,
+) -> Response:
+    """Change the password after re-verifying the current one (B3).
+
+    Wrong current password → 400. On success, other sessions are revoked while this
+    one stays valid (ADR-0030/0033).
+    """
+    token = bearer_token(authorization) or ""
+    try:
+        await _service(request, session).change_password(
+            current_user,
+            current_password=body.current_password,
+            new_password=body.new_password,
+            current_token=token,
+        )
+    except InvalidCredentialsError:
+        raise HTTPException(
+            status_code=400, detail="current password is incorrect"
+        ) from None
+    return Response(status_code=204)

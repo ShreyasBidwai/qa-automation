@@ -38,3 +38,17 @@ class SessionRepository:
         )
         await self.session.flush()
         return int(result.rowcount or 0)
+
+    async def delete_for_user_except(
+        self, user_id: uuid.UUID, keep_token_hash: str
+    ) -> int:
+        """Revoke a user's other sessions, keeping the current one (B3 password
+        change): the caller stays signed in here while every other session dies."""
+        result = await self.session.execute(
+            delete(UserSession).where(
+                UserSession.user_id == user_id,
+                UserSession.token_hash != keep_token_hash,
+            )
+        )
+        await self.session.flush()
+        return int(result.rowcount or 0)

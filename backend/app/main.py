@@ -12,6 +12,7 @@ from .api.auth import router as auth_router
 from .api.findings import router as findings_router
 from .api.health import router as health_router
 from .api.jobs import JobRegistry
+from .api.orgs import router as orgs_router
 from .api.projects import router as projects_router
 from .api.runs import router as runs_router
 from .core.config import get_settings
@@ -42,8 +43,10 @@ def create_app() -> FastAPI:
 
     # Liveness/readiness are unversioned, top-level endpoints (TRD §4).
     app.include_router(health_router)
-    # Versioned API (`/api/v1`): auth, project config, ingest, runs, findings.
+    # Versioned API (`/api/v1`): auth, orgs/teams, project config, ingest, runs,
+    # findings.
     app.include_router(auth_router)
+    app.include_router(orgs_router)
     app.include_router(projects_router)
     app.include_router(runs_router)
     app.include_router(findings_router)
