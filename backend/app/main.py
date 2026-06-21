@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from .api.auth import router as auth_router
 from .api.findings import router as findings_router
 from .api.health import router as health_router
-from .api.jobs import JobRegistry
+from .api.ops import router as ops_router
 from .api.orgs import router as orgs_router
 from .api.projects import router as projects_router
 from .api.runs import router as runs_router
@@ -32,9 +32,9 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestIdMiddleware, header_name=settings.request_id_header)
     register_exception_handlers(app)
 
-    # Shared API state: the in-process job registry (ADR-0026). The executor +
-    # ingestor ports are set by composition (or a test); absent → routes 503.
-    app.state.jobs = JobRegistry()
+    # Jobs are a durable Postgres queue now (B4, ADR-0034) — no app.state registry.
+    # The executor + ingestor ports are set by composition (or a test); absent →
+    # routes 503.
     app.state.run_executor = None
     app.state.ingestor = None
     # Transactional mailer (B2): the dev stub logs the reset link; a test overrides
@@ -50,5 +50,6 @@ def create_app() -> FastAPI:
     app.include_router(projects_router)
     app.include_router(runs_router)
     app.include_router(findings_router)
+    app.include_router(ops_router)
 
     return app

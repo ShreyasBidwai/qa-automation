@@ -10,6 +10,8 @@ Shutdown: flip readiness off (stop new traffic) → dispose the engine. In-fligh
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -49,6 +51,34 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             extra={"current": current, "head": head},
         )
 
+    # Durable job worker poller (B4, ADR-0034) — drains the queue + recovers
+    # orphans/retries after a restart. Gated: the packaged app enables it; the fast
+    # lane drives jobs via the dispatch hint and tests the worker directly.
+    worker_task: asyncio.Task[None] | None = None
+    stop_event: asyncio.Event | None = None
+    if settings.job_worker_enabled:
+        from app.api.jobs import make_handlers
+        from app.services.job_worker import JobWorker
+
+        handlers = make_handlers(
+            ingestor=getattr(app.state, "ingestor", None),
+            executor=getattr(app.state, "run_executor", None),
+        )
+        worker = JobWorker(
+            app.state.sessionmaker,
+            handlers,
+            worker_id="poller",
+            backoff_base_seconds=settings.job_backoff_base_seconds,
+        )
+        stop_event = asyncio.Event()
+        worker_task = asyncio.create_task(
+            worker.run_forever(
+                poll_interval_seconds=settings.job_poll_interval_seconds,
+                stop_event=stop_event,
+            )
+        )
+        logger.info("startup: job worker poller started")
+
     app_state.is_ready = True
     logger.info("startup: ready")
 
@@ -58,5 +88,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app_state.is_ready = False
         app_state.is_draining = True
         logger.info("shutdown: readiness disabled, releasing resources")
+        if stop_event is not None:
+            stop_event.set()
+        if worker_task is not None:
+            worker_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await worker_task
         await engine.dispose()
         logger.info("shutdown: database connections closed")

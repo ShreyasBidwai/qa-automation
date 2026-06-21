@@ -232,3 +232,24 @@ class OrgRole(str, enum.Enum):
     ADMIN = "admin"
     MEMBER = "member"
     VIEWER = "viewer"
+
+
+class JobKind(str, enum.Enum):
+    """What a durable job does (B4, ADR-0034). Persisted as the ``job_kind`` enum."""
+
+    INGEST = "ingest"
+    RUN = "run"
+
+
+class JobStatus(str, enum.Enum):
+    """A durable job's lifecycle (B4, ADR-0034). Persisted as ``job_status``.
+
+    queued → running → succeeded | failed | cancelled. A failure under the attempt
+    cap re-queues (retry-with-backoff); cancellation is terminal.
+    """
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"

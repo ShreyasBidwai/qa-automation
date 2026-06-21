@@ -10,6 +10,7 @@ from .coverage import Coverage
 from .finding import Finding
 from .finding_result import FindingResult
 from .finding_triage import FindingTriage
+from .job import Job
 from .model_edge import ModelEdge
 from .model_node import ModelNode
 from .organization import Organization
@@ -44,4 +45,5 @@ __all__ = [
     "Organization",
     "OrganizationMember",
     "OrganizationInvite",
+    "Job",
 ]

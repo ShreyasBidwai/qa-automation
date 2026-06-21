@@ -48,6 +48,9 @@ services:
       # the real orchestrator/ingestor only with the toolchains in place (docs).
       EXECUTOR_MODE: ${EXECUTOR_MODE:-stub}
       INGESTOR_MODE: ${INGESTOR_MODE:-stub}
+      # Durable job queue (B4, ADR-0034): run the in-process worker poller so jobs
+      # drain + recover after a restart. The DB-backed queue needs no extra infra.
+      JOB_WORKER_ENABLED: ${JOB_WORKER_ENABLED:-true}
       # Pluggable providers (not exercised by the stub path; documented switches).
       AI_PROVIDER_MODE: ${AI_PROVIDER_MODE:-stub}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-stub}

@@ -50,6 +50,15 @@ class Settings(BaseSettings):
     password_reset_ttl_seconds: int = 3_600  # 1 hour
     org_invite_ttl_seconds: int = 604_800  # 7 days (B3; ADR-0033)
 
+    # --- Durable job queue (B4; ADR-0034) -------------------------------------
+    # The in-process worker poller drains the `jobs` table; enabled in the
+    # packaged app, off by default (the fast lane drives jobs via the dispatch
+    # hint and tests the worker directly).
+    job_worker_enabled: bool = False
+    job_poll_interval_seconds: float = 1.0
+    job_backoff_base_seconds: float = 2.0
+    job_stuck_after_seconds: int = 300  # a running job older than this is "stuck"
+
     # --- Run / ingest composition (packaging; docs/running.md) ----------------
     # What the API's run-executor and ingestor ports resolve to at server start
     # (composed in app.__main__, NOT create_app — tests stub the ports per-test).

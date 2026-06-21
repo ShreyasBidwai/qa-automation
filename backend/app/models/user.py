@@ -24,3 +24,8 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true")
     )
+    # Instance-level operator flag (B4, ADR-0035) — cross-tenant ops visibility,
+    # NOT an org role. Granted out of band (DB/seed); no API sets it.
+    is_operator: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )

@@ -23,13 +23,15 @@ from fastapi import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import Permission
+from app.models.enums import JobKind
 from app.models.project import Project
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.project_repository import ProjectRepository
+from app.services.job_queue import JobQueue
 
 from .authz import authorize_org, authorize_project
-from .deps import CurrentUser, get_ingestor, get_jobs, get_session
-from .jobs import JobKind, JobRegistry, run_ingest_job
+from .deps import CurrentUser, get_ingestor, get_session
+from .jobs import dispatch_job
 from .ports import Ingestor
 from .schemas import (
     IngestResponse,
@@ -199,17 +201,20 @@ async def ingest(
     request: Request,
     background_tasks: BackgroundTasks,
     session: Annotated[AsyncSession, Depends(get_session)],
-    jobs: Annotated[JobRegistry, Depends(get_jobs)],
     ingestor: Annotated[Ingestor, Depends(get_ingestor)],
 ) -> IngestResponse:
     await authorize_project(session, project_id, current_user, Permission.RUN)
-    job = jobs.create(kind=JobKind.INGEST, project_id=project_id)
+    # Single attempt — ingest rebuilds the Brain (non-idempotent); the queue still
+    # supports retry-with-backoff (ADR-0034) for jobs that opt in.
+    job = await JobQueue(session).enqueue(
+        kind=JobKind.INGEST, project_id=project_id, max_attempts=1
+    )
+    # Commit now so the durable row is visible to the dispatch task (own session).
+    await session.commit()
     background_tasks.add_task(
-        run_ingest_job,
+        dispatch_job,
         sessionmaker=request.app.state.sessionmaker,
-        jobs=jobs,
         job_id=job.id,
-        project_id=project_id,
         ingestor=ingestor,
     )
     return IngestResponse(job_id=job.id, status=job.status.value)
@@ -219,9 +224,9 @@ async def ingest(
 async def get_job(
     job_id: uuid.UUID,
     current_user: CurrentUser,
-    jobs: Annotated[JobRegistry, Depends(get_jobs)],
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> JobStatusResponse:
-    job = jobs.get(job_id)
+    job = await JobQueue(session).get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
     return JobStatusResponse(

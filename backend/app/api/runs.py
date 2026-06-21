@@ -14,19 +14,21 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import Permission
-from app.models.enums import Outcome, TriageStatus
+from app.models.enums import JobKind, Outcome, TriageStatus
+from app.models.job import Job
 from app.models.user import User
 from app.reporting import FindingDetailReader, rank_findings
 from app.repositories.finding_repository import FindingRepository
 from app.repositories.finding_triage_repository import FindingTriageRepository
 from app.repositories.result_repository import ResultRepository
 from app.repositories.run_repository import RunRepository
+from app.services.job_queue import JobQueue
 
 from .authz import authorize_project
-from .deps import CurrentUser, get_jobs, get_run_executor, get_session
+from .deps import CurrentUser, get_run_executor, get_session
 from .finding_view import build_finding_response
-from .jobs import Job, JobKind, JobRegistry, run_run_job
-from .ports import RunExecutor, to_run_request
+from .jobs import dispatch_job
+from .ports import RunExecutor, run_request_to_payload, to_run_request
 from .schemas import (
     FindingResponse,
     FindingsResponse,
@@ -53,7 +55,6 @@ def _pass_rate(counts: dict[Outcome, int] | None) -> float | None:
 async def _authorized_run_job(
     run_id: uuid.UUID,
     *,
-    jobs: JobRegistry,
     session: AsyncSession,
     user: User,
     permission: Permission,
@@ -63,7 +64,7 @@ async def _authorized_run_job(
     404 for an unknown run OR a non-member of the project's org (existence not
     leaked); 403 if the caller is in the org but the role lacks ``permission``.
     """
-    job = jobs.get(run_id)
+    job = await JobQueue(session).get(run_id)
     if job is None or job.kind is not JobKind.RUN:
         raise HTTPException(status_code=404, detail="run not found")
     await authorize_project(session, job.project_id, user, permission)
@@ -78,20 +79,28 @@ async def create_run(
     request: Request,
     background_tasks: BackgroundTasks,
     session: Annotated[AsyncSession, Depends(get_session)],
-    jobs: Annotated[JobRegistry, Depends(get_jobs)],
     executor: Annotated[RunExecutor, Depends(get_run_executor)],
 ) -> RunResponse:
     await authorize_project(session, project_id, current_user, Permission.RUN)
     run_request = to_run_request(body)
-    job = jobs.create(kind=JobKind.RUN, project_id=project_id, mode=body.mode)
-    background_tasks.add_task(
-        run_run_job,
-        sessionmaker=request.app.state.sessionmaker,
-        jobs=jobs,
-        job_id=job.id,
+    # A run is non-idempotent (it persists a run + findings), so it gets a single
+    # attempt — no auto-replay of partial side effects. The queue itself supports
+    # retry-with-backoff (ADR-0034) for jobs that opt in.
+    job = await JobQueue(session).enqueue(
+        kind=JobKind.RUN,
         project_id=project_id,
+        mode=body.mode,
+        payload=run_request_to_payload(run_request),
+        max_attempts=1,
+    )
+    # Commit now so the durable row is visible to the dispatch task (which runs in
+    # its own session, possibly before the request session's own commit).
+    await session.commit()
+    background_tasks.add_task(
+        dispatch_job,
+        sessionmaker=request.app.state.sessionmaker,
+        job_id=job.id,
         executor=executor,
-        request=run_request,
     )
     return RunResponse(run_id=job.id, status=job.status.value)
 
@@ -133,11 +142,9 @@ async def get_run(
     run_id: uuid.UUID,
     current_user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
-    jobs: Annotated[JobRegistry, Depends(get_jobs)],
 ) -> RunStatusResponse:
     job = await _authorized_run_job(
         run_id,
-        jobs=jobs,
         session=session,
         user=current_user,
         permission=Permission.VIEW,
@@ -155,11 +162,9 @@ async def get_run_findings(
     run_id: uuid.UUID,
     current_user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
-    jobs: Annotated[JobRegistry, Depends(get_jobs)],
 ) -> FindingsResponse:
     job = await _authorized_run_job(
         run_id,
-        jobs=jobs,
         session=session,
         user=current_user,
         permission=Permission.VIEW,
@@ -189,7 +194,6 @@ async def triage_finding(
     body: TriagePatch,
     current_user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
-    jobs: Annotated[JobRegistry, Depends(get_jobs)],
 ) -> FindingResponse:
     """Set a finding's triage disposition, keyed by its root_cause_key (ADR-0027).
 
@@ -199,7 +203,6 @@ async def triage_finding(
     """
     job = await _authorized_run_job(
         run_id,
-        jobs=jobs,
         session=session,
         user=current_user,
         permission=Permission.TRIAGE,

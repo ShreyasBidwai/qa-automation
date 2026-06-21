@@ -68,3 +68,26 @@ def to_run_request(body: ModeBRunRequest | ModeCRunRequest) -> RunRequest:
             max_targets=body.max_targets,
         )
     return RunRequest(mode=RunMode.C, prompt=body.prompt)
+
+
+def run_request_to_payload(request: RunRequest) -> dict[str, Any]:
+    """Serialize a run request for the durable job payload (B4) — survives restart."""
+    return {
+        "mode": request.mode.value,
+        "strategy": request.strategy.value if request.strategy else None,
+        "changeset": list(request.changeset),
+        "max_targets": request.max_targets,
+        "prompt": request.prompt,
+    }
+
+
+def run_request_from_payload(payload: dict[str, Any]) -> RunRequest:
+    """Rebuild a run request from a durable job payload (the worker's input)."""
+    strategy = payload.get("strategy")
+    return RunRequest(
+        mode=RunMode(payload["mode"]),
+        strategy=SelectionStrategyKind(strategy) if strategy else None,
+        changeset=tuple(payload.get("changeset") or ()),
+        max_targets=payload.get("max_targets", 50),
+        prompt=payload.get("prompt"),
+    )
