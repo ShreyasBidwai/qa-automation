@@ -193,6 +193,43 @@ class InviteAcceptResponse(BaseModel):
     role: OrgRoleName
 
 
+# --- operator status view (B4, ADR-0034/0035) -------------------------------
+
+
+class QueueStatsResponse(BaseModel):
+    """Cross-tenant queue snapshot for the operator view. ``queued`` is the depth;
+    ``stuck`` is running past the threshold; ``runner_healthy`` is the at-a-glance
+    signal (no stuck jobs)."""
+
+    queued: int
+    running: int
+    succeeded: int
+    failed: int
+    cancelled: int
+    stuck: int
+    total: int
+    runner_healthy: bool
+
+
+class JobSummary(BaseModel):
+    id: uuid.UUID
+    kind: str
+    status: str
+    project_id: uuid.UUID
+    mode: str | None = None
+    attempts: int
+    max_attempts: int
+    detail: str | None = None
+    created_at: datetime
+    locked_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class JobListResponse(BaseModel):
+    items: list[JobSummary]
+    total: int
+
+
 class IngestResponse(BaseModel):
     job_id: uuid.UUID
     status: str
