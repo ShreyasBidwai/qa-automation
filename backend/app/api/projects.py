@@ -11,7 +11,15 @@ import re
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Project
@@ -27,6 +35,7 @@ from .schemas import (
     ProjectListItem,
     ProjectListResponse,
     ProjectResponse,
+    ProjectUpdate,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["projects"])
@@ -44,8 +53,9 @@ def _project_response(project: Project) -> ProjectResponse:
         name=project.name,
         slug=project.slug,
         repo_url=str(settings.get("repo_url", "")),
-        app_url=settings.get("app_url"),
+        app_url=project.app_url,  # promoted to a column (Sprint B1)
         auth_config_ref=settings.get("auth_config_ref"),
+        stack=settings.get("stack"),
         created_at=project.created_at,
     )
 
@@ -57,10 +67,11 @@ async def create_project(
     project = Project(
         name=body.name,
         slug=_slug(body.name),
+        app_url=body.app_url,  # first-class column (Sprint B1)
         settings={
             "repo_url": body.repo_url,
-            "app_url": body.app_url,
             "auth_config_ref": body.auth_config_ref,
+            "stack": body.stack,
         },
     )
     await ProjectRepository(session).add(project)
@@ -75,7 +86,7 @@ def _project_list_item(project: Project) -> ProjectListItem:
         name=project.name,
         slug=project.slug,
         repo_url=str(settings.get("repo_url", "")),
-        app_url=settings.get("app_url"),
+        app_url=project.app_url,
         created_at=project.created_at,
     )
 
@@ -104,6 +115,52 @@ async def get_project(
     if project is None:
         raise HTTPException(status_code=404, detail="project not found")
     return _project_response(project)
+
+
+@router.patch("/projects/{project_id}", response_model=ProjectResponse)
+async def update_project(
+    project_id: uuid.UUID,
+    body: ProjectUpdate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ProjectResponse:
+    """Partial-update a project (name, repo_url, app_url, stack). 404 / 422.
+
+    Only fields present in the body change. ``app_url`` / ``stack`` may be set to
+    null to clear them; ``name`` / ``repo_url`` are required-if-present (a null is
+    ignored rather than nulling a needed field).
+    """
+    repo = ProjectRepository(session)
+    project = await repo.get(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="project not found")
+
+    changes = body.model_dump(exclude_unset=True)
+    if changes.get("name") is not None:
+        project.name = changes["name"]
+    if "app_url" in changes:
+        project.app_url = changes["app_url"]
+    if changes.get("repo_url") is not None or "stack" in changes:
+        settings = dict(project.settings)
+        if changes.get("repo_url") is not None:
+            settings["repo_url"] = changes["repo_url"]
+        if "stack" in changes:
+            settings["stack"] = changes["stack"]
+        project.settings = settings  # reassign so JSONB change is tracked
+
+    await session.flush()
+    await session.refresh(project)
+    return _project_response(project)
+
+
+@router.delete("/projects/{project_id}", status_code=204)
+async def delete_project(
+    project_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    """Soft-delete a project (ADR-0029): hidden from reads, history preserved."""
+    if not await ProjectRepository(session).soft_delete(project_id):
+        raise HTTPException(status_code=404, detail="project not found")
+    return Response(status_code=204)
 
 
 @router.post(

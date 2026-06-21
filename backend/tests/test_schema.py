@@ -1,4 +1,4 @@
-"""Migrations 0002–0015 applied cleanly and additively in the compose stack."""
+"""Migrations 0002–0016 applied cleanly and additively in the compose stack."""
 
 from __future__ import annotations
 
@@ -44,7 +44,25 @@ async def test_migration_at_head(db_session: AsyncSession) -> None:
     revision = (
         await db_session.execute(text("SELECT version_num FROM alembic_version"))
     ).scalar_one()
-    assert revision == "0015_finding_triage"
+    assert revision == "0016_project_app_url"
+
+
+async def test_projects_has_app_url_and_soft_delete_columns(
+    db_session: AsyncSession,
+) -> None:
+    columns = set(
+        (
+            await db_session.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'projects'"
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert {"app_url", "deleted_at"} <= columns  # Sprint B1 (0016)
 
 
 async def test_model_nodes_has_embedding_column_and_hnsw_index(

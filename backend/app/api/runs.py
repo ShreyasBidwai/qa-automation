@@ -14,9 +14,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import Outcome, TriageStatus
-from app.models.finding import Finding
-from app.models.finding_triage import FindingTriage
-from app.reporting import FindingDetail, FindingDetailReader, rank_findings
+from app.reporting import FindingDetailReader, rank_findings
 from app.repositories.finding_repository import FindingRepository
 from app.repositories.finding_triage_repository import FindingTriageRepository
 from app.repositories.project_repository import ProjectRepository
@@ -24,12 +22,10 @@ from app.repositories.result_repository import ResultRepository
 from app.repositories.run_repository import RunRepository
 
 from .deps import get_jobs, get_run_executor, get_session
+from .finding_view import build_finding_response
 from .jobs import JobKind, JobRegistry, run_run_job
 from .ports import RunExecutor, to_run_request
 from .schemas import (
-    EvidenceItem,
-    FindingHistory,
-    FindingLocation,
     FindingResponse,
     FindingsResponse,
     RunCreate,
@@ -37,7 +33,6 @@ from .schemas import (
     RunListResponse,
     RunResponse,
     RunStatusResponse,
-    TriageInfo,
     TriagePatch,
 )
 
@@ -51,37 +46,6 @@ def _pass_rate(counts: dict[Outcome, int] | None) -> float | None:
     if total == 0:
         return None
     return round(counts.get(Outcome.PASS, 0) / total, 4)
-
-
-def _triage_info(record: FindingTriage | None) -> TriageInfo:
-    """The current disposition, or the open default when nothing is triaged."""
-    if record is None:
-        return TriageInfo(status=TriageStatus.OPEN.value)
-    return TriageInfo(
-        status=record.status.value, note=record.note, triaged_at=record.triaged_at
-    )
-
-
-def _finding_response(
-    finding: Finding, detail: FindingDetail, triage: FindingTriage | None
-) -> FindingResponse:
-    return FindingResponse(
-        id=finding.id,
-        root_cause_key=finding.root_cause_key,
-        title=finding.title,
-        layer=finding.layer.value,
-        severity=finding.severity,
-        status=finding.status,
-        oracle_source=finding.oracle_source.value,
-        explains_count=finding.explains_count,
-        confidence_mixed=finding.confidence_mixed,
-        expected=dict(finding.expected),
-        location=FindingLocation.model_validate(detail.location),
-        evidence=[EvidenceItem.model_validate(item) for item in detail.evidence],
-        history=FindingHistory.model_validate(detail.history),
-        evidence_ref=finding.evidence_ref,
-        triage=_triage_info(triage),
-    )
 
 
 @router.post("/projects/{project_id}/runs", status_code=202, response_model=RunResponse)
@@ -178,7 +142,8 @@ async def get_run_findings(
         job.project_id, [f.root_cause_key for f in ranked]
     )
     items = [
-        _finding_response(f, detail[f.id], triage.get(f.root_cause_key)) for f in ranked
+        build_finding_response(f, detail[f.id], triage.get(f.root_cause_key))
+        for f in ranked
     ]
     return FindingsResponse(run_id=run_id, count=len(items), findings=items)
 
@@ -213,4 +178,4 @@ async def triage_finding(
     detail = await FindingDetailReader(session).detail_for(
         job.project_id, job.run_id, [finding]
     )
-    return _finding_response(finding, detail[finding.id], record)
+    return build_finding_response(finding, detail[finding.id], record)

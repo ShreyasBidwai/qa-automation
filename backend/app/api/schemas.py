@@ -21,6 +21,20 @@ class ProjectCreate(BaseModel):
     repo_url: str = Field(min_length=1, max_length=2048)
     app_url: str | None = Field(default=None, max_length=2048)
     auth_config_ref: str | None = Field(default=None, max_length=512)
+    stack: str | None = Field(default=None, max_length=64)
+
+
+class ProjectUpdate(BaseModel):
+    """Partial update for a project (PATCH). Only provided fields change.
+
+    Sending a field as ``null`` clears it; omitting it leaves it untouched
+    (resolved via ``exclude_unset`` at the handler).
+    """
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    repo_url: str | None = Field(default=None, min_length=1, max_length=2048)
+    app_url: str | None = Field(default=None, max_length=2048)
+    stack: str | None = Field(default=None, max_length=64)
 
 
 class ProjectResponse(BaseModel):
@@ -30,6 +44,7 @@ class ProjectResponse(BaseModel):
     repo_url: str
     app_url: str | None
     auth_config_ref: str | None
+    stack: str | None = None
     created_at: datetime
 
 
@@ -143,6 +158,8 @@ class TriagePatch(BaseModel):
 
 class FindingResponse(BaseModel):
     id: uuid.UUID
+    project_id: uuid.UUID  # which project (the global inbox spans projects)
+    run_id: uuid.UUID  # the run this finding row belongs to
     root_cause_key: str
     title: str
     layer: str
@@ -165,6 +182,32 @@ class FindingsResponse(BaseModel):
     run_id: uuid.UUID
     count: int
     findings: list[FindingResponse]
+
+
+class OpenFindingsResponse(BaseModel):
+    """The currently-open findings inbox (ADR-0028), paginated, severity-ranked."""
+
+    items: list[FindingResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class BulkTriageRequest(BaseModel):
+    """Triage several findings at once (the inbox bulk action). Bad status → 422."""
+
+    finding_ids: list[uuid.UUID] = Field(min_length=1, max_length=500)
+    status: Literal["open", "acknowledged", "resolved", "wont_fix", "false_positive"]
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class BulkTriageResponse(BaseModel):
+    """Outcome of a bulk triage: applied status + per-id partial-failure detail."""
+
+    status: str
+    requested: int
+    updated: list[uuid.UUID]  # finding ids whose disposition was set
+    not_found: list[uuid.UUID]  # finding ids that do not exist (partial failure)
 
 
 # --- list endpoints ---------------------------------------------------------

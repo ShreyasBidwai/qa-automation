@@ -543,6 +543,169 @@ async def test_ingest_job_records_failure(
     assert status.json()["detail"] == "RuntimeError"
 
 
+async def _run_and_finding(
+    client: AsyncClient, project_id: str
+) -> tuple[str, dict[str, object]]:
+    """Trigger a stub mode_b run and return (run_id, its one finding)."""
+    rid = (
+        await client.post(
+            f"/api/v1/projects/{project_id}/runs",
+            json={"mode": "mode_b", "strategy": "full_sweep"},
+        )
+    ).json()["run_id"]
+    finding = (await client.get(f"/api/v1/runs/{rid}/findings")).json()["findings"][0]
+    return rid, finding
+
+
+# --- open-findings inbox (ADR-0028) -----------------------------------------
+
+
+async def test_open_findings_inbox_lists_then_excludes_muted(
+    api: tuple[AsyncClient, _StubExecutor, _StubIngestor],
+) -> None:
+    client, _, _ = api
+    project = await _create_project(client)
+    pid = project["id"]
+    run_id, finding = await _run_and_finding(client, str(pid))
+    fid = finding["id"]
+
+    # Per-project inbox (scoped → exact): one open finding, full shape + ids.
+    scoped = await client.get(f"/api/v1/projects/{pid}/findings")
+    assert scoped.status_code == 200
+    body = scoped.json()
+    assert body["total"] == 1
+    item = body["items"][0]
+    assert item["id"] == fid
+    assert item["project_id"] == pid
+    assert item["run_id"] == finding["run_id"]
+    assert item["triage"]["status"] == "open"
+    assert "evidence" in item and "history" in item and "location" in item
+
+    # Global inbox (cross-project → membership): our finding is present.
+    glob = await client.get("/api/v1/findings")
+    assert glob.status_code == 200
+    assert fid in {i["id"] for i in glob.json()["items"]}
+
+    # Mute it → it leaves both inboxes.
+    patched = await client.patch(
+        f"/api/v1/runs/{run_id}/findings/{fid}", json={"status": "wont_fix"}
+    )
+    assert patched.status_code == 200
+    assert (await client.get(f"/api/v1/projects/{pid}/findings")).json()["total"] == 0
+    assert fid not in {
+        i["id"] for i in (await client.get("/api/v1/findings")).json()["items"]
+    }
+
+
+async def test_project_open_findings_unknown_project_is_404(
+    api: tuple[AsyncClient, _StubExecutor, _StubIngestor],
+) -> None:
+    client, _, _ = api
+    resp = await client.get(f"/api/v1/projects/{uuid.uuid4()}/findings")
+    assert resp.status_code == 404
+
+
+# --- bulk triage -------------------------------------------------------------
+
+
+async def test_bulk_triage_multi_set_and_partial_failure(
+    api: tuple[AsyncClient, _StubExecutor, _StubIngestor],
+) -> None:
+    client, _, _ = api
+    project = await _create_project(client)
+    pid = str(project["id"])
+    _, f1 = await _run_and_finding(client, pid)
+    _, f2 = await _run_and_finding(client, pid)  # a later run, same root_cause_key
+    bogus = str(uuid.uuid4())
+
+    resp = await client.post(
+        "/api/v1/findings/triage",
+        json={"finding_ids": [f1["id"], f2["id"], bogus], "status": "wont_fix"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "wont_fix"
+    assert body["requested"] == 3
+    assert set(body["updated"]) == {f1["id"], f2["id"]}  # both real ids triaged
+    assert body["not_found"] == [bogus]  # partial failure reported, not fatal
+
+    # The (now muted) issue is gone from the project inbox.
+    assert (await client.get(f"/api/v1/projects/{pid}/findings")).json()["total"] == 0
+
+
+async def test_bulk_triage_bad_status_is_422(
+    api: tuple[AsyncClient, _StubExecutor, _StubIngestor],
+) -> None:
+    client, _, _ = api
+    resp = await client.post(
+        "/api/v1/findings/triage",
+        json={"finding_ids": [str(uuid.uuid4())], "status": "known"},
+    )
+    assert resp.status_code == 422
+
+
+# --- project CRUD (PATCH / DELETE) ------------------------------------------
+
+
+async def test_patch_project_updates_fields_and_app_url_round_trips(
+    api: tuple[AsyncClient, _StubExecutor, _StubIngestor],
+) -> None:
+    client, _, _ = api
+    project = await _create_project(client)
+    pid = project["id"]
+
+    resp = await client.patch(
+        f"/api/v1/projects/{pid}",
+        json={"name": "Renamed", "app_url": "https://new.example", "stack": "laravel"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["name"] == "Renamed"
+    assert body["app_url"] == "https://new.example"
+    assert body["stack"] == "laravel"
+    # repo_url (untouched) is preserved.
+    assert body["repo_url"] == "https://git.example/x.git"
+
+    got = (await client.get(f"/api/v1/projects/{pid}")).json()
+    assert got["app_url"] == "https://new.example"
+    assert got["name"] == "Renamed"
+    assert got["stack"] == "laravel"
+
+
+async def test_patch_unknown_project_is_404(
+    api: tuple[AsyncClient, _StubExecutor, _StubIngestor],
+) -> None:
+    client, _, _ = api
+    resp = await client.patch(f"/api/v1/projects/{uuid.uuid4()}", json={"name": "X"})
+    assert resp.status_code == 404
+
+
+async def test_patch_project_validation_is_422(
+    api: tuple[AsyncClient, _StubExecutor, _StubIngestor],
+) -> None:
+    client, _, _ = api
+    project = await _create_project(client)
+    resp = await client.patch(
+        f"/api/v1/projects/{project['id']}", json={"name": ""}  # min_length=1
+    )
+    assert resp.status_code == 422
+
+
+async def test_delete_project_soft_deletes(
+    api: tuple[AsyncClient, _StubExecutor, _StubIngestor],
+) -> None:
+    client, _, _ = api
+    project = await _create_project(client)
+    pid = project["id"]
+
+    deleted = await client.delete(f"/api/v1/projects/{pid}")
+    assert deleted.status_code == 204
+    # Hidden from reads (get + the project inbox) and idempotent.
+    assert (await client.get(f"/api/v1/projects/{pid}")).status_code == 404
+    assert (await client.get(f"/api/v1/projects/{pid}/findings")).status_code == 404
+    assert (await client.delete(f"/api/v1/projects/{pid}")).status_code == 404
+
+
 # --- the real OrchestratorRunExecutor wiring (stub collaborators) ------------
 
 

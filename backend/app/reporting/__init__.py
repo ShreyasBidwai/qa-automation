@@ -23,6 +23,7 @@ from .finding_detail import (
     location_payload,
 )
 from .history import HistoryClassifier, classify_history
+from .open_findings import OpenFinding, OpenFindingsReader
 from .orchestrator import EndpointExtractor, run_walking_skeleton
 from .report import (
     OracleBreakdown,
@@ -49,6 +50,8 @@ __all__ = [
     "HistoryClassifier",
     "ImpactResolver",
     "LocationResolver",
+    "OpenFinding",
+    "OpenFindingsReader",
     "OracleBreakdown",
     "ReportingError",
     "RunReport",

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from .api.findings import router as findings_router
 from .api.health import router as health_router
 from .api.jobs import JobRegistry
 from .api.projects import router as projects_router
@@ -39,5 +40,6 @@ def create_app() -> FastAPI:
     # Versioned API (`/api/v1`): project config, ingest, runs, findings.
     app.include_router(projects_router)
     app.include_router(runs_router)
+    app.include_router(findings_router)
 
     return app
