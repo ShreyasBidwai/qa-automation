@@ -21,9 +21,9 @@ from app.repositories.project_repository import ProjectRepository
 from app.repositories.result_repository import ResultRepository
 from app.repositories.run_repository import RunRepository
 
-from .deps import get_jobs, get_run_executor, get_session
+from .deps import CurrentUser, get_jobs, get_run_executor, get_session
 from .finding_view import build_finding_response
-from .jobs import JobKind, JobRegistry, run_run_job
+from .jobs import Job, JobKind, JobRegistry, run_run_job
 from .ports import RunExecutor, to_run_request
 from .schemas import (
     FindingResponse,
@@ -48,17 +48,34 @@ def _pass_rate(counts: dict[Outcome, int] | None) -> float | None:
     return round(counts.get(Outcome.PASS, 0) / total, 4)
 
 
+async def _owned_run_job(
+    run_id: uuid.UUID,
+    *,
+    jobs: JobRegistry,
+    session: AsyncSession,
+    user_id: uuid.UUID,
+) -> Job:
+    """Resolve a RUN job whose project the user can access, else 404 (ADR-0031)."""
+    job = jobs.get(run_id)
+    if job is None or job.kind is not JobKind.RUN:
+        raise HTTPException(status_code=404, detail="run not found")
+    if await ProjectRepository(session).get(job.project_id, user_id) is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    return job
+
+
 @router.post("/projects/{project_id}/runs", status_code=202, response_model=RunResponse)
 async def create_run(
     project_id: uuid.UUID,
     body: RunCreate,
+    current_user: CurrentUser,
     request: Request,
     background_tasks: BackgroundTasks,
     session: Annotated[AsyncSession, Depends(get_session)],
     jobs: Annotated[JobRegistry, Depends(get_jobs)],
     executor: Annotated[RunExecutor, Depends(get_run_executor)],
 ) -> RunResponse:
-    if await ProjectRepository(session).get(project_id) is None:
+    if await ProjectRepository(session).get(project_id, current_user.id) is None:
         raise HTTPException(status_code=404, detail="project not found")
     run_request = to_run_request(body)
     job = jobs.create(kind=JobKind.RUN, project_id=project_id, mode=body.mode)
@@ -77,11 +94,12 @@ async def create_run(
 @router.get("/projects/{project_id}/runs", response_model=RunListResponse)
 async def list_project_runs(
     project_id: uuid.UUID,
+    current_user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> RunListResponse:
-    if await ProjectRepository(session).get(project_id) is None:
+    if await ProjectRepository(session).get(project_id, current_user.id) is None:
         raise HTTPException(status_code=404, detail="project not found")
     run_repo = RunRepository(session)
     runs = await run_repo.list_for_project(project_id, limit=limit, offset=offset)
@@ -108,11 +126,14 @@ async def list_project_runs(
 
 @router.get("/runs/{run_id}", response_model=RunStatusResponse)
 async def get_run(
-    run_id: uuid.UUID, jobs: Annotated[JobRegistry, Depends(get_jobs)]
+    run_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    jobs: Annotated[JobRegistry, Depends(get_jobs)],
 ) -> RunStatusResponse:
-    job = jobs.get(run_id)
-    if job is None or job.kind is not JobKind.RUN:
-        raise HTTPException(status_code=404, detail="run not found")
+    job = await _owned_run_job(
+        run_id, jobs=jobs, session=session, user_id=current_user.id
+    )
     return RunStatusResponse(
         run_id=job.id,
         mode=job.mode or "",
@@ -124,12 +145,13 @@ async def get_run(
 @router.get("/runs/{run_id}/findings", response_model=FindingsResponse)
 async def get_run_findings(
     run_id: uuid.UUID,
+    current_user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
     jobs: Annotated[JobRegistry, Depends(get_jobs)],
 ) -> FindingsResponse:
-    job = jobs.get(run_id)
-    if job is None or job.kind is not JobKind.RUN:
-        raise HTTPException(status_code=404, detail="run not found")
+    job = await _owned_run_job(
+        run_id, jobs=jobs, session=session, user_id=current_user.id
+    )
     if job.run_id is None:  # not executed yet, or an authoring (mode_c) run
         return FindingsResponse(run_id=run_id, count=0, findings=[])
     findings = await FindingRepository(session).list_for_run(job.project_id, job.run_id)
@@ -153,6 +175,7 @@ async def triage_finding(
     run_id: uuid.UUID,
     finding_id: uuid.UUID,
     body: TriagePatch,
+    current_user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
     jobs: Annotated[JobRegistry, Depends(get_jobs)],
 ) -> FindingResponse:
@@ -162,8 +185,10 @@ async def triage_finding(
     producing the same root_cause_key inherits it. Bad status → 422 (schema);
     unknown finding → 404.
     """
-    job = jobs.get(run_id)
-    if job is None or job.kind is not JobKind.RUN or job.run_id is None:
+    job = await _owned_run_job(
+        run_id, jobs=jobs, session=session, user_id=current_user.id
+    )
+    if job.run_id is None:
         raise HTTPException(status_code=404, detail="run not found")
     finding = await FindingRepository(session).get(job.project_id, finding_id)
     if finding is None or finding.run_id != job.run_id:

@@ -39,6 +39,7 @@ from app.models.enums import (
 from app.models.finding import Finding
 from app.models.finding_result import FindingResult
 from app.models.model_node import ModelNode
+from app.models.project import Project
 from app.modes.selection import SelectionStrategyKind, Target
 from app.repositories.finding_repository import FindingRepository
 from app.repositories.finding_result_repository import FindingResultRepository
@@ -128,9 +129,9 @@ class _StubIngestor:
 
 @pytest_asyncio.fixture
 async def api(
-    app_client: tuple[AsyncClient, FastAPI],
+    authed_client: tuple[AsyncClient, FastAPI],
 ) -> tuple[AsyncClient, _StubExecutor, _StubIngestor]:
-    client, app = app_client
+    client, app = authed_client  # client already carries a signed-in user's token
     executor = _StubExecutor()
     ingestor = _StubIngestor()
     app.state.run_executor = executor
@@ -481,9 +482,9 @@ async def test_runs_and_findings_are_project_scoped(
 
 
 async def test_run_executor_not_configured_is_503(
-    app_client: tuple[AsyncClient, FastAPI],
+    authed_client: tuple[AsyncClient, FastAPI],
 ) -> None:
-    client, _ = app_client  # no api fixture → run_executor stays None
+    client, _ = authed_client  # no api fixture → run_executor stays None
     project = await _create_project(client)
     resp = await client.post(
         f"/api/v1/projects/{project['id']}/runs",
@@ -493,9 +494,9 @@ async def test_run_executor_not_configured_is_503(
 
 
 async def test_ingestor_not_configured_is_503(
-    app_client: tuple[AsyncClient, FastAPI],
+    authed_client: tuple[AsyncClient, FastAPI],
 ) -> None:
-    client, _ = app_client
+    client, _ = authed_client
     project = await _create_project(client)
     resp = await client.post(f"/api/v1/projects/{project['id']}/ingest")
     assert resp.status_code == 503
@@ -516,9 +517,9 @@ class _Failing:
 
 
 async def test_run_job_records_failure(
-    app_client: tuple[AsyncClient, FastAPI],
+    authed_client: tuple[AsyncClient, FastAPI],
 ) -> None:
-    client, app = app_client
+    client, app = authed_client
     app.state.run_executor = _Failing()
     project = await _create_project(client)
     resp = await client.post(
@@ -531,9 +532,9 @@ async def test_run_job_records_failure(
 
 
 async def test_ingest_job_records_failure(
-    app_client: tuple[AsyncClient, FastAPI],
+    authed_client: tuple[AsyncClient, FastAPI],
 ) -> None:
-    client, app = app_client
+    client, app = authed_client
     app.state.ingestor = _Failing()
     project = await _create_project(client)
     resp = await client.post(f"/api/v1/projects/{project['id']}/ingest")
@@ -704,6 +705,90 @@ async def test_delete_project_soft_deletes(
     assert (await client.get(f"/api/v1/projects/{pid}")).status_code == 404
     assert (await client.get(f"/api/v1/projects/{pid}/findings")).status_code == 404
     assert (await client.delete(f"/api/v1/projects/{pid}")).status_code == 404
+
+
+# --- auth enforcement + project ownership (B2, ADR-0031) --------------------
+
+
+def _email() -> str:
+    return f"u-{uuid.uuid4().hex[:12]}@example.test"
+
+
+def _hdr(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def _signup(client: AsyncClient) -> str:
+    resp = await client.post(
+        "/api/v1/auth/signup", json={"email": _email(), "password": "ownerpw123"}
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["access_token"]
+
+
+async def test_protected_endpoints_reject_unauthenticated(
+    app_client: tuple[AsyncClient, FastAPI],
+) -> None:
+    client, _ = app_client  # raw client — no token
+    assert (await client.get("/api/v1/projects")).status_code == 401
+    create = await client.post(
+        "/api/v1/projects", json={"name": "x", "repo_url": "https://git/x.git"}
+    )
+    assert create.status_code == 401
+    assert (await client.get("/api/v1/findings")).status_code == 401
+
+
+async def test_project_ownership_is_enforced(
+    app_client: tuple[AsyncClient, FastAPI],
+) -> None:
+    client, _ = app_client
+    owner = await _signup(client)
+    other = await _signup(client)
+    pid = (
+        await client.post(
+            "/api/v1/projects",
+            json={"name": "Owned", "repo_url": "https://git/x.git"},
+            headers=_hdr(owner),
+        )
+    ).json()["id"]
+
+    # The owner can access it.
+    owner_get = await client.get(f"/api/v1/projects/{pid}", headers=_hdr(owner))
+    assert owner_get.status_code == 200
+
+    # A different user cannot — 404 (not 403; existence is not leaked).
+    for method, path in [
+        ("GET", f"/api/v1/projects/{pid}"),
+        ("GET", f"/api/v1/projects/{pid}/runs"),
+        ("GET", f"/api/v1/projects/{pid}/findings"),
+        ("DELETE", f"/api/v1/projects/{pid}"),
+    ]:
+        resp = await client.request(method, path, headers=_hdr(other))
+        assert resp.status_code == 404, (method, path)
+    patched = await client.patch(
+        f"/api/v1/projects/{pid}", json={"name": "hijack"}, headers=_hdr(other)
+    )
+    assert patched.status_code == 404
+
+
+async def test_legacy_unowned_project_is_shared(
+    authed_client: tuple[AsyncClient, FastAPI],
+) -> None:
+    """Migration preserves data: a pre-auth (owner_id NULL) project stays reachable."""
+    client, app = authed_client
+    async with app.state.sessionmaker() as session:
+        project = Project(
+            name="Legacy",
+            slug=f"legacy-{uuid.uuid4().hex[:8]}",
+            settings={"repo_url": "https://git/legacy.git"},
+        )
+        session.add(project)
+        await session.flush()
+        project_id = project.id
+        await session.commit()
+    assert project.owner_id is None  # unowned (legacy)
+    got = await client.get(f"/api/v1/projects/{project_id}")
+    assert got.status_code == 200  # any signed-in user can access shared/legacy data
 
 
 # --- the real OrchestratorRunExecutor wiring (stub collaborators) ------------

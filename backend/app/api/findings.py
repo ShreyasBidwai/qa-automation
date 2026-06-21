@@ -13,17 +13,18 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import TriageStatus
 from app.models.finding import Finding
+from app.models.project import Project
 from app.reporting import FindingDetail, FindingDetailReader, OpenFinding
 from app.reporting.open_findings import OpenFindingsReader
 from app.repositories.finding_triage_repository import FindingTriageRepository
 from app.repositories.project_repository import ProjectRepository
 
-from .deps import get_session
+from .deps import CurrentUser, get_session
 from .finding_view import build_finding_response
 from .schemas import (
     BulkTriageRequest,
@@ -64,13 +65,14 @@ async def _enrich(
 
 @router.get("/findings", response_model=OpenFindingsResponse)
 async def list_open_findings(
+    current_user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> OpenFindingsResponse:
-    """The global findings inbox: what is currently broken across all projects."""
+    """The global inbox: what's broken across the user's accessible projects."""
     page, total = await OpenFindingsReader(session).open_findings(
-        None, limit=limit, offset=offset
+        None, limit=limit, offset=offset, accessor_id=current_user.id
     )
     return OpenFindingsResponse(
         items=await _enrich(session, page), total=total, limit=limit, offset=offset
@@ -80,15 +82,16 @@ async def list_open_findings(
 @router.get("/projects/{project_id}/findings", response_model=OpenFindingsResponse)
 async def list_project_open_findings(
     project_id: uuid.UUID,
+    current_user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> OpenFindingsResponse:
-    """The currently-open findings for one project (404 if unknown/deleted)."""
-    if await ProjectRepository(session).get(project_id) is None:
+    """The currently-open findings for one project (404 if unknown/inaccessible)."""
+    if await ProjectRepository(session).get(project_id, current_user.id) is None:
         raise HTTPException(status_code=404, detail="project not found")
     page, total = await OpenFindingsReader(session).open_findings(
-        project_id, limit=limit, offset=offset
+        project_id, limit=limit, offset=offset, accessor_id=current_user.id
     )
     return OpenFindingsResponse(
         items=await _enrich(session, page), total=total, limit=limit, offset=offset
@@ -98,19 +101,27 @@ async def list_project_open_findings(
 @router.post("/findings/triage", response_model=BulkTriageResponse)
 async def bulk_triage(
     body: BulkTriageRequest,
+    current_user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> BulkTriageResponse:
     """Apply one disposition to many findings (ADR-0027/0028). Bad status → 422.
 
-    Partial failure: ids that don't exist are reported in ``not_found`` while the
-    valid ones are still triaged (200). Findings are resolved to their
-    ``(project_id, root_cause_key)`` and deduped, so N ids touching one issue is a
-    single upsert.
+    Partial failure: ids that don't exist *or aren't in an accessible project*
+    (ADR-0031) are reported in ``not_found`` while the valid ones are still triaged
+    (200). Findings are resolved to their ``(project_id, root_cause_key)`` and
+    deduped, so N ids touching one issue is a single upsert.
     """
     rows = (
         await session.execute(
-            select(Finding.id, Finding.project_id, Finding.root_cause_key).where(
-                Finding.id.in_(body.finding_ids)
+            select(Finding.id, Finding.project_id, Finding.root_cause_key)
+            .join(Project, Project.id == Finding.project_id)
+            .where(
+                Finding.id.in_(body.finding_ids),
+                Project.deleted_at.is_(None),
+                or_(
+                    Project.owner_id.is_(None),
+                    Project.owner_id == current_user.id,
+                ),
             )
         )
     ).all()

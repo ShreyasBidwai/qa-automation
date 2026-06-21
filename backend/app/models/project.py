@@ -5,11 +5,12 @@ Every other table carries ``project_id`` FK → ``projects.id`` (ProjectScopedMi
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, String, text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import DateTime, ForeignKey, String, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -21,6 +22,15 @@ class Project(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(
         String(255), nullable=False, unique=True, index=True
+    )
+    # The owning user (B2, ADR-0031). NULL = legacy/shared (pre-auth data); new
+    # projects are created owned. ON DELETE SET NULL → a deleted user's projects
+    # become shared rather than cascade-deleting their work.
+    owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     # The crawl / E2E target base URL — a first-class operational field (Sprint B1).
     app_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)

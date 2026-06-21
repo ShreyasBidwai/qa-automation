@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.project import Project
 from app.repositories.project_repository import ProjectRepository
 
-from .deps import get_ingestor, get_jobs, get_session
+from .deps import CurrentUser, get_ingestor, get_jobs, get_session
 from .jobs import JobKind, JobRegistry, run_ingest_job
 from .ports import Ingestor
 from .schemas import (
@@ -62,12 +62,15 @@ def _project_response(project: Project) -> ProjectResponse:
 
 @router.post("/projects", status_code=201, response_model=ProjectResponse)
 async def create_project(
-    body: ProjectCreate, session: Annotated[AsyncSession, Depends(get_session)]
+    body: ProjectCreate,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> ProjectResponse:
     project = Project(
         name=body.name,
         slug=_slug(body.name),
         app_url=body.app_url,  # first-class column (Sprint B1)
+        owner_id=current_user.id,  # created owned (ADR-0031)
         settings={
             "repo_url": body.repo_url,
             "auth_config_ref": body.auth_config_ref,
@@ -93,15 +96,16 @@ def _project_list_item(project: Project) -> ProjectListItem:
 
 @router.get("/projects", response_model=ProjectListResponse)
 async def list_projects(
+    current_user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ProjectListResponse:
     repo = ProjectRepository(session)
-    projects = await repo.list(limit=limit, offset=offset)
+    projects = await repo.list(limit=limit, offset=offset, accessor_id=current_user.id)
     return ProjectListResponse(
         items=[_project_list_item(project) for project in projects],
-        total=await repo.count(),
+        total=await repo.count(accessor_id=current_user.id),
         limit=limit,
         offset=offset,
     )
@@ -109,9 +113,11 @@ async def list_projects(
 
 @router.get("/projects/{project_id}", response_model=ProjectResponse)
 async def get_project(
-    project_id: uuid.UUID, session: Annotated[AsyncSession, Depends(get_session)]
+    project_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> ProjectResponse:
-    project = await ProjectRepository(session).get(project_id)
+    project = await ProjectRepository(session).get(project_id, current_user.id)
     if project is None:
         raise HTTPException(status_code=404, detail="project not found")
     return _project_response(project)
@@ -121,6 +127,7 @@ async def get_project(
 async def update_project(
     project_id: uuid.UUID,
     body: ProjectUpdate,
+    current_user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> ProjectResponse:
     """Partial-update a project (name, repo_url, app_url, stack). 404 / 422.
@@ -130,7 +137,7 @@ async def update_project(
     ignored rather than nulling a needed field).
     """
     repo = ProjectRepository(session)
-    project = await repo.get(project_id)
+    project = await repo.get(project_id, current_user.id)
     if project is None:
         raise HTTPException(status_code=404, detail="project not found")
 
@@ -155,10 +162,11 @@ async def update_project(
 @router.delete("/projects/{project_id}", status_code=204)
 async def delete_project(
     project_id: uuid.UUID,
+    current_user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> Response:
     """Soft-delete a project (ADR-0029): hidden from reads, history preserved."""
-    if not await ProjectRepository(session).soft_delete(project_id):
+    if not await ProjectRepository(session).soft_delete(project_id, current_user.id):
         raise HTTPException(status_code=404, detail="project not found")
     return Response(status_code=204)
 
@@ -168,13 +176,14 @@ async def delete_project(
 )
 async def ingest(
     project_id: uuid.UUID,
+    current_user: CurrentUser,
     request: Request,
     background_tasks: BackgroundTasks,
     session: Annotated[AsyncSession, Depends(get_session)],
     jobs: Annotated[JobRegistry, Depends(get_jobs)],
     ingestor: Annotated[Ingestor, Depends(get_ingestor)],
 ) -> IngestResponse:
-    if await ProjectRepository(session).get(project_id) is None:
+    if await ProjectRepository(session).get(project_id, current_user.id) is None:
         raise HTTPException(status_code=404, detail="project not found")
     job = jobs.create(kind=JobKind.INGEST, project_id=project_id)
     background_tasks.add_task(
@@ -190,7 +199,9 @@ async def ingest(
 
 @router.get("/jobs/{job_id}", response_model=JobStatusResponse)
 async def get_job(
-    job_id: uuid.UUID, jobs: Annotated[JobRegistry, Depends(get_jobs)]
+    job_id: uuid.UUID,
+    current_user: CurrentUser,
+    jobs: Annotated[JobRegistry, Depends(get_jobs)],
 ) -> JobStatusResponse:
     job = jobs.get(job_id)
     if job is None:

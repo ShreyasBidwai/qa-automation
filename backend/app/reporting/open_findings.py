@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select, tuple_
+from sqlalchemy import or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import TriageStatus
@@ -48,10 +48,14 @@ class OpenFindingsReader:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def latest_run_ids(self, project_id: uuid.UUID | None) -> list[uuid.UUID]:
-        """The single most-recent run id per (live) project — one ``DISTINCT ON``.
+    async def latest_run_ids(
+        self, project_id: uuid.UUID | None, accessor_id: uuid.UUID | None = None
+    ) -> list[uuid.UUID]:
+        """The single most-recent run id per (live, accessible) project.
 
-        Scoped to one project when ``project_id`` is given, else all live projects.
+        One ``DISTINCT ON``. Scoped to one project when ``project_id`` is given,
+        else all live projects; an ``accessor_id`` restricts to projects the user
+        can access — unowned or owned by them (ADR-0031).
         """
         stmt = (
             select(Run.id)
@@ -62,17 +66,27 @@ class OpenFindingsReader:
         )
         if project_id is not None:
             stmt = stmt.where(Run.project_id == project_id)
+        if accessor_id is not None:
+            stmt = stmt.where(
+                or_(Project.owner_id.is_(None), Project.owner_id == accessor_id)
+            )
         return list((await self._session.scalars(stmt)).all())
 
     async def open_findings(
-        self, project_id: uuid.UUID | None, *, limit: int, offset: int
+        self,
+        project_id: uuid.UUID | None,
+        *,
+        limit: int,
+        offset: int,
+        accessor_id: uuid.UUID | None = None,
     ) -> tuple[list[OpenFinding], int]:
         """A severity-ranked page of currently-open findings + the total.
 
         Batched: one DISTINCT-ON for latest runs, one findings read, one triage
-        read — constant statements regardless of finding count (no N+1).
+        read — constant statements regardless of finding count (no N+1). Scoped to
+        the accessor's accessible projects when ``accessor_id`` is given.
         """
-        run_ids = await self.latest_run_ids(project_id)
+        run_ids = await self.latest_run_ids(project_id, accessor_id)
         if not run_ids:
             return [], 0
 

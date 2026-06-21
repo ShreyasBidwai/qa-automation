@@ -9,6 +9,7 @@ no sleeps.
 from __future__ import annotations
 
 import os
+import uuid
 from collections.abc import AsyncIterator, Iterator
 
 import httpx
@@ -92,6 +93,25 @@ async def app_client(
 
 
 @pytest_asyncio.fixture
+async def authed_client(
+    app_client: tuple[httpx.AsyncClient, FastAPI],
+) -> tuple[httpx.AsyncClient, FastAPI]:
+    """The app client with a signed-in user's bearer token attached (B2).
+
+    Protected data endpoints now require auth; this signs up a fresh user and sets
+    the Authorization header so the existing API tests run authenticated.
+    """
+    client, app = app_client
+    email = f"fixture-{uuid.uuid4().hex[:12]}@example.test"
+    resp = await client.post(
+        "/api/v1/auth/signup", json={"email": email, "password": "fixturepw1"}
+    )
+    assert resp.status_code == 201, resp.text
+    client.headers["Authorization"] = f"Bearer {resp.json()['access_token']}"
+    return client, app
+
+
+@pytest_asyncio.fixture
 async def db_session(test_database_url: str) -> AsyncIterator[AsyncSession]:
     """A session wrapped in a transaction that is rolled back after each test."""
     engine = create_async_engine(test_database_url)
@@ -108,7 +128,7 @@ async def db_session(test_database_url: str) -> AsyncIterator[AsyncSession]:
 
 
 @pytest.fixture
-def endpoint_spec() -> "object":
+def endpoint_spec() -> object:
     """A representative EndpointSpec (mirrors the T1.3 Laravel `users.store`
     fixture) exercising required / email / integer / min / max / exists /
     unique / auth — the input for the generation tests.

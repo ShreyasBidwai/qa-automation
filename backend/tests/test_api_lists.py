@@ -70,8 +70,8 @@ async def _seed_run(
 # --- projects list ----------------------------------------------------------
 
 
-async def test_list_projects_empty(app_client: tuple[AsyncClient, FastAPI]) -> None:
-    client, app = app_client
+async def test_list_projects_empty(authed_client: tuple[AsyncClient, FastAPI]) -> None:
+    client, app = authed_client
     await _clear_projects(app)
 
     resp = await client.get("/api/v1/projects")
@@ -81,9 +81,9 @@ async def test_list_projects_empty(app_client: tuple[AsyncClient, FastAPI]) -> N
 
 
 async def test_list_projects_newest_first(
-    app_client: tuple[AsyncClient, FastAPI],
+    authed_client: tuple[AsyncClient, FastAPI],
 ) -> None:
-    client, app = app_client
+    client, app = authed_client
     await _clear_projects(app)
     await _seed_project(app, name="Alpha", hour=1)
     await _seed_project(app, name="Beta", hour=2)
@@ -95,9 +95,9 @@ async def test_list_projects_newest_first(
 
 
 async def test_list_projects_pagination_and_bounds(
-    app_client: tuple[AsyncClient, FastAPI],
+    authed_client: tuple[AsyncClient, FastAPI],
 ) -> None:
-    client, app = app_client
+    client, app = authed_client
     await _clear_projects(app)
     for hour, name in [(1, "P1"), (2, "P2"), (3, "P3")]:
         await _seed_project(app, name=name, hour=hour)
@@ -119,9 +119,9 @@ async def test_list_projects_pagination_and_bounds(
 
 
 async def test_list_project_runs_newest_first_and_scoped(
-    app_client: tuple[AsyncClient, FastAPI],
+    authed_client: tuple[AsyncClient, FastAPI],
 ) -> None:
-    client, app = app_client
+    client, app = authed_client
     project_a = await _seed_project(app, name="A", hour=1)
     project_b = await _seed_project(app, name="B", hour=1)
     r1 = await _seed_run(app, project_a, hour=1)
@@ -141,18 +141,18 @@ async def test_list_project_runs_newest_first_and_scoped(
 
 
 async def test_list_project_runs_unknown_project_is_404(
-    app_client: tuple[AsyncClient, FastAPI],
+    authed_client: tuple[AsyncClient, FastAPI],
 ) -> None:
-    client, _ = app_client
+    client, _ = authed_client
     resp = await client.get(f"/api/v1/projects/{uuid.uuid4()}/runs")
     assert resp.status_code == 404
     assert resp.headers["content-type"].startswith("application/problem+json")
 
 
 async def test_list_project_runs_pass_rate(
-    app_client: tuple[AsyncClient, FastAPI],
+    authed_client: tuple[AsyncClient, FastAPI],
 ) -> None:
-    client, app = app_client
+    client, app = authed_client
     project_id = await _seed_project(app, name="PR", hour=1)
     scored = await _seed_run(
         app, project_id, hour=2, outcomes=[Outcome.PASS, Outcome.PASS, Outcome.FAIL]
@@ -170,9 +170,9 @@ async def test_list_project_runs_pass_rate(
 
 
 async def test_list_project_runs_pagination(
-    app_client: tuple[AsyncClient, FastAPI],
+    authed_client: tuple[AsyncClient, FastAPI],
 ) -> None:
-    client, app = app_client
+    client, app = authed_client
     project_id = await _seed_project(app, name="Pager", hour=1)
     r1 = await _seed_run(app, project_id, hour=1)
     r2 = await _seed_run(app, project_id, hour=2)
