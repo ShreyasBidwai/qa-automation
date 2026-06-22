@@ -192,9 +192,13 @@ def _h(token: str) -> dict[str, str]:
 async def test_inbox_excludes_drift_by_default_includes_tagged_with_flag(
     app_client: tuple[AsyncClient, FastAPI],
 ) -> None:
-    """End-to-end additive contract. Seeds ONLY a healed (superseded) finding so the
-    committed rows can never pollute the shared global inbox — a superseded finding
-    is excluded from every default inbox by construction."""
+    """End-to-end additive contract: a real finding shows, addressing drift is
+    suppressed by default and reachable+tagged via ``include_superseded``.
+
+    Per-test isolation (ADR-0042) rolls back what this commits, so it can seed the
+    realistic mix (a real OPEN finding alongside the healed one) without leaking into
+    other tests' global reads — the prior workaround (seeding only the healed finding)
+    is no longer needed."""
     client, app = app_client
     email = f"recon-{uuid.uuid4().hex[:12]}@example.test"
     signup = await client.post(
@@ -219,20 +223,22 @@ async def test_inbox_excludes_drift_by_default_includes_tagged_with_flag(
         await _seed_finding(
             session, pid, run_id, key="DRIFT#fail", heal_status=STATUS_PROPOSED
         )
+        await _seed_finding(session, pid, run_id, key="REAL#fail")
         await session.commit()
 
     base = f"/api/v1/projects/{project_id}/findings"
-    # Default inbox: the addressing drift is suppressed (not "the app is broken").
+    # Default inbox: only the real failure; the addressing drift is suppressed
+    # (it reads as "test needs re-addressing", not "the app is broken").
     default = (await client.get(base, headers=_h(token))).json()
-    assert default["total"] == 0 and default["items"] == []
+    assert default["total"] == 1
+    assert default["items"][0]["root_cause_key"] == "REAL#fail"
+    assert default["items"][0]["superseded_by_heal"] is False
 
-    # Opt in: it's reachable and carries the additive ``superseded_by_heal`` tag.
+    # Opt in: the drift is reachable, carrying the additive ``superseded_by_heal`` tag.
     included = (
         await client.get(f"{base}?include_superseded=true", headers=_h(token))
     ).json()
-    assert included["total"] == 1
-    item = included["items"][0]
-    assert item["root_cause_key"] == "DRIFT#fail"
-    assert item["superseded_by_heal"] is True
-    # The widened blast-path field is present on the additive contract too.
-    assert "models" in item["location"]
+    assert included["total"] == 2
+    drift = next(i for i in included["items"] if i["root_cause_key"] == "DRIFT#fail")
+    assert drift["superseded_by_heal"] is True
+    assert "models" in drift["location"]  # the widened blast-path field is present

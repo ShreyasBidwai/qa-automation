@@ -4,6 +4,15 @@ Spins an isolated, ephemeral test database per pytest worker (parallel-safe),
 migrates it with Alembic, and points application settings at it. The app is then
 exercised through its real lifespan + an in-process ASGI transport — no network,
 no sleeps.
+
+**Per-test transactional isolation (ADR-0042).** The suite runs single-process on
+one shared database, so anything a test commits would otherwise persist into the
+next test's reads. Every test instead runs inside ONE outer transaction on ONE
+connection, rolled back at teardown. The ``app_client`` (what the API commits) and
+``db_session`` (direct DB access) fixtures bind to the SAME connection-bound
+sessionmaker, so a row the API commits and a row a test inserts directly live in the
+same transaction and vanish together — committed rows can never leak between tests,
+regardless of run order.
 """
 
 from __future__ import annotations
@@ -19,8 +28,13 @@ from asgi_lifespan import LifespanManager
 from fastapi import FastAPI
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import Session as SyncSession
+from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 from app.models.organization import Organization
@@ -82,6 +96,12 @@ def test_database_url() -> Iterator[str]:
 
     # Repoint settings at the test DB before anything builds an engine.
     os.environ["DATABASE_URL"] = rendered
+    # Tiny pools for the per-test app engine (one created per app_client test): the
+    # production defaults (10 + 5 overflow) would let a single shuffled run's many
+    # short-lived app engines spike past the server connection cap. Tests are
+    # single-process and use one connection at a time, so 1 is ample.
+    os.environ["DB_POOL_SIZE"] = "1"
+    os.environ["DB_POOL_MAX_OVERFLOW"] = "0"
     get_settings.cache_clear()
 
     # Apply migrations (pgvector + schema) via Alembic, exactly as production.
@@ -99,15 +119,64 @@ def test_database_url() -> Iterator[str]:
 
 
 @pytest_asyncio.fixture
-async def app_client(
+async def _isolation(
     test_database_url: str,
+) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    """One connection + outer transaction shared by the app and direct DB access.
+
+    The bound sessionmaker uses ``join_transaction_mode="create_savepoint"``: a
+    session that ``commit()``s on a connection already inside a transaction releases
+    a SAVEPOINT instead of committing for real. So every commit the code under test
+    makes (an API request, a seeding block) lands inside the one outer transaction,
+    and rolling it back at teardown discards everything — committed rows can't leak
+    to the next test, whatever the run order. ``app_client`` and ``db_session`` both
+    bind to THIS sessionmaker, so the API's commits and a test's direct inserts share
+    the transaction and roll back together (the share is the whole point — without
+    it, the rollback wouldn't cover what the API committed). The job worker is
+    disabled in tests, so nothing captured the app's original sessionmaker before the
+    swap, and dispatched jobs run as background tasks after the request session
+    closes — the single connection is only ever touched serially.
+    """
+    # NullPool: the per-test engine holds no idle connections, so a heavy
+    # (shuffled) run can't accumulate connections toward the server cap — each test
+    # opens exactly one connection and frees it at teardown.
+    engine = create_async_engine(test_database_url, poolclass=NullPool)
+    connection = await engine.connect()
+    outer = await connection.begin()
+    sessionmaker = async_sessionmaker(
+        bind=connection,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
+    try:
+        yield sessionmaker
+    finally:
+        if outer.is_active:
+            await outer.rollback()
+        await connection.close()
+        await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def app_client(
+    _isolation: async_sessionmaker[AsyncSession],
 ) -> AsyncIterator[tuple[httpx.AsyncClient, FastAPI]]:
-    """The real app, started through its lifespan, behind an in-process client."""
+    """The real app behind an in-process client, bound to the shared transaction.
+
+    The app boots through its real lifespan; we then repoint
+    ``app.state.sessionmaker`` at the same connection-bound sessionmaker
+    ``db_session`` uses. Every request-time DB read goes through
+    ``request.app.state.sessionmaker`` (deps/runs/projects/health), so the swap
+    captures everything the API commits into the per-test transaction.
+    """
     get_settings.cache_clear()
     from app.main import create_app
 
     app = create_app()
     async with LifespanManager(app):
+        # Share the per-test transaction: all request-time DB work now runs on the
+        # one connection that is rolled back at teardown (see _isolation).
+        app.state.sessionmaker = _isolation
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
             transport=transport, base_url="http://testserver"
@@ -135,19 +204,16 @@ async def authed_client(
 
 
 @pytest_asyncio.fixture
-async def db_session(test_database_url: str) -> AsyncIterator[AsyncSession]:
-    """A session wrapped in a transaction that is rolled back after each test."""
-    engine = create_async_engine(test_database_url)
-    connection = await engine.connect()
-    transaction = await connection.begin()
-    session = AsyncSession(bind=connection, expire_on_commit=False)
-    try:
+async def db_session(
+    _isolation: async_sessionmaker[AsyncSession],
+) -> AsyncIterator[AsyncSession]:
+    """A direct DB session inside the shared per-test transaction (rolled back).
+
+    Bound to the same connection as ``app_client``, so direct inserts and anything
+    the API commits share one transaction and are discarded together at teardown.
+    """
+    async with _isolation() as session:
         yield session
-    finally:
-        await session.close()
-        await transaction.rollback()
-        await connection.close()
-        await engine.dispose()
 
 
 @pytest.fixture
