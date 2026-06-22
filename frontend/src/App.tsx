@@ -1,25 +1,27 @@
 import type { ReactElement } from "react";
 
 import { AppShell } from "@/components/AppShell";
-import { Link } from "@/components/Link";
+import { GenericErrorPage } from "@/components/GenericErrorPage";
 import { NotFoundPage } from "@/components/NotFoundPage";
-import { Button } from "@/components/ui/button";
 import { ForgotPasswordPage } from "@/features/auth/ForgotPasswordPage";
 import { SignInPage } from "@/features/auth/SignInPage";
 import { SignUpPage } from "@/features/auth/SignUpPage";
+import { FindingsInboxPage } from "@/features/findings/FindingsInboxPage";
 import { HelpCenterPage } from "@/features/help/HelpCenterPage";
 import { PlaceholderPage } from "@/features/placeholders/PlaceholderPage";
 import { CreateProjectPage } from "@/features/projects/CreateProjectPage";
+import { EditProjectPage } from "@/features/projects/EditProjectPage";
 import { ProjectPage } from "@/features/projects/ProjectPage";
 import { ProjectsListPage } from "@/features/projects/ProjectsListPage";
+import { StartRunPage } from "@/features/projects/StartRunPage";
 import { RunDashboard } from "@/features/runs/RunDashboard";
 import { RunStatusPage } from "@/features/runs/RunStatusPage";
 import { RunsListPage } from "@/features/runs/RunsListPage";
 import { SystemStatusPage } from "@/features/system-status/SystemStatusPage";
 import { useLocation } from "@/lib/router";
 
-/** Auth screens render full-screen, outside the app shell (no sidebar). */
-function renderAuthRoute(pathname: string): ReactElement | null {
+/** Full-screen routes that render outside the app shell (no sidebar). */
+function renderStandaloneRoute(pathname: string): ReactElement | null {
   switch (pathname.replace(/\/+$/, "")) {
     case "/login":
       return <SignInPage />;
@@ -27,6 +29,8 @@ function renderAuthRoute(pathname: string): ReactElement | null {
       return <SignUpPage />;
     case "/forgot":
       return <ForgotPasswordPage />;
+    case "/error":
+      return <GenericErrorPage />;
     default:
       return null;
   }
@@ -41,6 +45,12 @@ function renderRoute(pathname: string): ReactElement {
     if (segments.length === 1) return <ProjectsListPage />;
     if (segments.length === 2 && segments[1] === "new") return <CreateProjectPage />;
     if (segments.length === 2) return <ProjectPage projectId={segments[1]} />;
+    if (segments.length === 3 && segments[2] === "edit") {
+      return <EditProjectPage projectId={segments[1]} />;
+    }
+    if (segments.length === 3 && segments[2] === "run") {
+      return <StartRunPage projectId={segments[1]} />;
+    }
   }
 
   if (segments[0] === "runs") {
@@ -51,19 +61,8 @@ function renderRoute(pathname: string): ReactElement {
     if (segments.length === 2) return <RunStatusPage runId={segments[1]} />;
   }
 
-  // The global findings inbox is a later slice; the nav entry lands here for now.
   if (segments[0] === "findings" && segments.length === 1) {
-    return (
-      <PlaceholderPage
-        title="Findings"
-        description="The cross-project findings inbox is coming in a later slice. For now, open a run to see its findings."
-        action={
-          <Button asChild>
-            <Link to="/runs">Go to runs</Link>
-          </Button>
-        }
-      />
-    );
+    return <FindingsInboxPage />;
   }
 
   if (segments[0] === "account" && segments.length === 1) {
@@ -93,7 +92,7 @@ function renderRoute(pathname: string): ReactElement {
 
 export function App() {
   const pathname = useLocation();
-  const authPage = renderAuthRoute(pathname);
-  if (authPage) return authPage;
+  const standalone = renderStandaloneRoute(pathname);
+  if (standalone) return standalone;
   return <AppShell>{renderRoute(pathname)}</AppShell>;
 }

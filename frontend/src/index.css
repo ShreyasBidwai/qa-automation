@@ -114,4 +114,19 @@
   .animate-drawer-in {
     animation: drawer-in 160ms ease-out;
   }
+
+  /* Loading-skeleton shimmer (disabled under reduced-motion by the rule above). */
+  @keyframes shimmer {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  .animate-shimmer {
+    animation: shimmer 1.3s ease-in-out infinite;
+  }
 }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { projectApi, runApi } from "./client";
+import { findingApi, projectApi, runApi } from "./client";
 
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
@@ -65,6 +65,58 @@ describe("api client", () => {
     await runApi.list("p1", { limit: 10, offset: 0 });
     expect(fetchMock.mock.calls[0][0]).toBe(
       "/api/v1/projects/p1/runs?limit=10&offset=0",
+    );
+  });
+
+  it("PATCH /projects/:id sends the partial update", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        id: "p1",
+        name: "Renamed",
+        slug: "demo-1",
+        repo_url: "https://git/x.git",
+        app_url: null,
+        auth_config_ref: null,
+        stack: "Laravel",
+        created_at: "2026-01-01T00:00:00Z",
+      }),
+    );
+
+    const result = await projectApi.update("p1", { name: "Renamed", stack: "Laravel" });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/v1/projects/p1");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body)).toEqual({ name: "Renamed", stack: "Laravel" });
+    expect(result.data?.name).toBe("Renamed");
+  });
+
+  it("DELETE /projects/:id soft-deletes (204 → ok:true)", async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 204, json: async () => null });
+
+    const result = await projectApi.remove("p1");
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/v1/projects/p1");
+    expect(init.method).toBe("DELETE");
+    expect(result.ok).toBe(true);
+  });
+
+  it("GET /findings builds the global inbox URL", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ items: [], total: 0, limit: 25, offset: 0 }),
+    );
+    await findingApi.listOpen({ limit: 25, offset: 0 });
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/findings?limit=25&offset=0");
+  });
+
+  it("GET /projects/:id/findings builds the project inbox URL", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ items: [], total: 0, limit: 50, offset: 0 }),
+    );
+    await findingApi.listForProject("p1", { limit: 50, offset: 0 });
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/v1/projects/p1/findings?limit=50&offset=0",
     );
   });
 

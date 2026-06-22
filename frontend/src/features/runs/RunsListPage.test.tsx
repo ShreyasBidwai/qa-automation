@@ -67,8 +67,9 @@ describe("RunsListPage", () => {
 
     expect(await screen.findByText("Autonomous (Mode B)")).toBeInTheDocument();
     expect(screen.getByText("Natural language (Mode C)")).toBeInTheDocument();
-    expect(screen.getByText("Passed")).toBeInTheDocument();
-    expect(screen.getByText("Failed")).toBeInTheDocument();
+    // "Passed"/"Failed" also appear as status-filter options, so allow >1.
+    expect(screen.getAllByText("Passed").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Failed").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("80%")).toBeInTheDocument();
     expect(runApi.list).toHaveBeenCalledWith("p1", { limit: 20, offset: 0 });
   });
@@ -96,7 +97,7 @@ describe("RunsListPage", () => {
       error: "nope",
     });
     render(<RunsListPage />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load runs.");
+    expect(await screen.findByText("Couldn't load runs")).toBeInTheDocument();
   });
 
   it("pages runs with the right offset/limit", async () => {

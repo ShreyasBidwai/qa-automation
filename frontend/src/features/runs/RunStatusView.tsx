@@ -1,28 +1,25 @@
+import { Check } from "lucide-react";
+
 import { Link } from "@/components/Link";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 import { isTerminal, runStatusDescriptor } from "./runStatus";
 import { useRunStatus } from "./useRunStatus";
 
-// Phase labels are intentionally distinct from the status badge labels
-// ("Queued" / "Running…" / "Done") so the progress track reads as its own step.
-const STEPS: { key: string; label: string; reached: (s: string) => boolean }[] = [
-  { key: "queued", label: "Queued", reached: () => true },
-  {
-    key: "running",
-    label: "Executing",
-    reached: (s) => s === "running" || s === "succeeded" || s === "failed",
-  },
-  {
-    key: "done",
-    label: "Complete",
-    reached: (s) => s === "succeeded" || s === "failed",
-  },
+// The honest pipeline Polaris works through (design brief #5). The backend status
+// is coarse (pending/running/succeeded/failed), so we show the pipeline as the
+// plan and let the run status drive done/failed — we never fake which step is live.
+const PHASES = [
+  { key: "understand", label: "Understanding the app" },
+  { key: "generate", label: "Generating tests" },
+  { key: "run", label: "Running" },
+  { key: "assemble", label: "Assembling findings" },
 ];
 
-/** Live run progress: queued → running → done, polling until terminal. */
+/** Live run progress: a phase pipeline, polling until terminal. */
 export function RunStatusView({ runId }: { runId: string }) {
   const run = useRunStatus(runId);
 
@@ -33,6 +30,8 @@ export function RunStatusView({ runId }: { runId: string }) {
   const status = run.status ?? "pending";
   const descriptor = runStatusDescriptor(status);
   const done = isTerminal(status);
+  const succeeded = status === "succeeded";
+  const running = status === "running";
 
   return (
     <div className="max-w-2xl space-y-5">
@@ -41,28 +40,24 @@ export function RunStatusView({ runId }: { runId: string }) {
         <span className="font-mono text-xs text-muted-foreground">{runId}</span>
       </div>
 
-      <ol className="flex items-center gap-2" aria-label="Run progress">
-        {STEPS.map((step, index) => {
-          const reached = step.reached(status);
-          return (
-            <li key={step.key} className="flex items-center gap-2">
-              <span
-                className={
-                  reached
-                    ? "text-sm font-medium text-foreground"
-                    : "text-sm text-muted-foreground"
-                }
-              >
-                {step.label}
-              </span>
-              {index < STEPS.length - 1 ? (
-                <span aria-hidden="true" className="text-muted-foreground">
-                  →
-                </span>
-              ) : null}
-            </li>
-          );
-        })}
+      <ol className="space-y-2.5" aria-label="Run progress">
+        {PHASES.map((phase) => (
+          <li key={phase.key} className="flex items-center gap-3">
+            <PhaseDot
+              succeeded={succeeded}
+              running={running}
+              failed={status === "failed"}
+            />
+            <span
+              className={cn(
+                "text-sm",
+                succeeded ? "text-foreground" : "text-muted-foreground",
+              )}
+            >
+              {phase.label}
+            </span>
+          </li>
+        ))}
       </ol>
 
       {run.error ? (
@@ -75,11 +70,11 @@ export function RunStatusView({ runId }: { runId: string }) {
         <Card>
           <CardContent className="space-y-3 pt-5">
             <p className="text-sm text-muted-foreground">
-              {status === "succeeded"
+              {succeeded
                 ? "The run finished. Findings are ready to review."
                 : "The run did not complete. Check the project configuration and try again."}
             </p>
-            {status === "succeeded" ? (
+            {succeeded ? (
               <Button asChild>
                 <Link to={`/runs/${runId}/findings`}>View findings</Link>
               </Button>
@@ -88,9 +83,43 @@ export function RunStatusView({ runId }: { runId: string }) {
         </Card>
       ) : (
         <p className="text-sm text-muted-foreground">
-          This view updates automatically while the run is in progress.
+          Polaris is working through the pipeline. This view updates automatically.
         </p>
       )}
     </div>
+  );
+}
+
+function PhaseDot({
+  succeeded,
+  running,
+  failed,
+}: {
+  succeeded: boolean;
+  running: boolean;
+  failed: boolean;
+}) {
+  if (succeeded) {
+    return (
+      <span
+        className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-status-pass-solid text-white"
+        aria-hidden="true"
+      >
+        <Check className="h-2.5 w-2.5" />
+      </span>
+    );
+  }
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "h-4 w-4 shrink-0 rounded-full border-2",
+        failed
+          ? "border-status-fail-solid"
+          : running
+            ? "animate-shimmer border-accent"
+            : "border-status-neutral-solid",
+      )}
+    />
   );
 }

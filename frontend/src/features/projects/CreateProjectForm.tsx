@@ -16,6 +16,7 @@ export function CreateProjectForm() {
   const [name, setName] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
   const [appUrl, setAppUrl] = useState("");
+  const [stack, setStack] = useState("");
   const [authConfigRef, setAuthConfigRef] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -40,6 +41,7 @@ export function CreateProjectForm() {
       name: name.trim(),
       repo_url: repoUrl.trim(),
       app_url: appUrl.trim() || null,
+      stack: stack.trim() || null,
       auth_config_ref: authConfigRef.trim() || null,
     });
     setSubmitting(false);
@@ -79,6 +81,14 @@ export function CreateProjectForm() {
         onChange={setAppUrl}
         placeholder="https://staging.acme.com"
         mono
+      />
+      <Field
+        id="stack"
+        label="Stack"
+        hint="Auto-detected from the repo. Override if needed. Optional."
+        value={stack}
+        onChange={setStack}
+        placeholder="Laravel"
       />
       <Field
         id="auth_config_ref"

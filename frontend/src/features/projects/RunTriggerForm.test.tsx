@@ -18,9 +18,10 @@ describe("RunTriggerForm", () => {
     });
   });
 
-  it("starts a mode_b full-sweep run with the right body", async () => {
+  it("starts a mode_b full-sweep run when Autonomous is chosen", async () => {
     render(<RunTriggerForm projectId="p1" />);
-    fireEvent.click(screen.getByRole("button", { name: "Run tests" }));
+    fireEvent.click(screen.getByRole("radio", { name: /Autonomous/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Start run" }));
 
     await waitFor(() =>
       expect(runApi.create).toHaveBeenCalledWith("p1", {
@@ -32,13 +33,12 @@ describe("RunTriggerForm", () => {
 
   it("sends a change_impact changeset as an array of paths", async () => {
     render(<RunTriggerForm projectId="p1" />);
-    fireEvent.change(screen.getByLabelText("Selection"), {
-      target: { value: "change_impact" },
-    });
+    fireEvent.click(screen.getByRole("radio", { name: /Autonomous/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /Test only what changed/ }));
     fireEvent.change(screen.getByLabelText("Changed files"), {
       target: { value: "app/A.php\napp/B.php\n" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Run tests" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start run" }));
 
     await waitFor(() =>
       expect(runApi.create).toHaveBeenCalledWith("p1", {
@@ -49,20 +49,32 @@ describe("RunTriggerForm", () => {
     );
   });
 
-  it("sends a mode_c prompt body", async () => {
+  it("sends a mode_c prompt body (describe-it is the default)", async () => {
     render(<RunTriggerForm projectId="p1" />);
-    fireEvent.change(screen.getByLabelText("Mode"), {
-      target: { value: "mode_c" },
-    });
     fireEvent.change(screen.getByLabelText("What to test"), {
       target: { value: "Check the cart" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Run tests" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start run" }));
 
     await waitFor(() =>
       expect(runApi.create).toHaveBeenCalledWith("p1", {
         mode: "mode_c",
         prompt: "Check the cart",
+      }),
+    );
+  });
+
+  it("fills the prompt from an example chip", async () => {
+    render(<RunTriggerForm projectId="p1" />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "orders require authentication" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Start run" }));
+
+    await waitFor(() =>
+      expect(runApi.create).toHaveBeenCalledWith("p1", {
+        mode: "mode_c",
+        prompt: "orders require authentication",
       }),
     );
   });
