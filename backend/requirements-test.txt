@@ -5,6 +5,9 @@
 pytest==8.3.3
 pytest-asyncio==0.24.0
 pytest-cov==6.0.0
+# Shuffles test order every run (prints the seed) so order-dependence can't
+# silently return — the durable guard behind the per-test isolation (ADR-0042).
+pytest-randomly==3.15.0
 httpx==0.27.2
 asgi-lifespan==2.1.0
 pip-audit==2.7.3
