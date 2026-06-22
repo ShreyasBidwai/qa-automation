@@ -470,3 +470,43 @@ class SpecDivergenceResponse(BaseModel):
 class SpecDivergenceListResponse(BaseModel):
     items: list[SpecDivergenceResponse]
     total: int
+
+
+# --- self-healing (B8, ADR-0040) --------------------------------------------
+
+
+class HealResponse(BaseModel):
+    """One proposed/confirmed addressing heal.
+
+    ``trusted`` is the lower-trust marker made explicit: a freshly-proposed heal is
+    untrusted (awaiting review); only a confirmed heal is trusted. Heals never
+    change assertions — ``before_addr``/``after_addr`` are addressing only.
+    """
+
+    id: uuid.UUID
+    run_id: uuid.UUID | None
+    test_case_id: uuid.UUID
+    kind: str
+    failure_class: str
+    before_addr: str
+    after_addr: str
+    rationale: str
+    confidence: str
+    status: str
+    trusted: bool
+    created_at: datetime
+
+
+class HealListResponse(BaseModel):
+    items: list[HealResponse]
+    total: int
+
+
+class HealScanResponse(BaseModel):
+    """The honest post-run summary: N healed (review), M real findings, K unhealed."""
+
+    run_id: uuid.UUID
+    healed: int
+    real_findings: int
+    unhealed: int
+    items: list[HealResponse]
