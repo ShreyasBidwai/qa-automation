@@ -72,9 +72,8 @@ describe("ProjectsListPage", () => {
       error: "boom",
     });
     render(<ProjectsListPage />);
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Could not load projects.",
-    );
+    expect(await screen.findByText("Couldn't load projects")).toBeInTheDocument();
+    expect(screen.getByText("boom")).toBeInTheDocument();
   });
 
   it("pages with the right offset/limit", async () => {

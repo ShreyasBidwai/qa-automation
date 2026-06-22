@@ -1,26 +1,31 @@
 import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { runApi } from "@/lib/api/client";
 import type { RunCreateBody, SelectionStrategy } from "@/lib/api/types";
 import { navigate } from "@/lib/router";
+import { cn } from "@/lib/utils";
 
-type Mode = "mode_b" | "mode_c";
+type Mode = "describe" | "autonomous";
 
-/** Trigger a run: Mode B (full sweep / change impact) or Mode C (a prompt). */
+const EXAMPLES = [
+  "checkout rejects expired cards",
+  "orders require authentication",
+  "password reset link expires",
+];
+
+/** Start a run (#4): describe it (Mode C) or run autonomously (Mode B). */
 export function RunTriggerForm({ projectId }: { projectId: string }) {
-  const [mode, setMode] = useState<Mode>("mode_b");
+  const [mode, setMode] = useState<Mode>("describe");
+  const [prompt, setPrompt] = useState("");
   const [strategy, setStrategy] = useState<SelectionStrategy>("full_sweep");
   const [changeset, setChangeset] = useState("");
-  const [prompt, setPrompt] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   function buildBody(): RunCreateBody | null {
-    if (mode === "mode_c") {
+    if (mode === "describe") {
       if (!prompt.trim()) {
         setError("Describe what to test.");
         return null;
@@ -59,60 +64,90 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate className="space-y-4">
-      <div className="space-y-1.5">
-        <Label htmlFor="mode">Mode</Label>
-        <Select
-          id="mode"
-          value={mode}
-          onChange={(event) => setMode(event.target.value as Mode)}
-        >
-          <option value="mode_b">Mode B — autonomous</option>
-          <option value="mode_c">Mode C — from a prompt</option>
-        </Select>
+    <form onSubmit={onSubmit} noValidate className="space-y-6">
+      <div
+        role="radiogroup"
+        aria-label="How to choose tests"
+        className="grid gap-3 sm:grid-cols-2"
+      >
+        <ModeCard
+          selected={mode === "describe"}
+          onSelect={() => setMode("describe")}
+          title="Describe it"
+          description="Say what to test in plain English. Polaris turns it into tests."
+        />
+        <ModeCard
+          selected={mode === "autonomous"}
+          onSelect={() => setMode("autonomous")}
+          title="Autonomous"
+          description="Let Polaris decide — sweep everything, or just what changed."
+        />
       </div>
 
-      {mode === "mode_b" ? (
-        <div className="space-y-1.5">
-          <Label htmlFor="strategy">Selection</Label>
-          <Select
-            id="strategy"
-            value={strategy}
-            onChange={(event) => setStrategy(event.target.value as SelectionStrategy)}
-          >
-            <option value="full_sweep">Full sweep — every testable target</option>
-            <option value="change_impact">Change impact — only affected tests</option>
-          </Select>
-        </div>
-      ) : null}
-
-      {mode === "mode_b" && strategy === "change_impact" ? (
-        <div className="space-y-1.5">
-          <Label htmlFor="changeset">Changed files</Label>
-          <Textarea
-            id="changeset"
-            value={changeset}
-            onChange={(event) => setChangeset(event.target.value)}
-            placeholder={
-              "app/Http/Controllers/CheckoutController.php\napp/Models/Order.php"
-            }
-            className="font-mono text-[13px]"
-          />
-          <p className="text-xs text-muted-foreground">One path per line.</p>
-        </div>
-      ) : null}
-
-      {mode === "mode_c" ? (
-        <div className="space-y-1.5">
-          <Label htmlFor="prompt">What to test</Label>
+      {mode === "describe" ? (
+        <div className="space-y-2">
+          <label htmlFor="prompt" className="text-sm font-medium text-foreground">
+            What to test
+          </label>
           <Textarea
             id="prompt"
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
-            placeholder="Check that a guest can add an item to the cart and reach checkout."
+            placeholder="Describe what to test…"
+            rows={3}
           />
+          <div className="flex flex-wrap gap-2">
+            {EXAMPLES.map((example) => (
+              <button
+                key={example}
+                type="button"
+                onClick={() => setPrompt(example)}
+                className="rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                {example}
+              </button>
+            ))}
+          </div>
         </div>
-      ) : null}
+      ) : (
+        <fieldset className="space-y-3">
+          <legend className="mb-1 text-sm font-medium text-foreground">Scope</legend>
+          <StrategyOption
+            value="full_sweep"
+            selected={strategy === "full_sweep"}
+            onSelect={() => setStrategy("full_sweep")}
+            title="Test everything"
+            description="A full sweep across every testable target."
+          />
+          <StrategyOption
+            value="change_impact"
+            selected={strategy === "change_impact"}
+            onSelect={() => setStrategy("change_impact")}
+            title="Test only what changed"
+            description="Change-impact selection from a list of changed files."
+          />
+          {strategy === "change_impact" ? (
+            <div className="space-y-1.5 pl-1">
+              <label
+                htmlFor="changeset"
+                className="text-sm font-medium text-foreground"
+              >
+                Changed files
+              </label>
+              <Textarea
+                id="changeset"
+                value={changeset}
+                onChange={(event) => setChangeset(event.target.value)}
+                placeholder={
+                  "app/Http/Controllers/CheckoutController.php\napp/Models/Order.php"
+                }
+                className="font-mono text-[13px]"
+              />
+              <p className="text-xs text-muted-foreground">One path per line.</p>
+            </div>
+          ) : null}
+        </fieldset>
+      )}
 
       {error ? (
         <p role="alert" className="text-sm text-status-fail-fg">
@@ -121,8 +156,81 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
       ) : null}
 
       <Button type="submit" disabled={submitting}>
-        {submitting ? "Starting…" : "Run tests"}
+        {submitting ? "Starting…" : "Start run"}
       </Button>
     </form>
+  );
+}
+
+function ModeCard({
+  selected,
+  onSelect,
+  title,
+  description,
+}: {
+  selected: boolean;
+  onSelect: () => void;
+  title: string;
+  description: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onSelect}
+      className={cn(
+        "rounded-xl border p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        selected
+          ? "border-accent bg-accent-subtle"
+          : "border-border bg-surface hover:bg-background",
+      )}
+    >
+      <div
+        className={cn(
+          "text-sm font-medium",
+          selected ? "text-accent" : "text-foreground",
+        )}
+      >
+        {title}
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+    </button>
+  );
+}
+
+function StrategyOption({
+  value,
+  selected,
+  onSelect,
+  title,
+  description,
+}: {
+  value: string;
+  selected: boolean;
+  onSelect: () => void;
+  title: string;
+  description: string;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex cursor-pointer items-start gap-3 rounded-lg border p-3",
+        selected ? "border-accent bg-accent-subtle" : "border-border bg-surface",
+      )}
+    >
+      <input
+        type="radio"
+        name="strategy"
+        value={value}
+        checked={selected}
+        onChange={onSelect}
+        className="mt-0.5 h-4 w-4 text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      />
+      <span>
+        <span className="block text-sm font-medium text-foreground">{title}</span>
+        <span className="block text-xs text-muted-foreground">{description}</span>
+      </span>
+    </label>
   );
 }

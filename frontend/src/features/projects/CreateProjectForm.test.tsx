@@ -51,6 +51,7 @@ describe("CreateProjectForm", () => {
         name: "Demo",
         repo_url: "https://git/x.git",
         app_url: null,
+        stack: null,
         auth_config_ref: null,
       }),
     );
