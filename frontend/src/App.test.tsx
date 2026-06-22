@@ -29,7 +29,7 @@ vi.mock("@/lib/api/client", () => ({
   healthApi: { liveness: vi.fn(), readiness: vi.fn() },
 }));
 
-import { authApi, projectApi } from "@/lib/api/client";
+import { authApi, healthApi, projectApi } from "@/lib/api/client";
 import { AuthProvider } from "@/lib/auth/AuthContext";
 import { clearToken, setToken } from "@/lib/auth/session";
 
@@ -77,5 +77,26 @@ describe("App auth gating", () => {
     expect(await screen.findByText("No projects yet")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Sign in" })).toBeNull();
     expect(projectApi.list).toHaveBeenCalled();
+  });
+
+  it("serves the public system-status page without a session", async () => {
+    window.history.pushState({}, "", "/status");
+    vi.mocked(healthApi.liveness).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { status: "ok" },
+    });
+    vi.mocked(healthApi.readiness).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { status: "ok", checks: { database: "ok" } },
+    });
+
+    renderApp(); // anonymous (no token)
+
+    expect(
+      await screen.findByRole("heading", { name: "System status" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Sign in" })).toBeNull();
   });
 });
