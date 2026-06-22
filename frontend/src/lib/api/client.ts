@@ -1,4 +1,8 @@
+import { clearToken, getToken } from "@/lib/auth/session";
+
 import type {
+  AuthTokenResponse,
+  AuthUser,
   Finding,
   FindingsResponse,
   HealthzResponse,
@@ -9,12 +13,15 @@ import type {
   Project,
   ProjectCreateBody,
   ProjectListResponse,
+  ProfileUpdateBody,
   ProjectUpdateBody,
   ReadyzResponse,
   RunCreateBody,
   RunListResponse,
   RunResponse,
   RunStatus,
+  SignInBody,
+  SignUpBody,
   TriagePatchBody,
 } from "./types";
 
@@ -50,11 +57,17 @@ function problemMessage(data: unknown, status: number): string {
 async function request<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const token = getToken();
   try {
     const response = await fetch(path, {
       ...init,
       signal: controller.signal,
-      headers: { Accept: "application/json", ...init?.headers },
+      headers: {
+        Accept: "application/json",
+        // Attach the B2 bearer token on every request when signed in.
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...init?.headers,
+      },
     });
     let body: unknown = null;
     try {
@@ -63,6 +76,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiResult<T
       body = null;
     }
     if (!response.ok) {
+      // A 401 means the session is gone (expired / revoked) — drop the token so
+      // the app falls back to sign-in instead of looping on dead requests.
+      if (response.status === 401) clearToken();
       return {
         ok: false,
         status: response.status,
@@ -102,6 +118,22 @@ function patchJson<T>(path: string, body: unknown): Promise<ApiResult<T>> {
 function del(path: string): Promise<ApiResult<null>> {
   return request<null>(path, { method: "DELETE" });
 }
+
+export const authApi = {
+  /** POST /auth/signup — create an account; returns the bearer token + user. */
+  signUp: (body: SignUpBody) =>
+    postJson<AuthTokenResponse>(`${API_BASE}/auth/signup`, body),
+  /** POST /auth/signin — exchange credentials for a bearer token + user. */
+  signIn: (body: SignInBody) =>
+    postJson<AuthTokenResponse>(`${API_BASE}/auth/signin`, body),
+  /** POST /auth/signout — revoke the current session (idempotent, 204). */
+  signOut: () => postJson<null>(`${API_BASE}/auth/signout`, {}),
+  /** GET /auth/me — the current user (401 without a valid session). */
+  me: () => getJson<AuthUser>(`${API_BASE}/auth/me`),
+  /** PATCH /auth/me — update the account profile (name / email). */
+  updateProfile: (body: ProfileUpdateBody) =>
+    patchJson<AuthUser>(`${API_BASE}/auth/me`, body),
+};
 
 export const healthApi = {
   /** GET /healthz — liveness. */

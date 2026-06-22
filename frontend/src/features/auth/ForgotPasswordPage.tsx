@@ -16,6 +16,7 @@ export function ForgotPasswordPage() {
           Back to sign in
         </Link>
       }
+      note="Password reset isn't wired up yet — it lands in the next update."
     >
       <form
         className="space-y-4"

@@ -1,5 +1,37 @@
 /** Shapes exchanged with the backend (see backend/app/api/schemas.py). */
 
+// --- auth (B2 sessions / B3 profile) ----------------------------------------
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string | null;
+  created_at: string;
+}
+
+/** Sign-up / sign-in result: the bearer token + the authenticated user. */
+export interface AuthTokenResponse {
+  access_token: string;
+  token_type: string;
+  user: AuthUser;
+}
+
+export interface SignUpBody {
+  email: string;
+  password: string;
+}
+
+export interface SignInBody {
+  email: string;
+  password: string;
+}
+
+/** PATCH /auth/me — partial account-profile update (only provided fields change). */
+export interface ProfileUpdateBody {
+  name?: string | null;
+  email?: string;
+}
+
 // --- health (top-level endpoints) -------------------------------------------
 
 export interface HealthzResponse {

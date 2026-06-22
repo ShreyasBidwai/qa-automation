@@ -1,6 +1,7 @@
-import type { ReactElement } from "react";
+import { useEffect, type ReactElement } from "react";
 
 import { AppShell } from "@/components/AppShell";
+import { AuthSplash } from "@/components/AuthSplash";
 import { GenericErrorPage } from "@/components/GenericErrorPage";
 import { NotFoundPage } from "@/components/NotFoundPage";
 import { ForgotPasswordPage } from "@/features/auth/ForgotPasswordPage";
@@ -18,7 +19,8 @@ import { RunDashboard } from "@/features/runs/RunDashboard";
 import { RunStatusPage } from "@/features/runs/RunStatusPage";
 import { RunsListPage } from "@/features/runs/RunsListPage";
 import { SystemStatusPage } from "@/features/system-status/SystemStatusPage";
-import { useLocation } from "@/lib/router";
+import { useAuth } from "@/lib/auth/useAuth";
+import { navigate, useLocation } from "@/lib/router";
 
 /** Full-screen routes that render outside the app shell (no sidebar). */
 function renderStandaloneRoute(pathname: string): ReactElement | null {
@@ -90,9 +92,34 @@ function renderRoute(pathname: string): ReactElement {
   return <NotFoundPage />;
 }
 
+const AUTH_PATHS = new Set(["/login", "/signup", "/forgot"]);
+
+/** Navigate on mount, then hold a splash until the route swap re-renders App. */
+function NavigateTo({ to }: { to: string }) {
+  useEffect(() => {
+    navigate(to);
+  }, [to]);
+  return <AuthSplash />;
+}
+
 export function App() {
+  const { status } = useAuth();
   const pathname = useLocation();
+  const clean = pathname.replace(/\/+$/, "") || "/";
+
+  // Still checking the persisted session — hold a calm splash.
+  if (status === "loading") return <AuthSplash />;
+
   const standalone = renderStandaloneRoute(pathname);
-  if (standalone) return standalone;
+
+  // Signed out: only the public front-door pages render; any other route falls
+  // back to sign-in (in place, so the deep link is preserved through login).
+  if (status === "anonymous") {
+    return standalone ?? <SignInPage />;
+  }
+
+  // Signed in: bounce away from the auth pages, otherwise render the app.
+  if (AUTH_PATHS.has(clean)) return <NavigateTo to="/" />;
+  if (clean === "/error") return <GenericErrorPage />;
   return <AppShell>{renderRoute(pathname)}</AppShell>;
 }

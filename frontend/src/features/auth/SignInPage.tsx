@@ -1,13 +1,37 @@
-import type { FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 
 import { Link } from "@/components/Link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/lib/auth/useAuth";
 
 import { AuthField, AuthLayout } from "./AuthLayout";
 
-/** Sign in — a static placeholder (no auth backend yet). Nothing submits. */
+/** Sign in — wired to the B2 session endpoint. */
 export function SignInPage() {
+  const { signIn } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    if (!email.trim() || !password) {
+      setError("Enter your email and password.");
+      return;
+    }
+    setSubmitting(true);
+    const result = await signIn(email.trim(), password);
+    // On success the auth context flips to authenticated and the app takes over;
+    // only handle the failure path here.
+    if (!result.ok) {
+      setSubmitting(false);
+      setError(result.error ?? "Could not sign in. Try again.");
+    }
+  }
+
   return (
     <AuthLayout
       title="Sign in"
@@ -21,16 +45,15 @@ export function SignInPage() {
         </>
       }
     >
-      <form
-        className="space-y-4"
-        onSubmit={(event: FormEvent) => event.preventDefault()}
-      >
+      <form className="space-y-4" onSubmit={onSubmit} noValidate>
         <AuthField
           id="email"
           label="Work email"
           type="email"
           autoComplete="email"
           placeholder="you@company.com"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
         />
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
@@ -49,10 +72,19 @@ export function SignInPage() {
             type="password"
             autoComplete="current-password"
             placeholder="••••••••"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
           />
         </div>
-        <Button type="submit" className="w-full">
-          Sign in
+
+        {error ? (
+          <p role="alert" className="text-sm text-status-fail-fg">
+            {error}
+          </p>
+        ) : null}
+
+        <Button type="submit" className="w-full" disabled={submitting}>
+          {submitting ? "Signing in…" : "Sign in"}
         </Button>
       </form>
     </AuthLayout>

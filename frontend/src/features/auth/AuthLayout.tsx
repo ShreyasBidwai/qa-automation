@@ -6,21 +6,22 @@ import { Input } from "@/components/ui/input";
 
 /**
  * The auth shell (design brief screen 0). A calm, centered front door — large
- * wordmark, one card, generous whitespace. These screens are STATIC PLACEHOLDERS:
- * Polaris has no auth backend yet (Tier 2), so nothing submits. Every page makes
- * that honest with a visible preview note; the forms exist so the product reads
- * as complete and ready to wire up.
+ * wordmark, one card, generous whitespace. Sign in / sign up are wired to the B2
+ * session endpoints; an optional `note` carries an honest "not yet" line for the
+ * screens (password reset) that aren't wired yet.
  */
 export function AuthLayout({
   title,
   subtitle,
   children,
   footer,
+  note,
 }: {
   title: string;
   subtitle: string;
   children: ReactNode;
   footer?: ReactNode;
+  note?: ReactNode;
 }) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
@@ -38,10 +39,11 @@ export function AuthLayout({
         {footer ? (
           <p className="mt-5 text-center text-sm text-muted-foreground">{footer}</p>
         ) : null}
-        <p className="mx-auto mt-6 max-w-xs text-center text-xs text-muted-foreground">
-          Preview only — authentication isn&rsquo;t wired up yet. Sign-in lands in
-          Tier&nbsp;2.
-        </p>
+        {note ? (
+          <p className="mx-auto mt-6 max-w-xs text-center text-xs text-muted-foreground">
+            {note}
+          </p>
+        ) : null}
       </div>
     </div>
   );

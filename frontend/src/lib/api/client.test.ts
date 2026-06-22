@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { clearToken, getToken, setToken } from "@/lib/auth/session";
 
 import { findingApi, projectApi, runApi } from "./client";
 
@@ -9,8 +11,11 @@ function jsonResponse(body: unknown, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
 }
 
+beforeEach(() => clearToken());
+
 afterEach(() => {
   fetchMock.mockReset();
+  clearToken();
 });
 
 describe("api client", () => {
@@ -153,6 +158,40 @@ describe("api client", () => {
     expect(result.status).toBe(422);
     expect(result.error).toBe("Request validation failed.");
     expect(result.data).toBeNull();
+  });
+
+  it("attaches the bearer token when signed in", async () => {
+    setToken("tok-xyz");
+    fetchMock.mockResolvedValue(
+      jsonResponse({ items: [], total: 0, limit: 20, offset: 0 }),
+    );
+
+    await projectApi.list({ limit: 20, offset: 0 });
+
+    const init = fetchMock.mock.calls[0][1];
+    expect(init.headers.Authorization).toBe("Bearer tok-xyz");
+  });
+
+  it("sends no Authorization header when signed out", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ items: [], total: 0, limit: 20, offset: 0 }),
+    );
+    await projectApi.list({ limit: 20, offset: 0 });
+    const init = fetchMock.mock.calls[0][1];
+    expect(init.headers.Authorization).toBeUndefined();
+  });
+
+  it("drops the token on a 401 so the app falls back to sign-in", async () => {
+    setToken("expired");
+    fetchMock.mockResolvedValue(
+      jsonResponse({ detail: "authentication required" }, 401),
+    );
+
+    const result = await projectApi.list({ limit: 20, offset: 0 });
+
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(401);
+    expect(getToken()).toBeNull();
   });
 
   it("returns a network error when fetch rejects", async () => {
