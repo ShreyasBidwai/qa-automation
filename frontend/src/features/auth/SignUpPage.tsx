@@ -3,13 +3,7 @@ import { useState, type FormEvent } from "react";
 import { Link } from "@/components/Link";
 import { useAuth } from "@/lib/auth/useAuth";
 
-import {
-  AuthDivider,
-  AuthField,
-  AuthLayout,
-  AuthSubmit,
-  SsoButton,
-} from "./AuthLayout";
+import { AuthField, AuthLayout, AuthSubmit } from "./AuthLayout";
 
 const MIN_PASSWORD = 8;
 
@@ -55,8 +49,6 @@ export function SignUpPage() {
       }
     >
       <form className="space-y-4" onSubmit={onSubmit} noValidate>
-        <SsoButton label="Sign up with SSO" />
-        <AuthDivider />
         <AuthField
           id="name"
           label="Name"

@@ -1,5 +1,4 @@
 import {
-  useState,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
@@ -11,11 +10,11 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
- * The auth shell — faithful to "Polaris UI/Polaris Auth.dc.html": a split screen
- * with a brand / product panel on the left (hidden below 900px) and a fixed
- * 520px form panel on the right. The product panel shows a sample finding and
- * the trust-mark legend — the brand's one signature — so the front door sells the
- * thing the app is about. Sign in / sign up are wired to B2; this is presentation.
+ * The auth shell (split screen): a brand / product panel on the left (flex:1,
+ * hidden below 900px) and a 600px form panel on the right. The product panel
+ * shows a sample finding and the trust-mark legend — the brand's one signature.
+ * Sign in / sign up are wired to B2; this is presentation only. (No SSO / SOC 2 /
+ * SAML chrome — B2 is email + password.)
  */
 export function AuthLayout({
   title,
@@ -38,7 +37,7 @@ export function AuthLayout({
     <div className="flex h-screen w-full overflow-hidden bg-surface text-foreground">
       <BrandPanel />
 
-      <div className="flex w-full flex-col min-[900px]:w-[520px] min-[900px]:flex-none">
+      <div className="flex w-full flex-col min-[900px]:w-[600px] min-[900px]:flex-none">
         {/* Header — the wordmark shows here only below 900px (the brand panel hides). */}
         <header className="flex h-16 flex-none items-center px-6 min-[900px]:px-14">
           <Link to="/" aria-label="Polaris — home" className="flex min-[900px]:hidden">
@@ -47,7 +46,7 @@ export function AuthLayout({
         </header>
 
         <main className="flex flex-1 flex-col overflow-y-auto px-6 py-6 min-[900px]:px-14">
-          <div className="m-auto w-full max-w-[368px]">
+          <div className="m-auto w-full max-w-[400px]">
             <h1
               aria-label={titleText}
               className="text-[23px] font-semibold tracking-[-0.015em] text-foreground"
@@ -63,13 +62,6 @@ export function AuthLayout({
             ) : null}
           </div>
         </main>
-
-        <footer className="flex flex-none items-center justify-between border-t border-status-neutral-bg px-6 py-4 text-xs text-status-neutral-solid min-[900px]:px-14">
-          <span>Protected by SSO · SAML</span>
-          <span>
-            Need help? <span className="text-muted-foreground">Contact</span>
-          </span>
-        </footer>
       </div>
     </div>
   );
@@ -80,23 +72,28 @@ export function AuthLayout({
 function BrandPanel() {
   return (
     <aside className="hidden flex-1 flex-col border-r border-border bg-background px-14 py-10 min-[900px]:flex">
-      <Wordmark className="text-[30px] tracking-[-0.025em]" />
+      <Wordmark className="text-[40px] tracking-[-0.025em]" />
 
-      <div className="flex max-w-[440px] flex-1 flex-col justify-center pt-[72px]">
-        <h2 className="text-[30px] font-semibold leading-[1.2] tracking-[-0.025em] text-foreground">
-          Tests you can trust.
-        </h2>
-        <p className="mt-3.5 max-w-[400px] text-[14.5px] leading-[1.6] text-muted-foreground">
-          Polaris reads your codebase, generates and runs tests, and reports ranked
-          findings — each with a mark telling you how much to believe it.
-        </p>
+      {/* The content block is centered in the height between the pinned wordmark
+       *  and footer, on a consistent rhythm (heading→para 12px; para→card and
+       *  card→legend 24px). */}
+      <div className="flex max-w-[440px] flex-1 flex-col justify-center gap-6">
+        <div>
+          <h2 className="text-[30px] font-semibold leading-[1.2] tracking-[-0.025em] text-foreground">
+            Tests you can trust.
+          </h2>
+          <p className="mt-3 max-w-[400px] text-[14.5px] leading-[1.6] text-muted-foreground">
+            Polaris reads your codebase, generates and runs tests, and reports ranked
+            findings — each with a mark telling you how much to believe it.
+          </p>
+        </div>
 
         <FindingPreview />
         <TrustLegend />
       </div>
 
       <div className="text-xs text-status-neutral-solid">
-        Autonomous QA · SOC 2 Type II · © 2026 Polaris
+        Autonomous QA · © 2026 Polaris
       </div>
     </aside>
   );
@@ -104,7 +101,7 @@ function BrandPanel() {
 
 function FindingPreview() {
   return (
-    <div className="mb-[26px] mt-[30px] max-w-[400px] rounded-xl border border-border bg-surface px-[18px] py-4">
+    <div className="max-w-[400px] rounded-xl border border-border bg-surface px-[18px] py-4 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_4px_12px_rgba(0,0,0,0.04)]">
       <div className="mb-[11px] flex items-center justify-between">
         <span className="rounded-[5px] bg-status-neutral-bg px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
           run #482 · API
@@ -138,7 +135,7 @@ function FindingPreview() {
 
 function TrustLegend() {
   return (
-    <>
+    <div>
       <div className="font-mono text-[10px] uppercase tracking-[0.08em] text-status-neutral-solid">
         The trust mark
       </div>
@@ -176,7 +173,7 @@ function TrustLegend() {
           description="anchored to a documented contract"
         />
       </div>
-    </>
+    </div>
   );
 }
 
@@ -251,47 +248,5 @@ export function AuthSubmit({
     >
       {children}
     </Button>
-  );
-}
-
-/**
- * The "Continue with SSO" button from the design. There's no SSO backend yet, so
- * it stays honest: clicking explains it isn't available and points at the email
- * form below, rather than pretending to start a flow.
- */
-export function SsoButton({ label }: { label: string }) {
-  const [noted, setNoted] = useState(false);
-  return (
-    <div>
-      <Button
-        type="button"
-        variant="outline"
-        onClick={() => setNoted(true)}
-        className="h-[44px] w-full gap-[9px] rounded-[9px] text-[13.5px] font-medium text-foreground-secondary"
-      >
-        <span
-          className="h-[15px] w-[15px] rounded-[4px] border-[1.5px] border-status-neutral-solid"
-          aria-hidden="true"
-        />
-        {label}
-      </Button>
-      {noted ? (
-        <p role="status" className="mt-2 text-xs text-muted-foreground">
-          Single sign-on isn&rsquo;t available yet — continue with your email and
-          password below.
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-/** The "or" divider between SSO and the email form. */
-export function AuthDivider() {
-  return (
-    <div className="flex items-center gap-3">
-      <span className="h-px flex-1 bg-border" />
-      <span className="text-[11.5px] text-status-neutral-solid">or</span>
-      <span className="h-px flex-1 bg-border" />
-    </div>
   );
 }

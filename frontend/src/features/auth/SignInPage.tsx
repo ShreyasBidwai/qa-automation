@@ -3,13 +3,7 @@ import { useState, type FormEvent } from "react";
 import { Link } from "@/components/Link";
 import { useAuth } from "@/lib/auth/useAuth";
 
-import {
-  AuthDivider,
-  AuthField,
-  AuthLayout,
-  AuthSubmit,
-  SsoButton,
-} from "./AuthLayout";
+import { AuthField, AuthLayout, AuthSubmit } from "./AuthLayout";
 
 /** Sign in — wired to the B2 session endpoint; presentation per Polaris Auth.dc.html. */
 export function SignInPage() {
@@ -55,8 +49,6 @@ export function SignInPage() {
       }
     >
       <form className="space-y-4" onSubmit={onSubmit} noValidate>
-        <SsoButton label="Continue with SSO" />
-        <AuthDivider />
         <AuthField
           id="email"
           label="Email"
