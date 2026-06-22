@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { NotFoundPage } from "@/components/NotFoundPage";
+import { HelpCenterPage } from "@/features/help/HelpCenterPage";
 import { CreateProjectPage } from "@/features/projects/CreateProjectPage";
 import { ProjectPage } from "@/features/projects/ProjectPage";
 import { ProjectsListPage } from "@/features/projects/ProjectsListPage";
@@ -29,6 +30,8 @@ function renderRoute(pathname: string): ReactElement {
     }
     if (segments.length === 2) return <RunStatusPage runId={segments[1]} />;
   }
+
+  if (segments[0] === "help" && segments.length === 1) return <HelpCenterPage />;
 
   if (segments[0] === "status") return <SystemStatusPage />;
 
