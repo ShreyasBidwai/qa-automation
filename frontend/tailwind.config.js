@@ -15,6 +15,8 @@ export default {
         background: "var(--color-background)",
         surface: "var(--color-surface)",
         border: "var(--color-border)",
+        "border-subtle": "var(--color-border-subtle)",
+        marker: "var(--color-marker)",
         foreground: "var(--color-foreground)",
         "foreground-secondary": "var(--color-foreground-secondary)",
         "muted-foreground": "var(--color-muted-foreground)",
@@ -23,6 +25,7 @@ export default {
           hover: "var(--color-accent-hover)",
           foreground: "var(--color-accent-foreground)",
           subtle: "var(--color-accent-subtle)",
+          "on-dark": "var(--color-accent-on-dark)",
         },
         status: {
           "pass-bg": "var(--color-status-pass-bg)",
@@ -40,6 +43,28 @@ export default {
           "neutral-bg": "var(--color-status-neutral-bg)",
           "neutral-fg": "var(--color-status-neutral-fg)",
           "neutral-solid": "var(--color-status-neutral-solid)",
+        },
+        // Severity + history maps lifted verbatim from the Run Dashboard (index.css).
+        severity: {
+          "critical-fg": "var(--color-severity-critical-fg)",
+          "critical-bg": "var(--color-severity-critical-bg)",
+          "critical-dot": "var(--color-severity-critical-dot)",
+          "major-fg": "var(--color-severity-major-fg)",
+          "major-bg": "var(--color-severity-major-bg)",
+          "major-dot": "var(--color-severity-major-dot)",
+          "minor-fg": "var(--color-severity-minor-fg)",
+          "minor-bg": "var(--color-severity-minor-bg)",
+          "minor-dot": "var(--color-severity-minor-dot)",
+        },
+        history: {
+          "new-fg": "var(--color-history-new-fg)",
+          "new-bg": "var(--color-history-new-bg)",
+          "regression-fg": "var(--color-history-regression-fg)",
+          "regression-bg": "var(--color-history-regression-bg)",
+          "known-fg": "var(--color-history-known-fg)",
+          "known-bg": "var(--color-history-known-bg)",
+          "flaky-fg": "var(--color-history-flaky-fg)",
+          "flaky-bg": "var(--color-history-flaky-bg)",
         },
         // The oracle-trust signature palette (see index.css) — emerald / amber / blue.
         trust: {

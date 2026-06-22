@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 // Each level pairs a light background with a readable foreground; colour is
 // never the sole signal — callers add an icon and a text label.
 const badgeVariants = cva(
-  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium",
+  "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium",
   {
     variants: {
       level: {

@@ -15,6 +15,8 @@
     --color-background: #fafafa; /* page base (zinc-50) */
     --color-surface: #ffffff; /* cards / surfaces */
     --color-border: #e4e4e7; /* hairlines (zinc-200) */
+    --color-border-subtle: #f4f4f5; /* subtle dividers (zinc-100) */
+    --color-marker: #d4d4d8; /* idle nav-dot markers (zinc-300) */
     --color-foreground: #18181b; /* primary text (zinc-900) */
     --color-foreground-secondary: #3f3f46; /* labels / secondary-strong text (zinc-700) */
     --color-muted-foreground: #71717a; /* secondary text (zinc-500) */
@@ -24,6 +26,7 @@
     --color-accent-hover: #4338ca; /* indigo-700 */
     --color-accent-foreground: #ffffff;
     --color-accent-subtle: #eef0ff; /* indigo-50 — active nav / soft accent fill */
+    --color-accent-on-dark: #818cf8; /* indigo-400 — the reversed wordmark "i" on dark */
 
     /* Status: pass = emerald (the brief: "emerald = pass / rule-derived") */
     --color-status-pass-bg: #ecfdf5; /* emerald-50 */
@@ -71,11 +74,42 @@
     --color-trust-spec-fg: #1d4ed8; /* blue-700 */
     --color-trust-spec-border: #bfdbfe; /* blue-200 */
 
+    /* Severity (sevViz, Polaris Run Dashboard.dc.html — lifted verbatim) */
+    --color-severity-critical-fg: #dc2626; /* red-600 */
+    --color-severity-critical-bg: #fef2f2; /* red-50 */
+    --color-severity-critical-dot: #dc2626; /* red-600 */
+    --color-severity-major-fg: #b45309; /* amber-700 */
+    --color-severity-major-bg: #fffbeb; /* amber-50 */
+    --color-severity-major-dot: #d97706; /* amber-600 */
+    --color-severity-minor-fg: #475569; /* slate-600 */
+    --color-severity-minor-bg: #f8fafc; /* slate-50 */
+    --color-severity-minor-dot: #94a3b8; /* slate-400 */
+
+    /* History (histViz, Polaris Run Dashboard.dc.html — lifted verbatim) */
+    --color-history-new-fg: #1d4ed8; /* blue-700 */
+    --color-history-new-bg: #eff6ff; /* blue-50 */
+    --color-history-regression-fg: #b45309; /* amber-700 */
+    --color-history-regression-bg: #fffbeb; /* amber-50 */
+    --color-history-known-fg: #52525b; /* zinc-600 */
+    --color-history-known-bg: #f4f4f5; /* zinc-100 */
+    --color-history-flaky-fg: #7c3aed; /* violet-600 */
+    --color-history-flaky-bg: #f5f3ff; /* violet-50 */
+
     --radius: 0.5rem;
   }
 
   * {
     border-color: var(--color-border);
+  }
+
+  /*
+   * Focus ring — the design's global rule (Polaris *.dc.html): a 2px indigo
+   * :focus-visible outline at 2px offset, applied to every focusable element.
+   * Components may still opt into a ring instead via focus-visible:outline-none.
+   */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
   }
 
   body {
