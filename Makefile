@@ -21,8 +21,8 @@ help: ## List available targets
 # Host-owned report dirs (777 so the non-root test containers can write into the
 # bind mounts). Gitignored. A prerequisite of every target that mounts them.
 artifacts-dir:
-	@mkdir -p .artifacts/backend .artifacts/frontend .artifacts/e2e .artifacts/runner .artifacts/e2e-runner .artifacts/embed
-	@chmod 777 .artifacts/backend .artifacts/frontend .artifacts/e2e .artifacts/runner .artifacts/e2e-runner .artifacts/embed
+	@mkdir -p .artifacts/backend .artifacts/frontend .artifacts/e2e .artifacts/runner .artifacts/e2e-runner .artifacts/embed .artifacts/db-state
+	@chmod 777 .artifacts/backend .artifacts/frontend .artifacts/e2e .artifacts/runner .artifacts/e2e-runner .artifacts/embed .artifacts/db-state
 
 up: ## Run Polaris: packaged stack (Postgres + backend + single-origin web) — clone→running (docs/running.md)
 	$(COMPOSE_APP) up -d --build --wait
@@ -73,6 +73,13 @@ test-e2e-runner: artifacts-dir ## Build the Playwright runner image and run real
 test-embeddings: artifacts-dir ## Build the embed image and run the real fastembed integration lane
 	$(COMPOSE_TEST) up -d --build --wait db
 	$(COMPOSE_TEST) run --rm --build embed-tests
+
+# Real disposable-DB lane (heavy: B10, ADR-0043) — provisions throwaway Postgres
+# databases from migrations and asserts table state at the DB end of the blast
+# path. Kept OUT of `make test` so the main suite stays fast; needs the db.
+test-db-state: artifacts-dir ## Build the backend test image and run the real disposable-DB lane
+	$(COMPOSE_TEST) up -d --build --wait db
+	$(COMPOSE_TEST) run --rm --build db-state-tests
 
 # Scanning is scoped to shipped (production) dependencies: the backend audits
 # requirements.txt (runtime only) and the frontend uses --omit=dev. Dev/test

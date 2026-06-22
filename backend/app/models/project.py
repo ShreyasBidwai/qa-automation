@@ -48,6 +48,12 @@ class Project(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     settings: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
+    # DB-state testing tier (B10, ADR-0043): off (default) / read_only / full.
+    # Validated string (not a pg enum), like other tier-shaped fields; the API
+    # validates the value and gates changes behind MANAGE_PROJECT.
+    db_state_tier: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'off'")
+    )
     # Soft-delete marker (ADR-0029): set on DELETE; reads exclude non-null rows.
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

@@ -29,12 +29,14 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 # The fast suite excludes the real-tooling lanes: `runner` (PHP/Pest, run via
 # `make test-runners`), `embed` (real fastembed, run via `make test-embeddings`),
-# and `e2e_runner` (real Playwright browsers, run via `make test-e2e-runner`).
-addopts = "-ra --cov=app --cov-report=term-missing -m 'not runner and not embed and not e2e_runner'"
+# `e2e_runner` (real Playwright browsers, run via `make test-e2e-runner`), and
+# `db_state` (real disposable-DB provisioning, run via `make test-db-state`).
+addopts = "-ra --cov=app --cov-report=term-missing -m 'not runner and not embed and not e2e_runner and not db_state'"
 markers = [
     "runner: real-tooling tests that require the runner image (PHP/Pest); run via `make test-runners`",
     "embed: real-embedding tests that require fastembed; run via `make test-embeddings`",
     "e2e_runner: real-browser tests that require the Playwright runner image; run via `make test-e2e-runner`",
+    "db_state: real disposable-DB provisioning (CREATE/DROP DATABASE on Postgres); run via `make test-db-state`",
 ]
 # Tests are function-based; this naming convention stops pytest from trying to
 # collect domain classes named Test* (TestCase, TestType, …) as test classes.
