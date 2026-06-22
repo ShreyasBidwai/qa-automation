@@ -16,6 +16,7 @@ from app.ai.types import AIProvider, Subgraph, SubgraphNode
 from app.ingestion.models import EndpointSpec
 from app.models.enums import OracleSource
 
+from .extract import extract_code, skip_if_uses_factory, with_php_header
 from .plan import PlannedCase
 
 _INSTRUCTION = (
@@ -28,6 +29,21 @@ _INSTRUCTION = (
     "— never assert specific body field values. For a 'rule-derived' case, "
     "assert the exact expected status and, for 422s, that the validation error "
     "envelope reports the targeted field(s)."
+)
+# Defense in depth: demand code-only output so there's nothing to strip. The
+# extractor (extract.py) is the belt; this is the suspenders.
+_CODE_ONLY = (
+    " Output ONLY the PHP test file content, beginning with `<?php`. Do NOT wrap "
+    "it in markdown fences and do NOT add any prose, explanation, or summary tables."
+)
+# When the target defines no model factories (ADR-0037), steer the model off them.
+_NO_FACTORIES = (
+    " The target application defines NO model factories: do NOT call `::factory()`. "
+    "Create any required rows with explicit inserts, or rely on already-seeded data."
+)
+_FACTORY_SKIP_REASON = (
+    "precondition seeding (model factories) unavailable on the target — deferred "
+    "to B10"
 )
 
 
@@ -90,6 +106,21 @@ def render_script(
     spec: EndpointSpec,
     case: PlannedCase,
     budget_tokens: int,
+    *,
+    factories_available: bool = True,
 ) -> str:
-    body = provider.generate(_INSTRUCTION, build_context(spec, case), budget_tokens)
-    return f"{_header(case)}\n\n{body}"
+    """Render a DIRECTLY-RUNNABLE Pest test from the model.
+
+    Extracts the executable code from however the model wraps it (markdown prose
+    snuck through before — B5 smoke), assembles a valid PHP file, and — when the
+    target has no factories — honestly skips a factory-dependent case rather than
+    emitting one that hard-fails (ADR-0037).
+    """
+    instruction = _INSTRUCTION + _CODE_ONLY
+    if not factories_available:
+        instruction += _NO_FACTORIES
+    raw = provider.generate(instruction, build_context(spec, case), budget_tokens)
+    code = extract_code(raw)
+    if not factories_available:
+        code = skip_if_uses_factory(code, _FACTORY_SKIP_REASON)
+    return with_php_header(code, _header(case))

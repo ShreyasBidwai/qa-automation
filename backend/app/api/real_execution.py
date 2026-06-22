@@ -149,11 +149,15 @@ class OrchestratorTargetGenerator:
         ai_provider: AIProvider,
         budget_tokens: int,
         generated_by: str = "orchestrator",
+        factories_available: bool = True,
     ) -> None:
         self._session = session
         self._nodes = NodeRepository(session)
         self._endpoint_gen = TestGenerator(
-            provider=ai_provider, budget_tokens=budget_tokens, generated_by=generated_by
+            provider=ai_provider,
+            budget_tokens=budget_tokens,
+            generated_by=generated_by,
+            factories_available=factories_available,
         )
         self._page_gen = E2EGenerator(
             provider=ai_provider, budget_tokens=budget_tokens, generated_by=generated_by

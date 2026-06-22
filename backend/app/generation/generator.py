@@ -91,11 +91,19 @@ def _to_test_script(
 
 class TestGenerator:
     def __init__(
-        self, *, provider: AIProvider, budget_tokens: int, generated_by: str
+        self,
+        *,
+        provider: AIProvider,
+        budget_tokens: int,
+        generated_by: str,
+        factories_available: bool = True,
     ) -> None:
         self._provider = provider
         self._budget = budget_tokens
         self._generated_by = generated_by
+        # Whether the target defines model factories (ADR-0037); drives render_script
+        # off factory-dependent setup when it doesn't.
+        self._factories_available = factories_available
 
     def plan(self, spec: EndpointSpec) -> list[PlannedCase]:
         """PHASE 1 — pure, deterministic, AI-free."""
@@ -111,7 +119,16 @@ class TestGenerator:
         # Render every case, then reconcile the whole set through the merge engine
         # (create / update / propose) — never a blind write; human-edited cases
         # are protected. Scripts attach to whichever version the merge produced.
-        codes = [render_script(self._provider, spec, c, self._budget) for c in cases]
+        codes = [
+            render_script(
+                self._provider,
+                spec,
+                c,
+                self._budget,
+                factories_available=self._factories_available,
+            )
+            for c in cases
+        ]
         candidates = [
             _to_test_case(project_id, spec, c, compute_case_key(spec, c)) for c in cases
         ]

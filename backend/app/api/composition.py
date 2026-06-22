@@ -180,6 +180,7 @@ def build_run_executor(settings: Settings) -> RunExecutor:
         return StubRunExecutor()
     if settings.executor_mode == "orchestrator":
         from app.brain.cross_layer import CrossLayerResolver
+        from app.ingestion.laravel.factories import target_has_factories
 
         from .execution import OrchestratorRunExecutor
         from .real_execution import (
@@ -191,13 +192,18 @@ def build_run_executor(settings: Settings) -> RunExecutor:
         ai_provider = build_ai_provider(settings)
         embedding_provider = build_embedding_provider(settings)
         budget = settings.ai_max_budget_tokens
+        # Whether generated tests may use model factories (ADR-0037).
+        factories = target_has_factories(settings.target_repo_path)
         return OrchestratorRunExecutor(
             runner=build_runner(settings),
             target_env=build_target_env(settings),
             # Session-scoped: built per run from the job's session.
             resolver_factory=CrossLayerResolver,
             target_generator_factory=lambda session: OrchestratorTargetGenerator(
-                session, ai_provider=ai_provider, budget_tokens=budget
+                session,
+                ai_provider=ai_provider,
+                budget_tokens=budget,
+                factories_available=factories,
             ),
             ai_provider=ai_provider,
             embedding_provider=embedding_provider,

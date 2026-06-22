@@ -15,6 +15,7 @@ import json
 from app.ai.types import AIProvider, Subgraph, SubgraphNode
 
 from .e2e_plan import PlannedE2ECase
+from .extract import extract_code, with_comment_header
 
 _INSTRUCTION = (
     "You are rendering ONE Playwright '.spec.ts' E2E test (TypeScript, importing "
@@ -23,7 +24,8 @@ _INSTRUCTION = (
     "NOT invent, add, weaken, or remove any assertion, and do NOT change what an "
     "assertion checks. A 'validation_error' assertion must check that the named "
     "field is reported invalid; a 'recorded_state' assertion must check the "
-    "recorded post-submit/rendered state described. Emit only the spec."
+    "recorded post-submit/rendered state described. Emit only the spec — TypeScript "
+    "only, no markdown fences and no prose."
 )
 
 
@@ -63,5 +65,6 @@ def _header(case: PlannedE2ECase) -> str:
 def render_e2e_spec(
     provider: AIProvider, case: PlannedE2ECase, budget_tokens: int
 ) -> str:
-    body = provider.generate(_INSTRUCTION, build_context(case), budget_tokens)
-    return f"{_header(case)}\n\n{body}"
+    """Render a directly-runnable Playwright spec (markdown/prose extracted out)."""
+    raw = provider.generate(_INSTRUCTION, build_context(case), budget_tokens)
+    return with_comment_header(extract_code(raw), _header(case))

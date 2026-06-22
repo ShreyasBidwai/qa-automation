@@ -25,3 +25,51 @@ class StubAIProvider:
 
     def triage(self, failure: FailureEvidence) -> TriageLabel:
         raise NotImplementedError("triage lands in Sprint 7")
+
+
+class ProseWrappingStubAIProvider:
+    """A stub that mimics a REAL model's MESSY output (B5→B6, ADR-0037).
+
+    A real model wraps generated code in lead-in prose, a ```php fence, and a
+    trailing "Key decisions" table — which the clean ``StubAIProvider`` never did,
+    so the prose-wrapping gap slipped the hermetic suite. This provider reproduces
+    that shape so the suite proves the extractor recovers a directly-runnable
+    script. ``uses_factory=True`` additionally calls ``Model::factory()`` to exercise
+    the missing-factory fallback.
+    """
+
+    def __init__(self, *, uses_factory: bool = False) -> None:
+        self._uses_factory = uses_factory
+
+    def generate(self, prompt: str, context: Subgraph, budget_tokens: int) -> str:
+        fingerprint = hashlib.sha256(
+            f"{prompt}\x00{context.render()}".encode()
+        ).hexdigest()[:12]
+        setup = (
+            "    \\App\\Models\\Country::factory()->create(['id' => 1]);\n"
+            if self._uses_factory
+            else ""
+        )
+        return (
+            "Here is the Pest feature test for this endpoint. I chose `postJson` so "
+            "Laravel returns the JSON validation envelope.\n\n"
+            "```php\n"
+            "<?php\n\n"
+            "use Illuminate\\Foundation\\Testing\\RefreshDatabase;\n\n"
+            "uses(RefreshDatabase::class);\n\n"
+            f"it('case {fingerprint}', function () {{\n"
+            f"{setup}"
+            "    $response = $this->postJson('api/users', ['email' => 'a@b.test']);\n"
+            "    $response->assertStatus(422);\n"
+            "    $response->assertJsonValidationErrors(['name']);\n"
+            "});\n"
+            "```\n\n"
+            "**Key decisions:**\n\n"
+            "| Decision | Reason |\n"
+            "|---|---|\n"
+            "| `RefreshDatabase` | clean DB between tests |\n"
+            "| `postJson` | sets the JSON Accept header so validation returns 422 |\n"
+        )
+
+    def triage(self, failure: FailureEvidence) -> TriageLabel:
+        raise NotImplementedError("triage lands in Sprint 7")
