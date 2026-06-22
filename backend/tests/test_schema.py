@@ -1,4 +1,4 @@
-"""Migrations 0002–0020 applied cleanly and additively in the compose stack."""
+"""Migrations 0002–0022 applied cleanly and additively in the compose stack."""
 
 from __future__ import annotations
 
@@ -25,6 +25,9 @@ EXPECTED_TABLES = {
     "organization_members",
     "organization_invites",
     "jobs",
+    "project_documents",
+    "document_chunks",
+    "spec_divergences",
 }
 EXPECTED_ENUMS = {
     "test_type",
@@ -54,7 +57,7 @@ async def test_migration_at_head(db_session: AsyncSession) -> None:
     revision = (
         await db_session.execute(text("SELECT version_num FROM alembic_version"))
     ).scalar_one()
-    assert revision == "0020_durable_jobs"
+    assert revision == "0022_spec_divergences"
 
 
 async def test_projects_has_app_url_and_soft_delete_columns(
