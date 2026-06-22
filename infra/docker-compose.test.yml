@@ -66,6 +66,29 @@ services:
       db:
         condition: service_healthy
 
+  # Real disposable-DB lane (B10, ADR-0043) — provisions throwaway Postgres
+  # databases from migrations and asserts table state against them. Heavy (real
+  # CREATE/DROP DATABASE per test); built/run only via `make test-db-state`, never
+  # in the fast suite. Reuses the backend `test` image (psycopg present); needs db.
+  db-state-tests:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: test
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-qa_platform}:${POSTGRES_PASSWORD:-change-me-locally}@db:5432/${POSTGRES_DB:-qa_platform}
+      LOG_LEVEL: WARNING
+    volumes:
+      - ./.artifacts/db-state:/app/.artifacts
+    command:
+      - sh
+      - -c
+      - >-
+        pytest -m db_state --junitxml=.artifacts/junit.xml -p no:cacheprovider
+    depends_on:
+      db:
+        condition: service_healthy
+
   # Laravel/Pest runner — real PHP/Pest against the bootable fixture app, plus
   # the PHP-helper shape test (closes T1.3 mock drift). Built/run only via
   # `make test-runners`; no Postgres (the target uses in-memory sqlite). Build

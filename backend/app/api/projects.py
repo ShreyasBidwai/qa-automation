@@ -33,6 +33,8 @@ from .authz import authorize_org, authorize_project
 from .deps import CurrentUser, get_session
 from .jobs import dispatch_job
 from .schemas import (
+    DbStateTierResponse,
+    DbStateTierUpdate,
     IngestResponse,
     JobStatusResponse,
     ProjectCreate,
@@ -175,6 +177,40 @@ async def update_project(
     await session.flush()
     await session.refresh(project)
     return _project_response(project)
+
+
+@router.get("/projects/{project_id}/db-state-tier", response_model=DbStateTierResponse)
+async def get_db_state_tier(
+    project_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> DbStateTierResponse:
+    """The project's DB-state-testing tier (B10, ADR-0043). VIEW; 404 if hidden."""
+    project = await authorize_project(
+        session, project_id, current_user, Permission.VIEW
+    )
+    return DbStateTierResponse(project_id=project.id, tier=project.db_state_tier)
+
+
+@router.put("/projects/{project_id}/db-state-tier", response_model=DbStateTierResponse)
+async def set_db_state_tier(
+    project_id: uuid.UUID,
+    body: DbStateTierUpdate,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> DbStateTierResponse:
+    """Set the DB-state-testing tier (B10, ADR-0043). MANAGE_PROJECT; bad value → 422.
+
+    Raising to ``full`` records intent only; the non-prod safety gate is enforced at
+    execution time, when a disposable target is actually written to — so flipping the
+    tier can never, by itself, cause a write to a real database.
+    """
+    project = await authorize_project(
+        session, project_id, current_user, Permission.MANAGE_PROJECT
+    )
+    project.db_state_tier = body.tier
+    await session.flush()
+    return DbStateTierResponse(project_id=project.id, tier=project.db_state_tier)
 
 
 @router.delete("/projects/{project_id}", status_code=204)

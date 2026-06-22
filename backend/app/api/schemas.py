@@ -67,6 +67,28 @@ class ProjectResponse(BaseModel):
     created_at: datetime
 
 
+# --- DB-state testing tier (B10, ADR-0043) ----------------------------------
+
+DbStateTierLiteral = Literal["off", "read_only", "full"]
+
+
+class DbStateTierResponse(BaseModel):
+    """A project's DB-state-testing opt-in tier (off / read_only / full)."""
+
+    project_id: uuid.UUID
+    tier: str  # always one of DbStateTierLiteral; free str so the column maps cleanly
+
+
+class DbStateTierUpdate(BaseModel):
+    """Set a project's DB-state-testing tier. Bad value → 422; gated by RBAC.
+
+    Raising to ``full`` only records intent; the non-prod safety gate (ADR-0043) is
+    enforced at execution time, when a disposable target is actually written to.
+    """
+
+    tier: DbStateTierLiteral
+
+
 # --- auth (B2) --------------------------------------------------------------
 
 

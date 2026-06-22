@@ -58,7 +58,7 @@ async def test_migration_at_head(db_session: AsyncSession) -> None:
     revision = (
         await db_session.execute(text("SELECT version_num FROM alembic_version"))
     ).scalar_one()
-    assert revision == "0024_test_heals"
+    assert revision == "0025_db_state_tier"
 
 
 async def test_projects_has_app_url_and_soft_delete_columns(
@@ -80,6 +80,7 @@ async def test_projects_has_app_url_and_soft_delete_columns(
     # B3 (0019): org-scoped; owner_id renamed to created_by (ADR-0032).
     assert {"org_id", "created_by"} <= columns
     assert "owner_id" not in columns
+    assert "db_state_tier" in columns  # B10 (0025), ADR-0043
 
 
 async def test_model_nodes_has_embedding_column_and_hnsw_index(
