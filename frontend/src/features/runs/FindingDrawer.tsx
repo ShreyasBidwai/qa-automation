@@ -1,9 +1,9 @@
-import { ChevronDown, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { Drawer } from "@/components/Drawer";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TrustMark } from "@/components/ui/TrustMark";
 import { runApi } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
@@ -11,22 +11,15 @@ import type {
   EvidenceItem,
   Finding,
   FindingHistory,
-  FindingLocation,
   TriageStatusValue,
 } from "@/lib/api/types";
 
-import {
-  confidenceSpec,
-  layerSpec,
-  oracleTrustSpec,
-  severitySpec,
-  statusSpec,
-  triageSpec,
-} from "./findingBadges";
-import { CrossLayerRibbon } from "./CrossLayerRibbon";
-import { confidenceRationale, failureLine, statusMeaning } from "./findingDetail";
+import { triageSpec } from "./findingBadges";
+import { statusMeaning } from "./findingDetail";
+import { historyViz, severityViz } from "./findingViz";
+import { BlastPathRibbon } from "./BlastPathRibbon";
 
-/** The finding detail "fix view" — opens from a findings-list row (T6.3). */
+/** The finding detail "fix view" — screen 8 in a right-side drawer (T6.3). */
 export function FindingDrawer({
   finding,
   runId,
@@ -67,97 +60,40 @@ function FindingDetail({
   onClose: () => void;
   onTriaged?: (updated: Finding) => void;
 }) {
-  const severity = severitySpec(finding.severity);
-  const layer = layerSpec(finding.layer);
-  const confidence = confidenceSpec(finding.oracle_source);
-  const status = statusSpec(finding.status);
-  const observed = failureLine(finding);
+  const severity = severityViz(finding.severity);
 
   return (
     <>
-      <header className="sticky top-0 z-10 border-b border-border bg-surface px-5 py-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-base font-medium text-foreground">{finding.title}</h2>
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <Badge level={severity.level}>{severity.label}</Badge>
-              <Badge level={confidence.level}>{confidence.label}</Badge>
-              <Badge level={layer.level}>{layer.label}</Badge>
-              <Badge level={status.level}>{status.label}</Badge>
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              explains {finding.explains_count}{" "}
-              {finding.explains_count === 1 ? "test" : "tests"}
-            </p>
-          </div>
-          <button
-            type="button"
-            data-autofocus
-            onClick={onClose}
-            aria-label="Close"
-            className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <X className="h-5 w-5" aria-hidden="true" />
-          </button>
-        </div>
-      </header>
-
-      <div className="flex-1">
-        <Section title="Expected vs observed">
-          <div className="space-y-3">
-            <Field label="Expected">
-              {finding.expected ? (
-                <pre className="overflow-x-auto rounded-md border border-border bg-background p-3 font-mono text-xs text-foreground">
-                  {JSON.stringify(finding.expected, null, 2)}
-                </pre>
-              ) : (
-                <Flag>No expected oracle is recorded for this finding.</Flag>
+      <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border bg-surface px-5 py-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-[17px] font-semibold leading-tight text-foreground">
+              {finding.title}
+            </h2>
+            <span
+              className={cn(
+                "shrink-0 rounded px-2 py-0.5 text-[11px] font-semibold tracking-[0.02em]",
+                severity.pill,
               )}
-            </Field>
-            <Field label="Observed">
-              {observed ? (
-                <p className="font-mono text-[13px] text-foreground">{observed}</p>
-              ) : (
-                <Flag>No observed-failure detail is available.</Flag>
-              )}
-              <p className="mt-1 text-xs text-muted-foreground">
-                The full actual response/state is captured in the evidence trace, not as
-                a field.
-              </p>
-            </Field>
+            >
+              {severity.label}
+            </span>
           </div>
-        </Section>
-
-        <Section title="Location">
-          <LocationBlock location={finding.location ?? null} />
-          <div className="mt-3">
-            <CrossLayerRibbon finding={finding} />
-          </div>
-        </Section>
-
-        <Section title="Confidence">
-          <p className="text-sm text-foreground">
-            {confidenceRationale(finding.oracle_source)}
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            explains {finding.explains_count}{" "}
+            {finding.explains_count === 1 ? "test" : "tests"}
           </p>
-          {finding.confidence_mixed ? (
-            <p className="mt-2 text-xs text-muted-foreground">
-              The grouped tests disagree on oracle tier — the strongest sets the
-              badge above.
-            </p>
-          ) : null}
-        </Section>
-
-        <Section title="Evidence">
-          <EvidenceList
-            evidence={finding.evidence ?? null}
-            reference={finding.evidence_ref ?? null}
-          />
-        </Section>
-
-        <Section title="History">
-          <HistoryBlock history={finding.history ?? null} status={finding.status} />
-        </Section>
-      </div>
+        </div>
+        <button
+          type="button"
+          data-autofocus
+          onClick={onClose}
+          aria-label="Close"
+          className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <X className="h-5 w-5" aria-hidden="true" />
+        </button>
+      </header>
 
       <TriagePanel
         key={finding.id}
@@ -165,49 +101,79 @@ function FindingDetail({
         runId={runId}
         onTriaged={onTriaged}
       />
+
+      <FieldGrid finding={finding} />
+
+      <Section title="Blast path">
+        <BlastPathRibbon finding={finding} />
+      </Section>
+
+      <Section title="Evidence">
+        <EvidenceList
+          evidence={finding.evidence ?? null}
+          reference={finding.evidence_ref ?? null}
+        />
+      </Section>
+
+      <Section title="History">
+        <HistoryBlock history={finding.history ?? null} status={finding.status} />
+      </Section>
     </>
   );
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
-  const [open, setOpen] = useState(true);
   return (
-    <section className="border-b border-border">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        className="flex w-full items-center justify-between gap-2 px-5 py-3 text-left text-sm font-medium text-foreground hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
-      >
+    <section className="border-b border-border px-5 py-5">
+      <h3 className="mb-3.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
         {title}
-        <ChevronDown
-          className={cn(
-            "h-4 w-4 text-muted-foreground transition-transform",
-            open && "rotate-180",
-          )}
-          aria-hidden="true"
-        />
-      </button>
-      {open ? <div className="px-5 pb-5">{children}</div> : null}
+      </h3>
+      {children}
     </section>
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function FieldGrid({ finding }: { finding: Finding }) {
+  const severity = severityViz(finding.severity);
+  const triageStatus = finding.triage?.status ?? "open";
+  const triage = triageSpec(triageStatus);
+  const history = finding.history ?? null;
   return (
-    <div className="space-y-1">
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      {children}
-    </div>
+    <dl className="grid grid-cols-3 gap-px border-b border-border bg-border">
+      <FieldCell label="Severity">
+        <span className={cn("font-semibold", severity.fg)}>{severity.label}</span>
+      </FieldCell>
+      <FieldCell label="Confidence">
+        <TrustMark source={finding.oracle_source} label />
+      </FieldCell>
+      <FieldCell label="Layer">
+        <span className="font-mono text-xs text-foreground">{finding.layer}</span>
+      </FieldCell>
+      <FieldCell label="Status">
+        <span className="text-foreground">{triage.label}</span>
+      </FieldCell>
+      <FieldCell label="First seen">
+        <span className="break-all font-mono text-xs text-foreground">
+          {history?.first_seen_run ?? "—"}
+        </span>
+      </FieldCell>
+      <FieldCell label="Last seen">
+        <span className="break-all font-mono text-xs text-foreground">
+          {history?.last_seen_run ?? "—"}
+        </span>
+      </FieldCell>
+    </dl>
   );
 }
 
-function Flag({ children }: { children: ReactNode }) {
-  // A graceful fallback note for a genuinely-absent field — never invented data.
+function FieldCell({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <p className="rounded-md border border-dashed border-border bg-background px-3 py-2 text-xs text-muted-foreground">
-      {children}
-    </p>
+    <div className="bg-surface px-5 py-3.5">
+      <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </dt>
+      <dd className="mt-1.5 text-[13px]">{children}</dd>
+    </div>
   );
 }
 
@@ -234,24 +200,6 @@ function EvidenceRef({ reference }: { reference: string }) {
   );
 }
 
-function LocationBlock({ location }: { location: FindingLocation | null }) {
-  const anchor = location?.anchor ?? null;
-  if (!anchor || !anchor.node_type) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        The failing node couldn&rsquo;t be resolved for this finding.
-      </p>
-    );
-  }
-  return (
-    <p className="text-sm">
-      <span className="text-muted-foreground">Failing node: </span>
-      <span className="font-mono text-foreground">{anchor.label}</span>{" "}
-      <span className="text-xs text-muted-foreground">({anchor.node_type})</span>
-    </p>
-  );
-}
-
 function EvidenceList({
   evidence,
   reference,
@@ -262,28 +210,24 @@ function EvidenceList({
   return (
     <div className="space-y-3">
       {evidence && evidence.length > 0 ? (
-        <ul className="space-y-2">
-          {evidence.map((item, index) => {
-            const trust = oracleTrustSpec(item.oracle_source);
-            return (
-              <li
-                key={`${item.reference ?? item.summary}-${index}`}
-                className="rounded-md border border-border bg-background p-3"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <p className="text-[13px] text-foreground">{item.summary}</p>
-                  <Badge level={trust.level} className="shrink-0">
-                    {trust.label}
-                  </Badge>
-                </div>
-                {item.reference ? (
-                  <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
-                    {item.reference}
-                  </p>
-                ) : null}
-              </li>
-            );
-          })}
+        <ul className="space-y-2.5">
+          {evidence.map((item, index) => (
+            <li
+              key={`${item.reference ?? item.summary}-${index}`}
+              className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-3.5 py-3"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <span
+                  className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-status-fail-bg text-[11px] font-semibold text-status-fail-fg"
+                  aria-hidden="true"
+                >
+                  ✗
+                </span>
+                <p className="text-[13px] text-foreground">{item.summary}</p>
+              </div>
+              <TrustMark source={item.oracle_source} pill className="shrink-0" />
+            </li>
+          ))}
         </ul>
       ) : (
         <p className="text-sm text-muted-foreground">
@@ -303,33 +247,31 @@ function HistoryBlock({
   status: string;
 }) {
   const classification = history?.classification ?? status;
+  const viz = historyViz(classification);
   return (
-    <div className="space-y-2">
-      <p className="text-sm text-foreground">{statusMeaning(classification)}</p>
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2.5">
+        <span
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold",
+            viz.text,
+          )}
+        >
+          <span
+            className={cn("h-1.5 w-1.5 rounded-full", viz.dot)}
+            aria-hidden="true"
+          />
+          {viz.label}
+        </span>
+        <span className="text-sm text-muted-foreground">
+          {statusMeaning(classification)}
+        </span>
+      </div>
       {history ? (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-          <dt className="text-muted-foreground">Occurrences</dt>
-          <dd className="text-foreground">
-            seen in {history.occurrence_count}{" "}
-            {history.occurrence_count === 1 ? "run" : "runs"} (recent history)
-          </dd>
-          {history.first_seen_run ? (
-            <>
-              <dt className="text-muted-foreground">First seen</dt>
-              <dd className="break-all font-mono text-foreground">
-                {history.first_seen_run}
-              </dd>
-            </>
-          ) : null}
-          {history.last_seen_run ? (
-            <>
-              <dt className="text-muted-foreground">Last seen</dt>
-              <dd className="break-all font-mono text-foreground">
-                {history.last_seen_run}
-              </dd>
-            </>
-          ) : null}
-        </dl>
+        <p className="text-xs text-muted-foreground">
+          Seen in {history.occurrence_count}{" "}
+          {history.occurrence_count === 1 ? "run" : "runs"} (recent history).
+        </p>
       ) : null}
     </div>
   );
@@ -380,15 +322,9 @@ function TriagePanel({
     onTriaged?.(result.data);
   }
 
-  const current = triageSpec(status);
   return (
-    <div className="border-t border-border bg-background px-5 py-4">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-medium text-foreground">Triage</span>
-        {status !== "open" ? <Badge level={current.level}>{current.label}</Badge> : null}
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+    <div className="border-b border-border bg-surface px-5 py-4">
+      <div className="flex flex-wrap items-center gap-2">
         {TRIAGE_ACTIONS.map((action) => {
           const active = status === action.value;
           return (
@@ -431,8 +367,8 @@ function TriagePanel({
       ) : null}
       {triagedAt ? (
         <p className="mt-2 text-xs text-muted-foreground">
-          Triaged {new Date(triagedAt).toLocaleString()}. Who triaged is recorded
-          once sign-in lands.
+          Triaged {new Date(triagedAt).toLocaleString()}. Who triaged is recorded once
+          sign-in lands.
         </p>
       ) : (
         <p className="mt-2 text-xs text-muted-foreground">

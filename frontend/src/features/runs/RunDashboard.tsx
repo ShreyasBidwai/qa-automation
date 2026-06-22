@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ChevronRight } from "lucide-react";
+import { ArrowDown, ArrowUp } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { EmptyState } from "@/components/EmptyState";
@@ -7,19 +7,12 @@ import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
+import { TrustMark } from "@/components/ui/TrustMark";
 import type { Finding } from "@/lib/api/types";
 import { navigate } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
-import {
-  confidenceSpec,
-  isMutedTriage,
-  layerSpec,
-  severitySpec,
-  statusSpec,
-  triageSpec,
-  type BadgeLevel,
-} from "./findingBadges";
+import { isMutedTriage, triageSpec } from "./findingBadges";
 import {
   ALL,
   EMPTY_FILTERS,
@@ -27,7 +20,13 @@ import {
   type FindingFilters,
 } from "./findingFilters";
 import {
-  formatCount,
+  confidenceLabel,
+  confidenceMix,
+  historyCounts,
+  severityCounts,
+} from "./findingStats";
+import { historyViz, severityViz } from "./findingViz";
+import {
   formatPercent,
   passRateDelta,
   readMetrics,
@@ -36,7 +35,7 @@ import {
 import { FindingDrawer } from "./FindingDrawer";
 import { useRunDashboard } from "./useRunDashboard";
 
-/** The at-a-glance health view for a completed run (T6.2). */
+/** The at-a-glance health view for a completed run — the hero screen (T6.2). */
 export function RunDashboard({
   runId,
   onSelectFinding,
@@ -44,8 +43,7 @@ export function RunDashboard({
   runId: string;
   onSelectFinding?: (finding: Finding) => void;
 }) {
-  const { summary, findings, loading, error, replaceFinding } =
-    useRunDashboard(runId);
+  const { summary, findings, loading, error, replaceFinding } = useRunDashboard(runId);
   const [filters, setFilters] = useState<FindingFilters>(EMPTY_FILTERS);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -92,18 +90,12 @@ export function RunDashboard({
           <ErrorBlock message={error} />
         ) : (
           <>
-            <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <StatCard
-                label="Pass rate"
-                value={formatPercent(metrics.passRate)}
-                delta={delta ? <DeltaTag delta={delta} /> : null}
-              />
-              <StatCard label="Failed" value={formatCount(metrics.failed)} />
-              <StatCard label="Errors" value={formatCount(metrics.errors)} />
-              <StatCard label="Coverage" value={formatPercent(metrics.coverage)} />
+            <section className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+              <PassRateCard passRate={metrics.passRate} delta={delta} />
+              <FindingsCard findings={findings} />
+              <NewRegressionsCard findings={findings} />
+              <ConfidenceCard findings={findings} />
             </section>
-
-            <ConfidenceStrip findings={findings} />
 
             {findings.length === 0 ? (
               <EmptyState
@@ -116,11 +108,12 @@ export function RunDashboard({
                 {visible.length === 0 ? (
                   <FilteredEmpty onClear={() => setFilters(EMPTY_FILTERS)} />
                 ) : (
-                  <div className="overflow-hidden rounded-lg border border-border bg-surface">
+                  <div className="overflow-hidden rounded-xl border border-border bg-surface">
                     {visible.map((finding) => (
                       <FindingRow
                         key={finding.id}
                         finding={finding}
+                        selected={finding.id === selectedId}
                         onSelect={select}
                       />
                     ))}
@@ -141,25 +134,41 @@ export function RunDashboard({
   );
 }
 
-function StatCard({
-  label,
-  value,
+// ---- stat cards -------------------------------------------------------------
+
+function StatCard({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="rounded-xl border border-border bg-surface p-4">
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      {children}
+    </div>
+  );
+}
+
+function PassRateCard({
+  passRate,
   delta,
 }: {
-  label: string;
-  value: string;
-  delta?: ReactNode;
+  passRate: number | null;
+  delta: PassRateDelta | null;
 }) {
+  const pct =
+    passRate === null ? 0 : Math.round(passRate <= 1 ? passRate * 100 : passRate);
   return (
-    <div className="rounded-lg border border-border bg-surface p-4">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 flex items-baseline gap-2">
-        <span className="text-[22px] font-medium tabular-nums text-foreground">
-          {value}
+    <StatCard label="Pass rate">
+      <div className="mt-2.5 flex items-baseline gap-2">
+        <span className="text-[30px] font-semibold leading-none tracking-tight tabular-nums text-foreground">
+          {formatPercent(passRate)}
         </span>
-        {delta}
+        {delta ? <DeltaTag delta={delta} /> : null}
       </div>
-    </div>
+      <div className="mt-3.5 h-1.5 overflow-hidden rounded-full bg-status-neutral-bg">
+        <div
+          className="h-full rounded-full bg-status-pass-solid"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </StatCard>
   );
 }
 
@@ -182,49 +191,110 @@ function DeltaTag({ delta }: { delta: PassRateDelta }) {
   );
 }
 
-const DOT: Record<BadgeLevel, string> = {
-  pass: "bg-status-pass-solid",
-  fail: "bg-status-fail-solid",
-  flaky: "bg-status-flaky-solid",
-  info: "bg-status-info-solid",
-  neutral: "bg-status-neutral-solid",
-};
-
-function ConfidenceStrip({ findings }: { findings: Finding[] }) {
-  const high = findings.filter(
-    (f) => f.oracle_source === "rule-derived" || f.oracle_source === "spec-grounded",
-  ).length;
-  const behaviour = findings.filter(
-    (f) => f.oracle_source === "characterization",
-  ).length;
-  const flaky = findings.filter((f) => f.status === "flaky").length;
-
+function FindingsCard({ findings }: { findings: Finding[] }) {
+  const counts = severityCounts(findings);
   return (
-    <div className="flex flex-wrap gap-2">
-      <Chip dot="pass" label="High confidence" count={high} />
-      <Chip dot="flaky" label="Behaviour-changed" count={behaviour} />
-      <Chip dot="info" label="Flaky" count={flaky} />
-    </div>
+    <StatCard label="Findings">
+      <div className="mt-2.5 flex items-baseline gap-2">
+        <span className="text-[30px] font-semibold leading-none tracking-tight tabular-nums text-foreground">
+          {findings.length}
+        </span>
+        <span className="text-xs text-muted-foreground">open</span>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium">
+        <SeverityCount
+          label={`${counts.critical} critical`}
+          dot="bg-status-fail-solid"
+          text="text-status-fail-fg"
+        />
+        <SeverityCount
+          label={`${counts.major} major`}
+          dot="bg-status-flaky-solid"
+          text="text-status-flaky-fg"
+        />
+        <SeverityCount
+          label={`${counts.minor} minor`}
+          dot="bg-status-neutral-solid"
+          text="text-muted-foreground"
+        />
+      </div>
+    </StatCard>
   );
 }
 
-function Chip({
-  dot,
+function SeverityCount({
   label,
-  count,
+  dot,
+  text,
 }: {
-  dot: BadgeLevel;
   label: string;
-  count: number;
+  dot: string;
+  text: string;
 }) {
   return (
-    <div className="inline-flex items-center gap-2 rounded-md border border-border bg-surface px-3 py-1.5 text-sm">
-      <span className={cn("h-2 w-2 rounded-full", DOT[dot])} aria-hidden="true" />
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium tabular-nums text-foreground">{count}</span>
-    </div>
+    <span className={cn("inline-flex items-center gap-1.5", text)}>
+      <span className={cn("h-[7px] w-[7px] rounded-full", dot)} aria-hidden="true" />
+      {label}
+    </span>
   );
 }
+
+function NewRegressionsCard({ findings }: { findings: Finding[] }) {
+  const counts = historyCounts(findings);
+  return (
+    <StatCard label="New / Regressions">
+      <div className="mt-2.5 flex items-baseline gap-1.5">
+        <span className="text-[30px] font-semibold leading-none tracking-tight tabular-nums text-status-info-fg">
+          {counts.new}
+        </span>
+        <span className="text-xs text-muted-foreground">new</span>
+        <span className="mx-1 text-muted-foreground">·</span>
+        <span className="text-[30px] font-semibold leading-none tracking-tight tabular-nums text-status-flaky-fg">
+          {counts.regression}
+        </span>
+        <span className="text-xs text-muted-foreground">regr</span>
+      </div>
+    </StatCard>
+  );
+}
+
+function ConfidenceCard({ findings }: { findings: Finding[] }) {
+  const mix = confidenceMix(findings);
+  const segments = [
+    { key: "rule", count: mix.rule, bar: "bg-trust-rule-solid" },
+    { key: "char", count: mix.characterization, bar: "bg-trust-char-solid" },
+    { key: "spec", count: mix.spec, bar: "bg-trust-spec-solid" },
+  ].filter((s) => s.count > 0);
+
+  return (
+    <StatCard label="Confidence">
+      <div className="mt-2 text-sm font-semibold text-foreground">
+        {confidenceLabel(mix)}
+      </div>
+      <div className="mt-3 flex h-1.5 gap-0.5 overflow-hidden rounded-full bg-status-neutral-bg">
+        {segments.map((s) => (
+          <div key={s.key} className={s.bar} style={{ flexGrow: s.count }} />
+        ))}
+      </div>
+      <div className="mt-2 flex gap-3 text-[11px] text-muted-foreground">
+        <MixLegend dot="bg-trust-rule-solid" count={mix.rule} />
+        <MixLegend dot="bg-trust-char-solid" count={mix.characterization} />
+        <MixLegend dot="bg-trust-spec-solid" count={mix.spec} />
+      </div>
+    </StatCard>
+  );
+}
+
+function MixLegend({ dot, count }: { dot: string; count: number }) {
+  return (
+    <span className="inline-flex items-center gap-1 tabular-nums">
+      <span className={cn("h-1.5 w-1.5 rounded-full", dot)} aria-hidden="true" />
+      {count}
+    </span>
+  );
+}
+
+// ---- filters ----------------------------------------------------------------
 
 function Filters({
   filters,
@@ -256,12 +326,12 @@ function Filters({
         ]}
       />
       <FilterSelect
-        label="Confidence"
+        label="Trust"
         value={filters.confidence}
         onChange={(v) => onChange({ ...filters, confidence: v })}
         options={[
           ["rule-derived", "Rule-derived"],
-          ["characterization", "Behaviour-changed"],
+          ["characterization", "Characterization"],
           ["spec-grounded", "Spec-grounded"],
         ]}
       />
@@ -325,17 +395,19 @@ function FilterSelect({
   );
 }
 
+// ---- findings list ----------------------------------------------------------
+
 function FindingRow({
   finding,
+  selected,
   onSelect,
 }: {
   finding: Finding;
+  selected: boolean;
   onSelect: (finding: Finding) => void;
 }) {
-  const severity = severitySpec(finding.severity);
-  const layer = layerSpec(finding.layer);
-  const confidence = confidenceSpec(finding.oracle_source);
-  const status = statusSpec(finding.status);
+  const severity = severityViz(finding.severity);
+  const history = historyViz(finding.status);
   const triageStatus = finding.triage?.status ?? "open";
   const triage = triageSpec(triageStatus);
   // Muted dispositions (wont_fix / false_positive) are intentionally silenced.
@@ -344,40 +416,58 @@ function FindingRow({
     <button
       type="button"
       onClick={() => onSelect(finding)}
+      aria-pressed={selected}
       className={cn(
-        "flex w-full items-center gap-3 border-b border-border px-4 py-3 text-left last:border-0 hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+        "flex w-full gap-3 border-b border-l-[3px] border-border px-4 py-3.5 text-left last:border-b-0 hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+        selected ? "border-l-accent bg-accent-subtle" : "border-l-transparent",
         muted && "opacity-60",
       )}
     >
-      <Badge level={severity.level}>{severity.label}</Badge>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-foreground">
-          {finding.title}
-        </div>
-        <div className="mt-1 flex flex-wrap items-center gap-1.5">
-          <Badge level={layer.level}>{layer.label}</Badge>
-          <Badge level={confidence.level}>{confidence.label}</Badge>
-          <span className="text-xs text-muted-foreground">
-            explains {finding.explains_count}{" "}
-            {finding.explains_count === 1 ? "test" : "tests"}
-          </span>
-        </div>
-      </div>
-      {triageStatus !== "open" ? (
-        <Badge level={triage.level}>{triage.label}</Badge>
-      ) : null}
-      <Badge level={status.level}>{status.label}</Badge>
-      <ChevronRight
-        className="h-4 w-4 shrink-0 text-muted-foreground"
+      <span
+        className={cn("mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full", severity.dot)}
         aria-hidden="true"
       />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-3">
+          <span className="text-sm font-medium text-foreground">{finding.title}</span>
+          <span
+            className={cn(
+              "shrink-0 rounded px-1.5 py-0.5 text-[10.5px] font-semibold tracking-[0.02em]",
+              severity.pill,
+            )}
+          >
+            {severity.label}
+          </span>
+        </div>
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+          <span className="rounded bg-status-neutral-bg px-1.5 py-px font-mono text-[10.5px] text-status-neutral-fg">
+            {finding.layer}
+          </span>
+          <TrustMark source={finding.oracle_source} label />
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 text-[11px] font-medium",
+              history.text,
+            )}
+          >
+            <span
+              className={cn("h-[5px] w-[5px] rounded-full", history.dot)}
+              aria-hidden="true"
+            />
+            {history.label}
+          </span>
+          {triageStatus !== "open" ? (
+            <Badge level={triage.level}>{triage.label}</Badge>
+          ) : null}
+        </div>
+      </div>
     </button>
   );
 }
 
 function FilteredEmpty({ onClear }: { onClear: () => void }) {
   return (
-    <div className="rounded-lg border border-dashed border-border bg-surface px-6 py-10 text-center">
+    <div className="rounded-xl border border-dashed border-border bg-surface px-6 py-10 text-center">
       <p className="text-sm text-muted-foreground">No findings match these filters.</p>
       <Button variant="ghost" size="sm" className="mt-3" onClick={onClear}>
         Clear filters
@@ -390,9 +480,9 @@ function Loading() {
   return (
     <div className="space-y-6">
       <p className="text-sm text-muted-foreground">Loading run…</p>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="h-20 rounded-lg border border-border bg-surface" />
+          <div key={i} className="h-24 rounded-xl border border-border bg-surface" />
         ))}
       </div>
     </div>
@@ -403,7 +493,7 @@ function ErrorBlock({ message }: { message: string }) {
   return (
     <div
       role="alert"
-      className="rounded-lg border border-border bg-surface px-4 py-3 text-sm"
+      className="rounded-xl border border-border bg-surface px-4 py-3 text-sm"
     >
       <span className="text-status-fail-fg">Couldn&rsquo;t load this run.</span>{" "}
       <span className="text-muted-foreground">

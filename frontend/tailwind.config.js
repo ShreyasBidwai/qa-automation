@@ -21,6 +21,7 @@ export default {
           DEFAULT: "var(--color-accent)",
           hover: "var(--color-accent-hover)",
           foreground: "var(--color-accent-foreground)",
+          subtle: "var(--color-accent-subtle)",
         },
         status: {
           "pass-bg": "var(--color-status-pass-bg)",
@@ -39,6 +40,21 @@ export default {
           "neutral-fg": "var(--color-status-neutral-fg)",
           "neutral-solid": "var(--color-status-neutral-solid)",
         },
+        // The oracle-trust signature palette (see index.css) — emerald / amber / blue.
+        trust: {
+          "rule-solid": "var(--color-trust-rule-solid)",
+          "rule-bg": "var(--color-trust-rule-bg)",
+          "rule-fg": "var(--color-trust-rule-fg)",
+          "rule-border": "var(--color-trust-rule-border)",
+          "char-solid": "var(--color-trust-char-solid)",
+          "char-bg": "var(--color-trust-char-bg)",
+          "char-fg": "var(--color-trust-char-fg)",
+          "char-border": "var(--color-trust-char-border)",
+          "spec-solid": "var(--color-trust-spec-solid)",
+          "spec-bg": "var(--color-trust-spec-bg)",
+          "spec-fg": "var(--color-trust-spec-fg)",
+          "spec-border": "var(--color-trust-spec-border)",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -46,7 +62,7 @@ export default {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        // UI: Inter (design-direction.md). Weights 400/500 only in product chrome.
+        // UI: Inter (design brief). Weights 400/500/600 (600 for headings/wordmark).
         sans: [
           "Inter",
           "ui-sans-serif",

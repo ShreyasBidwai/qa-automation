@@ -48,25 +48,27 @@ describe("RunDashboard", () => {
     vi.mocked(runApi.findings).mockReset();
   });
 
-  it("renders the summary stat cards from the run summary", async () => {
-    vi.mocked(runApi.get).mockResolvedValue(
-      summaryResult({ pass_rate: 0.8, failed: 2, errors: 3, coverage: 0.6 }),
-    );
+  it("renders the four headline stat cards from the run + findings", async () => {
+    vi.mocked(runApi.get).mockResolvedValue(summaryResult({ pass_rate: 0.8 }));
     vi.mocked(runApi.findings).mockResolvedValue(
-      findingsResult([finding({ id: "f1", oracle_source: "rule-derived" })]),
+      findingsResult([
+        finding({ id: "f1", severity: "major", oracle_source: "rule-derived" }),
+      ]),
     );
 
     render(<RunDashboard runId="r1" />);
 
     expect(await screen.findByText("80%")).toBeInTheDocument();
-    expect(screen.getByText("60%")).toBeInTheDocument();
-    expect(screen.getByText("2")).toBeInTheDocument();
-    expect(screen.getByText("3")).toBeInTheDocument();
     expect(screen.getByText("Pass rate")).toBeInTheDocument();
-    expect(screen.getByText("Coverage")).toBeInTheDocument();
+    expect(screen.getByText("Findings")).toBeInTheDocument();
+    expect(screen.getByText("New / Regressions")).toBeInTheDocument();
+    expect(screen.getByText("Confidence")).toBeInTheDocument();
+    // Stats are derived from the findings list, not invented.
+    expect(screen.getByText("1 major")).toBeInTheDocument();
+    expect(screen.getByText("All rule-derived")).toBeInTheDocument();
   });
 
-  it("renders the ranked findings with correct badges, in order", async () => {
+  it("renders the ranked findings with trust marks + badges, in order", async () => {
     vi.mocked(runApi.get).mockResolvedValue(summaryResult({}));
     vi.mocked(runApi.findings).mockResolvedValue(
       findingsResult([
@@ -96,16 +98,14 @@ describe("RunDashboard", () => {
     const rowA = (await screen.findByText("Checkout 500")).closest("button")!;
     expect(within(rowA).getByText("Critical")).toBeInTheDocument();
     expect(within(rowA).getByText("api")).toBeInTheDocument();
-    expect(within(rowA).getByText("Rule-derived")).toBeInTheDocument();
+    expect(within(rowA).getByText("rule-derived")).toBeInTheDocument();
     expect(within(rowA).getByText("Regression")).toBeInTheDocument();
-    expect(within(rowA).getByText(/explains 3 tests/)).toBeInTheDocument();
 
     const rowB = screen.getByText("Cart count drifted").closest("button")!;
     expect(within(rowB).getByText("Minor")).toBeInTheDocument();
     expect(within(rowB).getByText("ui")).toBeInTheDocument();
-    expect(within(rowB).getByText("Behaviour-changed")).toBeInTheDocument();
+    expect(within(rowB).getByText("characterization")).toBeInTheDocument();
     expect(within(rowB).getByText("New")).toBeInTheDocument();
-    expect(within(rowB).getByText(/explains 1 test$/)).toBeInTheDocument();
 
     // Server ranking is preserved (A before B).
     const list = rowA.parentElement!;

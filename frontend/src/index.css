@@ -22,11 +22,12 @@
     --color-accent: #4f46e5; /* indigo-600 */
     --color-accent-hover: #4338ca; /* indigo-700 */
     --color-accent-foreground: #ffffff;
+    --color-accent-subtle: #eef0ff; /* indigo-50 — active nav / soft accent fill */
 
-    /* Status: pass = green */
-    --color-status-pass-bg: #f0fdf4; /* green-50 */
-    --color-status-pass-fg: #15803d; /* green-700 */
-    --color-status-pass-solid: #16a34a; /* green-600 */
+    /* Status: pass = emerald (the brief: "emerald = pass / rule-derived") */
+    --color-status-pass-bg: #ecfdf5; /* emerald-50 */
+    --color-status-pass-fg: #047857; /* emerald-700 */
+    --color-status-pass-solid: #059669; /* emerald-600 */
 
     /* Status: fail = red */
     --color-status-fail-bg: #fef2f2; /* red-50 */
@@ -47,6 +48,27 @@
     --color-status-neutral-bg: #f4f4f5; /* zinc-100 */
     --color-status-neutral-fg: #52525b; /* zinc-600 */
     --color-status-neutral-solid: #a1a1aa; /* zinc-400 */
+
+    /*
+     * Oracle-trust marks — THE signature. Each tier gets a precise, named palette
+     * (solid for the glyph, soft bg + border + fg for the pill). This is the one
+     * bold device in the product; everything else stays quiet (design brief).
+     *   rule-derived  → emerald (strong, follows a real rule)
+     *   characterization → amber (weak, only pins current behaviour)
+     *   spec-grounded → blue  (anchored to a documented contract)
+     */
+    --color-trust-rule-solid: #059669; /* emerald-600 */
+    --color-trust-rule-bg: #ecfdf5; /* emerald-50 */
+    --color-trust-rule-fg: #047857; /* emerald-700 */
+    --color-trust-rule-border: #a7f3d0; /* emerald-200 */
+    --color-trust-char-solid: #d97706; /* amber-600 */
+    --color-trust-char-bg: #fffbeb; /* amber-50 */
+    --color-trust-char-fg: #b45309; /* amber-700 */
+    --color-trust-char-border: #fde68a; /* amber-200 */
+    --color-trust-spec-solid: #2563eb; /* blue-600 */
+    --color-trust-spec-bg: #eff6ff; /* blue-50 */
+    --color-trust-spec-fg: #1d4ed8; /* blue-700 */
+    --color-trust-spec-border: #bfdbfe; /* blue-200 */
 
     --radius: 0.5rem;
   }

@@ -1,17 +1,21 @@
+import { cn } from "@/lib/utils";
+
 /**
- * The Polaris wordmark — a clean text mark, NOT a visual theme. No star /
- * constellation / sci-fi motif (brand guardrail): just the product name set in
- * Inter with a small descriptor, sitting quietly in the top-left.
+ * The Polaris wordmark — the name only, no icon (brand guardrail: NO star /
+ * constellation / sci-fi / glyph standing in for a letter). The one justified
+ * detail is a single letterform set in the indigo accent — the "i" — a quiet,
+ * deliberate mark, not a gimmick. Sits in the sidebar (sm) and large on the
+ * sign-in screen (lg).
  */
-export function Wordmark() {
+export function Wordmark({ size = "sm" }: { size?: "sm" | "lg" }) {
   return (
-    <div className="flex flex-col leading-none">
-      <span className="text-[15px] font-medium tracking-tight text-foreground">
-        Polaris
-      </span>
-      <span className="mt-0.5 text-[11px] text-muted-foreground">
-        QA automation platform
-      </span>
-    </div>
+    <span
+      className={cn(
+        "font-semibold tracking-[-0.015em] text-foreground",
+        size === "lg" ? "text-[32px]" : "text-[17px]",
+      )}
+    >
+      Polar<span className="text-accent">i</span>s
+    </span>
   );
 }
