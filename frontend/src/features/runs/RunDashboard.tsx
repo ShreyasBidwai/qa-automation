@@ -64,7 +64,7 @@ export function RunDashboard({
       {loading ? (
         <LoadingState />
       ) : error ? (
-        <div className="px-6 py-8">
+        <div className="flex items-center justify-center px-6 py-8 min-[1024px]:min-h-0 min-[1024px]:flex-1">
           <StatePanel
             icon={AlertTriangle}
             tone="danger"
@@ -78,12 +78,14 @@ export function RunDashboard({
           <StatCards metrics={metrics} delta={delta} findings={findings} />
 
           {findings.length === 0 ? (
-            <StatePanel
-              icon={CheckCircle2}
-              tone="success"
-              title="This run came back clean"
-              description="No findings across the run — every assertion held. Polaris keeps watching as the code changes."
-            />
+            <div className="flex items-center justify-center min-[1024px]:min-h-0 min-[1024px]:flex-1">
+              <StatePanel
+                icon={CheckCircle2}
+                tone="success"
+                title="This run came back clean"
+                description="No findings across the run — every assertion held. Polaris keeps watching as the code changes."
+              />
+            </div>
           ) : (
             <div className="flex flex-col gap-4 pb-6 min-[1024px]:min-h-0 min-[1024px]:flex-1 min-[1024px]:flex-row">
               <FindingsList
@@ -95,7 +97,7 @@ export function RunDashboard({
               />
               <section
                 aria-label="Finding detail"
-                className="flex flex-col overflow-hidden rounded-xl border border-border bg-surface min-[1024px]:min-h-0 min-[1024px]:flex-1"
+                className="flex flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-card min-[1024px]:min-h-0 min-[1024px]:flex-1"
               >
                 <div className="min-h-0 flex-1 overflow-y-auto">
                   {selected ? (
@@ -210,7 +212,7 @@ function StatCards({
 
 function StatCard({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="rounded-xl border border-border bg-surface px-[18px] py-4">
+    <div className="rounded-xl border border-border bg-surface px-[18px] py-4 shadow-card">
       <div className="text-xs font-medium text-muted-foreground">{label}</div>
       {children}
     </div>
@@ -391,7 +393,7 @@ function FindingsList({
   return (
     <section
       aria-label="Findings"
-      className="flex flex-col overflow-hidden rounded-xl border border-border bg-surface min-[1024px]:min-h-0 min-[1024px]:w-[42%] min-[1024px]:min-w-[380px]"
+      className="flex flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-card min-[1024px]:min-h-0 min-[1024px]:w-[42%] min-[1024px]:min-w-[380px]"
     >
       <div className="flex-none border-b border-border-subtle px-4 py-3.5">
         <div className="mb-3 flex items-center justify-between">
@@ -512,7 +514,7 @@ function FilterPill({
       aria-label={name}
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="rounded-[7px] border border-border bg-background py-1 pl-2.5 pr-1.5 text-xs font-medium text-status-neutral-fg focus-visible:border-accent"
+      className="rounded-[7px] border border-border bg-background py-1 pl-2.5 pr-1.5 text-xs font-medium text-status-neutral-fg transition-colors focus-visible:border-accent"
     >
       <option value={ALL}>{name}</option>
       {options.map(([optionValue, optionLabel]) => (
@@ -567,7 +569,7 @@ function LoadingState() {
         {[0, 1, 2, 3].map((i) => (
           <div
             key={i}
-            className="h-[104px] rounded-xl border border-border bg-surface"
+            className="h-[104px] rounded-xl border border-border bg-surface shadow-card"
           />
         ))}
       </div>

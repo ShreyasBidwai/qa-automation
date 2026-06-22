@@ -33,7 +33,7 @@ export function FindingRow({
       onClick={() => onSelect(finding)}
       aria-pressed={selected}
       className={cn(
-        "flex w-full gap-3 border-b border-l-[3px] border-border-subtle px-4 py-3.5 text-left last:border-b-0 hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+        "flex w-full gap-3 border-b border-l-[3px] border-border-subtle px-4 py-3.5 text-left transition-colors last:border-b-0 hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
         selected ? "border-l-accent bg-surface-selected" : "border-l-transparent",
         muted && "opacity-60",
       )}
