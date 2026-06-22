@@ -79,6 +79,7 @@ class RunLifecycle:
                         outcome=er.outcome,
                         triage=None,  # Sprint 7
                         evidence_ref=er.evidence_ref,
+                        message=er.message,  # B8: detail for heal classification
                     )
                 )
             status = (
