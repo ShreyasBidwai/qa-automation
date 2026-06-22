@@ -14,6 +14,7 @@ from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_token
+from app.embeddings.types import EmbeddingProvider
 from app.models.user import User
 from app.repositories.session_repository import SessionRepository
 from app.repositories.user_repository import UserRepository
@@ -88,3 +89,14 @@ async def get_operator_user(
 
 
 OperatorUser = Annotated[User, Depends(get_operator_user)]
+
+
+def get_embedding_provider(request: Request) -> EmbeddingProvider:
+    """The configured embedding provider (B9). 503 if absent (a misconfiguration —
+    document ingest needs it to embed chunks)."""
+    provider: EmbeddingProvider | None = getattr(
+        request.app.state, "embedding_provider", None
+    )
+    if provider is None:
+        raise HTTPException(status_code=503, detail="embedding provider not configured")
+    return provider

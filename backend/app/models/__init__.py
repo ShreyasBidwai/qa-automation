@@ -7,6 +7,7 @@ from __future__ import annotations
 from .auth_challenge_log import AuthChallengeLog
 from .base import Base
 from .coverage import Coverage
+from .document_chunk import DocumentChunk
 from .finding import Finding
 from .finding_result import FindingResult
 from .finding_triage import FindingTriage
@@ -18,8 +19,10 @@ from .organization_invite import OrganizationInvite
 from .organization_member import OrganizationMember
 from .password_reset_token import PasswordResetToken
 from .project import Project
+from .project_document import ProjectDocument
 from .result import Result
 from .run import Run
+from .spec_divergence import SpecDivergence
 from .test_case import TestCase
 from .test_script import TestScript
 from .user import User
@@ -46,4 +49,7 @@ __all__ = [
     "OrganizationMember",
     "OrganizationInvite",
     "Job",
+    "ProjectDocument",
+    "DocumentChunk",
+    "SpecDivergence",
 ]

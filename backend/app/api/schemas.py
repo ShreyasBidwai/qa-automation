@@ -424,3 +424,49 @@ class RunListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+# --- business documents (B9) ------------------------------------------------
+
+DocumentKind = Literal[
+    "requirements", "api_contract", "user_flow", "acceptance_criteria", "other"
+]
+
+
+class DocumentCreate(BaseModel):
+    """Attach a business document to a project (chunked + embedded into the Brain)."""
+
+    title: str = Field(min_length=1, max_length=512)
+    doc_kind: DocumentKind = "requirements"
+    content: str = Field(min_length=1, max_length=1_000_000)  # no hard doc cap (B9)
+
+
+class DocumentResponse(BaseModel):
+    id: uuid.UUID
+    title: str
+    doc_kind: str
+    chunk_count: int
+    created_at: datetime
+
+
+class DocumentListResponse(BaseModel):
+    items: list[DocumentResponse]
+    total: int
+
+
+class SpecDivergenceResponse(BaseModel):
+    """A concrete, high-confidence spec-vs-code divergence (B9, ADR-0039)."""
+
+    id: uuid.UUID
+    document_id: uuid.UUID
+    kind: str
+    spec_reference: str  # what the doc says ("X")
+    code_observation: str  # what the code model shows ("Y")
+    excerpt: str
+    status: str
+    created_at: datetime
+
+
+class SpecDivergenceListResponse(BaseModel):
+    items: list[SpecDivergenceResponse]
+    total: int

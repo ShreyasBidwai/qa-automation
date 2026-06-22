@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from .api.auth import router as auth_router
+from .api.documents import router as documents_router
 from .api.findings import router as findings_router
 from .api.health import router as health_router
 from .api.ops import router as ops_router
@@ -37,6 +38,9 @@ def create_app() -> FastAPI:
     # routes 503.
     app.state.run_executor = None
     app.state.ingestor = None
+    # Embedding provider (B9): composed in app.__main__ (local fastembed); a test
+    # sets the deterministic stub. None → document ingest routes 503.
+    app.state.embedding_provider = None
     # Transactional mailer (B2): the dev stub logs the reset link; a test overrides
     # this to capture it. Real SMTP is composed in later (no creds needed to boot).
     app.state.mailer = build_mailer()
@@ -51,5 +55,6 @@ def create_app() -> FastAPI:
     app.include_router(runs_router)
     app.include_router(findings_router)
     app.include_router(ops_router)
+    app.include_router(documents_router)
 
     return app

@@ -50,9 +50,21 @@ def main() -> None:
 
     # Imported after logging is configured so app wiring logs through JSON.
     from .api.composition import build_ingestor, build_run_executor
+    from .embeddings.factory import build_embedding_provider
     from .main import create_app
 
     app = create_app()
+    # Embedding provider (B9): local fastembed — document ingest embeds chunks into
+    # the Brain (no API cost). Like the run/ingest ports, it's a composable port the
+    # SLIM backend may not carry (fastembed is the embed extra): compose it if we
+    # can, else leave it None and let document ingest 503 — boot stays healthy.
+    try:
+        app.state.embedding_provider = build_embedding_provider(settings)
+    except Exception as exc:  # noqa: BLE001 - any provider build failure → disabled
+        logger.warning(
+            "startup: embedding provider unavailable — document ingest disabled",
+            extra={"error_type": type(exc).__name__},
+        )
     # Compose the run/ingest ports (stubs by default → zero-cred boot). create_app
     # leaves them None so the fast lane stubs them per-test; the real server wires
     # them here from settings (docs/running.md).
