@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.types import AIProvider
 from app.core.config import Settings
+from app.documents.grounding import SpecGroundingService
 from app.embeddings.types import EmbeddingProvider
 from app.execution.pest_runner import PestRunner
 from app.execution.playwright_runner import PlaywrightRunner
@@ -150,14 +151,23 @@ class OrchestratorTargetGenerator:
         budget_tokens: int,
         generated_by: str = "orchestrator",
         factories_available: bool = True,
+        embedding_provider: EmbeddingProvider | None = None,
     ) -> None:
         self._session = session
         self._nodes = NodeRepository(session)
+        # Spec-grounding (B9): with an embedding provider, doc-backed cases are
+        # upgraded to spec-grounded at generation time.
+        grounder = (
+            SpecGroundingService(session, embedding_provider=embedding_provider)
+            if embedding_provider is not None
+            else None
+        )
         self._endpoint_gen = TestGenerator(
             provider=ai_provider,
             budget_tokens=budget_tokens,
             generated_by=generated_by,
             factories_available=factories_available,
+            grounder=grounder,
         )
         self._page_gen = E2EGenerator(
             provider=ai_provider, budget_tokens=budget_tokens, generated_by=generated_by

@@ -14,6 +14,7 @@ import logging
 import uuid
 from collections import Counter
 from dataclasses import asdict, dataclass
+from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +29,9 @@ from app.services.case_merge_service import CaseMergeService, MergeAction
 from .case_key import compute_case_key
 from .plan import PlannedCase, plan_cases
 from .render import render_script
+
+if TYPE_CHECKING:
+    from app.documents.grounding import SpecGroundingService
 
 logger = logging.getLogger("app.generation")
 
@@ -97,6 +101,7 @@ class TestGenerator:
         budget_tokens: int,
         generated_by: str,
         factories_available: bool = True,
+        grounder: SpecGroundingService | None = None,
     ) -> None:
         self._provider = provider
         self._budget = budget_tokens
@@ -104,6 +109,8 @@ class TestGenerator:
         # Whether the target defines model factories (ADR-0037); drives render_script
         # off factory-dependent setup when it doesn't.
         self._factories_available = factories_available
+        # Optional spec-grounding (B9): upgrades doc-backed cases to spec-grounded.
+        self._grounder = grounder
 
     def plan(self, spec: EndpointSpec) -> list[PlannedCase]:
         """PHASE 1 — pure, deterministic, AI-free."""
@@ -113,6 +120,13 @@ class TestGenerator:
         self, *, session: AsyncSession, project_id: uuid.UUID, spec: EndpointSpec
     ) -> list[GeneratedCase]:
         cases = self.plan(spec)
+        # Spec-grounding (B9): upgrade doc-backed cases to spec-grounded BEFORE
+        # render, so the renderer sees the upgraded oracle stance (case_key is
+        # unaffected — it doesn't key on oracle_source).
+        if self._grounder is not None:
+            cases = await self._grounder.ground(
+                project_id=project_id, spec=spec, cases=cases
+            )
         merge = CaseMergeService(session)
         script_repo = TestScriptRepository(session)
 

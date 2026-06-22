@@ -204,6 +204,7 @@ def build_run_executor(settings: Settings) -> RunExecutor:
                 ai_provider=ai_provider,
                 budget_tokens=budget,
                 factories_available=factories,
+                embedding_provider=embedding_provider,
             ),
             ai_provider=ai_provider,
             embedding_provider=embedding_provider,
