@@ -19,6 +19,7 @@ export interface ProjectCreateBody {
   repo_url: string;
   app_url?: string | null;
   auth_config_ref?: string | null;
+  stack?: string | null;
 }
 
 export interface Project {
@@ -28,7 +29,16 @@ export interface Project {
   repo_url: string;
   app_url: string | null;
   auth_config_ref: string | null;
+  stack?: string | null;
   created_at: string;
+}
+
+/** PATCH body for a project — only the provided fields change (ProjectUpdate). */
+export interface ProjectUpdateBody {
+  name?: string;
+  repo_url?: string;
+  app_url?: string | null;
+  stack?: string | null;
 }
 
 // --- jobs / ingest ----------------------------------------------------------
@@ -133,6 +143,10 @@ export interface TriagePatchBody {
 
 export interface Finding {
   id: string;
+  // Present on the live FindingResponse — the global inbox spans projects/runs, so
+  // a row can link back to its run. Optional on the type for older/partial payloads.
+  project_id?: string;
+  run_id?: string;
   root_cause_key: string;
   title: string;
   layer: string;
@@ -156,6 +170,14 @@ export interface FindingsResponse {
   run_id: string;
   count: number;
   findings: Finding[];
+}
+
+/** The currently-open findings inbox (ADR-0028) — paginated, severity-ranked. */
+export interface OpenFindingsResponse {
+  items: Finding[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 // --- list endpoints ---------------------------------------------------------

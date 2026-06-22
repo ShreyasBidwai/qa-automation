@@ -4,10 +4,12 @@ import type {
   HealthzResponse,
   IngestResponse,
   JobStatus,
+  OpenFindingsResponse,
   PageParams,
   Project,
   ProjectCreateBody,
   ProjectListResponse,
+  ProjectUpdateBody,
   ReadyzResponse,
   RunCreateBody,
   RunListResponse,
@@ -96,6 +98,11 @@ function patchJson<T>(path: string, body: unknown): Promise<ApiResult<T>> {
   });
 }
 
+/** DELETE — a 204 (no body) resolves to `ok:true, data:null`. */
+function del(path: string): Promise<ApiResult<null>> {
+  return request<null>(path, { method: "DELETE" });
+}
+
 export const healthApi = {
   /** GET /healthz — liveness. */
   liveness: () => getJson<HealthzResponse>("/healthz"),
@@ -115,9 +122,25 @@ export const projectApi = {
   /** GET /projects — list projects (bounded, newest first). */
   list: (params: PageParams) =>
     getJson<ProjectListResponse>(`${API_BASE}/projects?${pageQuery(params)}`),
+  /** PATCH /projects/{id} — partial update (name, repo, app_url, stack). */
+  update: (id: string, body: ProjectUpdateBody) =>
+    patchJson<Project>(`${API_BASE}/projects/${id}`, body),
+  /** DELETE /projects/{id} — soft-delete (ADR-0029); returns 204. */
+  remove: (id: string) => del(`${API_BASE}/projects/${id}`),
   /** POST /projects/{id}/ingest — kick off Brain build (background job). */
   ingest: (id: string) =>
     postJson<IngestResponse>(`${API_BASE}/projects/${id}/ingest`, {}),
+};
+
+export const findingApi = {
+  /** GET /findings — the global inbox: open findings across the user's projects. */
+  listOpen: (params: PageParams) =>
+    getJson<OpenFindingsResponse>(`${API_BASE}/findings?${pageQuery(params)}`),
+  /** GET /projects/{id}/findings — open findings for one project. */
+  listForProject: (projectId: string, params: PageParams) =>
+    getJson<OpenFindingsResponse>(
+      `${API_BASE}/projects/${projectId}/findings?${pageQuery(params)}`,
+    ),
 };
 
 export const runApi = {
