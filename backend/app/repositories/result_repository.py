@@ -36,6 +36,23 @@ class ResultRepository(ProjectScopedRepository[Result]):
         stmt = select(Result).where(Result.project_id == project_id, Result.id.in_(ids))
         return {r.id: r for r in (await self.session.scalars(stmt)).all()}
 
+    async def passing_case_ids_in_runs(
+        self, project_id: uuid.UUID, run_ids: Sequence[uuid.UUID]
+    ) -> set[uuid.UUID]:
+        """Test cases that PASSED in any of ``run_ids`` (project-scoped, one query).
+
+        The "previously passing" gate for self-healing (B8): only a test that was
+        green before is a candidate to heal when it newly fails. Empty if no runs.
+        """
+        if not run_ids:
+            return set()
+        stmt = select(Result.test_case_id).where(
+            Result.project_id == project_id,
+            Result.run_id.in_(run_ids),
+            Result.outcome == Outcome.PASS,
+        )
+        return set((await self.session.scalars(stmt)).all())
+
     async def outcome_counts_for_runs(
         self, project_id: uuid.UUID, run_ids: Sequence[uuid.UUID]
     ) -> dict[uuid.UUID, dict[Outcome, int]]:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -34,3 +34,7 @@ class Result(Base, ProjectScopedMixin):
         pg_enum(Triage, "triage"), nullable=True
     )
     evidence_ref: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # The runner's failure detail (assertion text / router error), persisted so the
+    # self-healing classifier (B8) can split location vs assertion failures after
+    # the run. Null for passes and for results predating B8.
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)

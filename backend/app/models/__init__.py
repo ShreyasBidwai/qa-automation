@@ -24,6 +24,7 @@ from .result import Result
 from .run import Run
 from .spec_divergence import SpecDivergence
 from .test_case import TestCase
+from .test_heal import TestHeal
 from .test_script import TestScript
 from .user import User
 from .user_session import UserSession
@@ -52,4 +53,5 @@ __all__ = [
     "ProjectDocument",
     "DocumentChunk",
     "SpecDivergence",
+    "TestHeal",
 ]
