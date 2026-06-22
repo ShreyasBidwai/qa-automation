@@ -101,7 +101,7 @@ function BrandPanel() {
 
 function FindingPreview() {
   return (
-    <div className="max-w-[400px] rounded-xl border border-border bg-surface px-[18px] py-4 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_4px_12px_rgba(0,0,0,0.04)]">
+    <div className="max-w-[400px] rounded-xl border border-border bg-surface px-[18px] py-4 shadow-card">
       <div className="mb-[11px] flex items-center justify-between">
         <span className="rounded-[5px] bg-status-neutral-bg px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
           run #482 · API
@@ -225,7 +225,7 @@ export function AuthField({
       <input
         id={id}
         className={cn(
-          "h-[42px] w-full rounded-[9px] border border-border bg-surface px-[13px] text-sm text-foreground placeholder:text-status-neutral-solid",
+          "h-[42px] w-full rounded-[9px] border border-border bg-surface px-[13px] text-sm text-foreground transition-colors placeholder:text-status-neutral-solid",
           "focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 focus-visible:ring-offset-background",
           className,
         )}

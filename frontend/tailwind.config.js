@@ -89,6 +89,12 @@ export default {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      boxShadow: {
+        // One soft, single-elevation card lift (no glow, no heavy drop). Cards
+        // read as lifted rather than as flat outlines. Used app-wide via
+        // `shadow-card` so the elevation stays consistent.
+        card: "0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04)",
+      },
       fontFamily: {
         // UI: Inter (design brief). Weights 400/500/600 (600 for headings/wordmark).
         sans: [
