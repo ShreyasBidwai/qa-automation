@@ -1,4 +1,4 @@
-import { Activity, FolderGit2, type LucideIcon } from "lucide-react";
+import { Activity, FolderGit2, LifeBuoy, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Link } from "@/components/Link";
@@ -51,6 +51,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           {NAV.map((entry) => (
             <NavItem key={entry.to} entry={entry} />
           ))}
+        </nav>
+        <nav className="mt-auto flex flex-col gap-0.5 px-3 py-2" aria-label="Support">
+          <NavItem entry={{ to: "/help", label: "Help", icon: LifeBuoy }} />
         </nav>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">{children}</div>
