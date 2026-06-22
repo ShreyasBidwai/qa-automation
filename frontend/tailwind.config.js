@@ -14,6 +14,7 @@ export default {
       colors: {
         background: "var(--color-background)",
         surface: "var(--color-surface)",
+        "surface-selected": "var(--color-surface-selected)",
         border: "var(--color-border)",
         "border-subtle": "var(--color-border-subtle)",
         marker: "var(--color-marker)",
@@ -34,6 +35,7 @@ export default {
           "fail-bg": "var(--color-status-fail-bg)",
           "fail-fg": "var(--color-status-fail-fg)",
           "fail-solid": "var(--color-status-fail-solid)",
+          "fail-border": "var(--color-status-fail-border)",
           "flaky-bg": "var(--color-status-flaky-bg)",
           "flaky-fg": "var(--color-status-flaky-fg)",
           "flaky-solid": "var(--color-status-flaky-solid)",

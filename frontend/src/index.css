@@ -14,6 +14,7 @@
     /* Surfaces & text (zinc family) */
     --color-background: #fafafa; /* page base (zinc-50) */
     --color-surface: #ffffff; /* cards / surfaces */
+    --color-surface-selected: #f7f7fe; /* selected master-detail row tint */
     --color-border: #e4e4e7; /* hairlines (zinc-200) */
     --color-border-subtle: #f4f4f5; /* subtle dividers (zinc-100) */
     --color-marker: #d4d4d8; /* idle nav-dot markers (zinc-300) */
@@ -37,6 +38,7 @@
     --color-status-fail-bg: #fef2f2; /* red-50 */
     --color-status-fail-fg: #b91c1c; /* red-700 */
     --color-status-fail-solid: #dc2626; /* red-600 */
+    --color-status-fail-border: #fca5a5; /* red-300 — lit failing-node border */
 
     /* Status: flaky = amber */
     --color-status-flaky-bg: #fffbeb; /* amber-50 */

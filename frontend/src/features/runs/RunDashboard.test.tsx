@@ -42,6 +42,11 @@ function finding(over: Partial<Finding>): Finding {
   };
 }
 
+// The list (master) and the detail panel both render finding titles, so queries
+// are scoped to a region to keep them unambiguous.
+const stats = () => screen.getByRole("region", { name: "Run stats" });
+const listRegion = () => screen.findByRole("region", { name: "Findings" });
+
 describe("RunDashboard", () => {
   beforeEach(() => {
     vi.mocked(runApi.get).mockReset();
@@ -59,13 +64,14 @@ describe("RunDashboard", () => {
     render(<RunDashboard runId="r1" />);
 
     expect(await screen.findByText("80%")).toBeInTheDocument();
-    expect(screen.getByText("Pass rate")).toBeInTheDocument();
-    expect(screen.getByText("Findings")).toBeInTheDocument();
-    expect(screen.getByText("New / Regressions")).toBeInTheDocument();
-    expect(screen.getByText("Confidence")).toBeInTheDocument();
+    const cards = stats();
+    expect(within(cards).getByText("Pass rate")).toBeInTheDocument();
+    expect(within(cards).getByText("Findings")).toBeInTheDocument();
+    expect(within(cards).getByText("New / Regressions")).toBeInTheDocument();
+    expect(within(cards).getByText("Confidence")).toBeInTheDocument();
     // Stats are derived from the findings list, not invented.
-    expect(screen.getByText("1 major")).toBeInTheDocument();
-    expect(screen.getByText("All rule-derived")).toBeInTheDocument();
+    expect(within(cards).getByText("1 major")).toBeInTheDocument();
+    expect(within(cards).getByText("All rule-derived")).toBeInTheDocument();
   });
 
   it("renders the ranked findings with trust marks + badges, in order", async () => {
@@ -95,23 +101,62 @@ describe("RunDashboard", () => {
 
     render(<RunDashboard runId="r1" />);
 
-    const rowA = (await screen.findByText("Checkout 500")).closest("button")!;
+    const list = await listRegion();
+    const rowA = within(list).getByText("Checkout 500").closest("button")!;
     expect(within(rowA).getByText("Critical")).toBeInTheDocument();
     expect(within(rowA).getByText("api")).toBeInTheDocument();
     expect(within(rowA).getByText("rule-derived")).toBeInTheDocument();
     expect(within(rowA).getByText("Regression")).toBeInTheDocument();
 
-    const rowB = screen.getByText("Cart count drifted").closest("button")!;
+    const rowB = within(list).getByText("Cart count drifted").closest("button")!;
     expect(within(rowB).getByText("Minor")).toBeInTheDocument();
     expect(within(rowB).getByText("ui")).toBeInTheDocument();
     expect(within(rowB).getByText("characterization")).toBeInTheDocument();
     expect(within(rowB).getByText("New")).toBeInTheDocument();
 
     // Server ranking is preserved (A before B).
-    const list = rowA.parentElement!;
     const rows = within(list).getAllByRole("button");
     expect(rows[0]).toHaveTextContent("Checkout 500");
     expect(rows[1]).toHaveTextContent("Cart count drifted");
+  });
+
+  it("opens the first finding in the detail panel by default", async () => {
+    vi.mocked(runApi.get).mockResolvedValue(summaryResult({}));
+    vi.mocked(runApi.findings).mockResolvedValue(
+      findingsResult([
+        finding({ id: "a", title: "Checkout 500", severity: "critical" }),
+        finding({ id: "b", title: "Cart count drifted", severity: "minor" }),
+      ]),
+    );
+
+    render(<RunDashboard runId="r1" />);
+
+    const detail = await screen.findByRole("region", { name: "Finding detail" });
+    // The first finding's detail (its title + the field grid) is shown without a click.
+    expect(
+      within(detail).getByRole("heading", { name: "Checkout 500" }),
+    ).toBeInTheDocument();
+    expect(within(detail).getByText("Blast path")).toBeInTheDocument();
+  });
+
+  it("updates the detail panel when another finding is selected", async () => {
+    vi.mocked(runApi.get).mockResolvedValue(summaryResult({}));
+    vi.mocked(runApi.findings).mockResolvedValue(
+      findingsResult([
+        finding({ id: "a", title: "Checkout 500", severity: "critical" }),
+        finding({ id: "b", title: "Cart count drifted", severity: "minor" }),
+      ]),
+    );
+
+    render(<RunDashboard runId="r1" />);
+
+    const list = await listRegion();
+    fireEvent.click(within(list).getByText("Cart count drifted").closest("button")!);
+
+    const detail = screen.getByRole("region", { name: "Finding detail" });
+    expect(
+      within(detail).getByRole("heading", { name: "Cart count drifted" }),
+    ).toBeInTheDocument();
   });
 
   it("narrows the list when a filter is applied", async () => {
@@ -124,14 +169,14 @@ describe("RunDashboard", () => {
     );
 
     render(<RunDashboard runId="r1" />);
-    await screen.findByText("Checkout 500");
+    const list = await listRegion();
 
-    fireEvent.change(screen.getByLabelText("Severity"), {
+    fireEvent.change(within(list).getByLabelText("Severity"), {
       target: { value: "critical" },
     });
 
-    expect(screen.getByText("Checkout 500")).toBeInTheDocument();
-    expect(screen.queryByText("Cart count drifted")).toBeNull();
+    expect(within(list).getByText("Checkout 500")).toBeInTheDocument();
+    expect(within(list).queryByText("Cart count drifted")).toBeNull();
   });
 
   it("renders the loading state while fetching", () => {
@@ -143,16 +188,14 @@ describe("RunDashboard", () => {
     expect(screen.getByText("Loading run…")).toBeInTheDocument();
   });
 
-  it("renders the empty state when there are no findings", async () => {
+  it("renders the clean-run state when there are no findings", async () => {
     vi.mocked(runApi.get).mockResolvedValue(summaryResult({ pass_rate: 1 }));
     vi.mocked(runApi.findings).mockResolvedValue(findingsResult([]));
 
     render(<RunDashboard runId="r1" />);
 
-    expect(await screen.findByText("No findings")).toBeInTheDocument();
-    expect(
-      screen.getByText("Every test passed in this run — nothing to triage."),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("This run came back clean")).toBeInTheDocument();
+    expect(screen.getByText(/No findings across the run/)).toBeInTheDocument();
   });
 
   it("renders the error state when the run cannot be loaded", async () => {
@@ -167,8 +210,9 @@ describe("RunDashboard", () => {
     render(<RunDashboard runId="r1" />);
 
     await waitFor(() =>
-      expect(screen.getByRole("alert")).toHaveTextContent("Run not found."),
+      expect(screen.getByText("Couldn't load this run")).toBeInTheDocument(),
     );
+    expect(screen.getByText("Run not found.")).toBeInTheDocument();
   });
 
   it("badges the triage disposition and de-emphasizes muted findings", async () => {
@@ -190,11 +234,12 @@ describe("RunDashboard", () => {
 
     render(<RunDashboard runId="r1" />);
 
-    const ackRow = (await screen.findByText("Acknowledged issue")).closest("button")!;
+    const list = await listRegion();
+    const ackRow = within(list).getByText("Acknowledged issue").closest("button")!;
     expect(within(ackRow).getByText("Acknowledged")).toBeInTheDocument();
     expect(ackRow).not.toHaveClass("opacity-60");
 
-    const mutedRow = screen.getByText("Muted issue").closest("button")!;
+    const mutedRow = within(list).getByText("Muted issue").closest("button")!;
     expect(within(mutedRow).getByText("Won't fix")).toBeInTheDocument();
     expect(mutedRow).toHaveClass("opacity-60"); // muted → de-emphasized
   });
@@ -209,12 +254,12 @@ describe("RunDashboard", () => {
     );
 
     render(<RunDashboard runId="r1" />);
-    await screen.findByText("Open issue");
-    expect(screen.getByText("Muted issue")).toBeInTheDocument();
+    const list = await listRegion();
+    expect(within(list).getByText("Muted issue")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByLabelText("Hide muted"));
+    fireEvent.click(within(list).getByLabelText("Hide muted"));
 
-    expect(screen.getByText("Open issue")).toBeInTheDocument();
-    expect(screen.queryByText("Muted issue")).toBeNull();
+    expect(within(list).getByText("Open issue")).toBeInTheDocument();
+    expect(within(list).queryByText("Muted issue")).toBeNull();
   });
 });

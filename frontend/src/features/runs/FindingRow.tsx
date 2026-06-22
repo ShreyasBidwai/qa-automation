@@ -33,18 +33,20 @@ export function FindingRow({
       onClick={() => onSelect(finding)}
       aria-pressed={selected}
       className={cn(
-        "flex w-full gap-3 border-b border-l-[3px] border-border px-4 py-3.5 text-left last:border-b-0 hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
-        selected ? "border-l-accent bg-accent-subtle" : "border-l-transparent",
+        "flex w-full gap-3 border-b border-l-[3px] border-border-subtle px-4 py-3.5 text-left last:border-b-0 hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+        selected ? "border-l-accent bg-surface-selected" : "border-l-transparent",
         muted && "opacity-60",
       )}
     >
       <span
-        className={cn("mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full", severity.dot)}
+        className={cn("mt-[5px] h-[9px] w-[9px] shrink-0 rounded-full", severity.dot)}
         aria-hidden="true"
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3">
-          <span className="text-sm font-medium text-foreground">{finding.title}</span>
+          <span className="text-[13.5px] font-medium leading-[1.35] text-foreground">
+            {finding.title}
+          </span>
           <span
             className={cn(
               "shrink-0 rounded px-1.5 py-0.5 text-[10.5px] font-semibold tracking-[0.02em]",

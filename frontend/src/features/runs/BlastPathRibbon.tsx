@@ -40,7 +40,7 @@ export function BlastPathRibbon({ finding }: { finding: Finding }) {
             <Node hop={hop} />
             {index < ribbon.hops.length - 1 ? (
               <ArrowRight
-                className="mt-1.5 h-4 w-4 shrink-0 text-status-neutral-solid"
+                className="mt-1.5 h-4 w-4 shrink-0 text-marker"
                 aria-hidden="true"
               />
             ) : null}
@@ -62,19 +62,19 @@ function Node({ hop }: { hop: RibbonHop }) {
     <div className="flex flex-col items-center gap-1.5">
       <span
         className={cn(
-          "whitespace-nowrap rounded-[7px] border px-2.5 py-1.5 font-mono text-xs",
+          "whitespace-nowrap rounded-[7px] border px-[11px] py-1.5 font-mono text-xs",
           hop.failing
-            ? "border-status-fail-solid bg-status-fail-bg font-semibold text-status-fail-fg"
-            : "border-border bg-surface font-medium text-foreground",
+            ? "border-status-fail-border bg-status-fail-bg font-semibold text-status-fail-solid"
+            : "border-border bg-surface font-medium text-foreground-secondary",
         )}
       >
         {hop.label}
       </span>
-      <span className="font-mono text-[9.5px] uppercase tracking-wide text-muted-foreground">
+      <span className="font-mono text-[9.5px] uppercase tracking-[0.04em] text-marker">
         {CAPTION[hop.tier]}
       </span>
       {hop.failing ? (
-        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-status-fail-fg">
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-status-fail-solid">
           <span
             aria-hidden="true"
             className="h-0 w-0 border-x-[4px] border-b-[6px] border-x-transparent border-b-status-fail-solid"

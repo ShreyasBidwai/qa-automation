@@ -1,15 +1,15 @@
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
-import { EmptyState } from "@/components/EmptyState";
-import { Link } from "@/components/Link";
-import { PageHeader } from "@/components/PageHeader";
+import { StatePanel } from "@/components/StatePanel";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/select";
 import type { Finding } from "@/lib/api/types";
 import { navigate } from "@/lib/router";
+import { relativeTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
+import { FindingDetail } from "./FindingDetail";
+import { FindingRow } from "./FindingRow";
 import {
   ALL,
   EMPTY_FILTERS,
@@ -22,17 +22,17 @@ import {
   historyCounts,
   severityCounts,
 } from "./findingStats";
+import { modeLabel } from "./modeLabel";
 import {
   formatPercent,
   passRateDelta,
   readMetrics,
   type PassRateDelta,
+  type RunMetrics,
 } from "./runMetrics";
-import { FindingDrawer } from "./FindingDrawer";
-import { FindingRow } from "./FindingRow";
 import { useRunDashboard } from "./useRunDashboard";
 
-/** The at-a-glance health view for a completed run — the hero screen (T6.2). */
+/** The run dashboard — the hero master-detail (Polaris Run Dashboard.dc.html). */
 export function RunDashboard({
   runId,
   onSelectFinding,
@@ -40,107 +40,185 @@ export function RunDashboard({
   runId: string;
   onSelectFinding?: (finding: Finding) => void;
 }) {
-  const { summary, findings, loading, error, replaceFinding } = useRunDashboard(runId);
+  const { mode, summary, findings, loading, error, replaceFinding } =
+    useRunDashboard(runId);
   const [filters, setFilters] = useState<FindingFilters>(EMPTY_FILTERS);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const metrics = readMetrics(summary);
   const delta = passRateDelta(metrics.passRate, metrics.priorPassRate);
   const visible = applyFilters(findings, filters);
-  // Derive the open finding from the list so a triage update reflects in the drawer.
-  const selected = findings.find((f) => f.id === selectedId) ?? null;
-  // Open the detail drawer (progressive disclosure); still notify any listener.
+  // Default to the first finding (the file shows one selected on load); a click
+  // pins another. Fall back across filtering so the panel is never blank.
+  const selected =
+    findings.find((f) => f.id === selectedId) ?? visible[0] ?? findings[0] ?? null;
   const select = (finding: Finding) => {
     setSelectedId(finding.id);
     onSelectFinding?.(finding);
   };
 
   return (
-    <>
-      <PageHeader
-        eyebrow={<Link to="/runs">Runs</Link>}
-        title={metrics.target ?? "Run results"}
-        description={
-          <span className="font-mono text-xs">
-            {runId}
-            {metrics.finishedAt
-              ? ` · ${new Date(metrics.finishedAt).toLocaleString()}`
-              : ""}
-          </span>
-        }
-        action={
-          <Button
-            onClick={() =>
-              navigate(
-                metrics.projectId ? `/projects/${metrics.projectId}` : "/projects",
-              )
-            }
-          >
-            Re-run
-          </Button>
-        }
-      />
-      <main className="flex-1 space-y-6 px-6 py-8">
-        {loading ? (
-          <Loading />
-        ) : error ? (
-          <ErrorBlock message={error} />
-        ) : (
-          <>
-            <section className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-              <PassRateCard passRate={metrics.passRate} delta={delta} />
-              <FindingsCard findings={findings} />
-              <NewRegressionsCard findings={findings} />
-              <ConfidenceCard findings={findings} />
-            </section>
+    <div className="flex flex-col min-[1024px]:h-full">
+      <RunHeaderBand runId={runId} mode={mode} metrics={metrics} loading={loading} />
 
-            {findings.length === 0 ? (
-              <EmptyState
-                title="No findings"
-                description="Every test passed in this run — nothing to triage."
+      {loading ? (
+        <LoadingState />
+      ) : error ? (
+        <div className="px-6 py-8">
+          <StatePanel
+            icon={AlertTriangle}
+            tone="danger"
+            title="Couldn't load this run"
+            description="The run may have been removed, or the service is briefly unavailable."
+            code={error}
+          />
+        </div>
+      ) : (
+        <div className="flex flex-col px-6 pt-5 min-[1024px]:min-h-0 min-[1024px]:flex-1">
+          <StatCards metrics={metrics} delta={delta} findings={findings} />
+
+          {findings.length === 0 ? (
+            <StatePanel
+              icon={CheckCircle2}
+              tone="success"
+              title="This run came back clean"
+              description="No findings across the run — every assertion held. Polaris keeps watching as the code changes."
+            />
+          ) : (
+            <div className="flex flex-col gap-4 pb-6 min-[1024px]:min-h-0 min-[1024px]:flex-1 min-[1024px]:flex-row">
+              <FindingsList
+                visible={visible}
+                selectedId={selected?.id ?? null}
+                onSelect={select}
+                filters={filters}
+                onFilters={setFilters}
               />
-            ) : (
-              <section className="space-y-3">
-                <Filters filters={filters} onChange={setFilters} />
-                {visible.length === 0 ? (
-                  <FilteredEmpty onClear={() => setFilters(EMPTY_FILTERS)} />
-                ) : (
-                  <div className="overflow-hidden rounded-xl border border-border bg-surface">
-                    {visible.map((finding) => (
-                      <FindingRow
-                        key={finding.id}
-                        finding={finding}
-                        selected={finding.id === selectedId}
-                        onSelect={select}
-                      />
-                    ))}
-                  </div>
-                )}
+              <section
+                aria-label="Finding detail"
+                className="flex flex-col overflow-hidden rounded-xl border border-border bg-surface min-[1024px]:min-h-0 min-[1024px]:flex-1"
+              >
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  {selected ? (
+                    <FindingDetail
+                      finding={selected}
+                      runId={runId}
+                      onTriaged={replaceFinding}
+                    />
+                  ) : (
+                    <SelectAFinding />
+                  )}
+                </div>
               </section>
-            )}
-          </>
-        )}
-      </main>
-      <FindingDrawer
-        finding={selected}
-        runId={runId}
-        onClose={() => setSelectedId(null)}
-        onTriaged={replaceFinding}
-      />
-    </>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
+}
+
+// ---- run header band --------------------------------------------------------
+
+function RunHeaderBand({
+  runId,
+  mode,
+  metrics,
+  loading,
+}: {
+  runId: string;
+  mode: string;
+  metrics: RunMetrics;
+  loading: boolean;
+}) {
+  return (
+    <div className="flex flex-none flex-wrap items-center justify-between gap-3 border-b border-border bg-surface px-6 py-[18px]">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="font-mono text-[15px] font-medium text-foreground">
+          Run {runId}
+        </span>
+        {!loading && mode ? (
+          <>
+            <BandDot />
+            <span className="rounded-[5px] bg-accent-subtle px-[7px] py-0.5 font-mono text-[11px] font-medium text-accent">
+              {modeLabel(mode)}
+            </span>
+          </>
+        ) : null}
+        {!loading && metrics.finishedAt ? (
+          <>
+            <BandDot />
+            <span className="text-[13px] text-status-neutral-solid">
+              {relativeTime(metrics.finishedAt)}
+            </span>
+          </>
+        ) : null}
+      </div>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-[34px]"
+          onClick={() =>
+            navigate(
+              metrics.projectId ? `/projects/${metrics.projectId}/run` : "/projects",
+            )
+          }
+        >
+          Re-run
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-[34px]"
+          disabled
+          title="Export is coming in a later slice"
+        >
+          Export
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function BandDot() {
+  return <span className="h-[3px] w-[3px] rounded-full bg-marker" aria-hidden="true" />;
 }
 
 // ---- stat cards -------------------------------------------------------------
 
+function StatCards({
+  metrics,
+  delta,
+  findings,
+}: {
+  metrics: RunMetrics;
+  delta: PassRateDelta | null;
+  findings: Finding[];
+}) {
+  return (
+    <section
+      aria-label="Run stats"
+      className="mb-[18px] grid flex-none grid-cols-1 gap-3.5 sm:grid-cols-2 min-[1024px]:grid-cols-4"
+    >
+      <PassRateCard passRate={metrics.passRate} delta={delta} />
+      <FindingsCard findings={findings} />
+      <NewRegressionsCard findings={findings} />
+      <ConfidenceCard findings={findings} />
+    </section>
+  );
+}
+
 function StatCard({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="rounded-xl border border-border bg-surface p-4">
+    <div className="rounded-xl border border-border bg-surface px-[18px] py-4">
       <div className="text-xs font-medium text-muted-foreground">{label}</div>
       {children}
     </div>
   );
 }
+
+const BIG_NUMBER =
+  "text-[30px] font-semibold leading-none tracking-[-0.02em] tabular-nums";
 
 function PassRateCard({
   passRate,
@@ -154,12 +232,12 @@ function PassRateCard({
   return (
     <StatCard label="Pass rate">
       <div className="mt-2.5 flex items-baseline gap-2">
-        <span className="text-[30px] font-semibold leading-none tracking-tight tabular-nums text-foreground">
+        <span className={cn(BIG_NUMBER, "text-foreground")}>
           {formatPercent(passRate)}
         </span>
         {delta ? <DeltaTag delta={delta} /> : null}
       </div>
-      <div className="mt-3.5 h-1.5 overflow-hidden rounded-full bg-status-neutral-bg">
+      <div className="mt-3 h-[5px] overflow-hidden rounded-full bg-border-subtle">
         <div
           className="h-full rounded-full bg-status-pass-solid"
           style={{ width: `${pct}%` }}
@@ -193,26 +271,27 @@ function FindingsCard({ findings }: { findings: Finding[] }) {
   return (
     <StatCard label="Findings">
       <div className="mt-2.5 flex items-baseline gap-2">
-        <span className="text-[30px] font-semibold leading-none tracking-tight tabular-nums text-foreground">
-          {findings.length}
-        </span>
-        <span className="text-xs text-muted-foreground">open</span>
+        <span className={cn(BIG_NUMBER, "text-foreground")}>{findings.length}</span>
+        <span className="text-xs text-status-neutral-solid">open</span>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium">
         <SeverityCount
-          label={`${counts.critical} critical`}
-          dot="bg-status-fail-solid"
-          text="text-status-fail-fg"
+          n={counts.critical}
+          label="critical"
+          dot="bg-severity-critical-dot"
+          text="text-severity-critical-fg"
         />
         <SeverityCount
-          label={`${counts.major} major`}
-          dot="bg-status-flaky-solid"
-          text="text-status-flaky-fg"
+          n={counts.major}
+          label="major"
+          dot="bg-severity-major-dot"
+          text="text-severity-major-fg"
         />
         <SeverityCount
-          label={`${counts.minor} minor`}
-          dot="bg-status-neutral-solid"
-          text="text-muted-foreground"
+          n={counts.minor}
+          label="minor"
+          dot="bg-severity-minor-dot"
+          text="text-severity-minor-fg"
         />
       </div>
     </StatCard>
@@ -220,10 +299,12 @@ function FindingsCard({ findings }: { findings: Finding[] }) {
 }
 
 function SeverityCount({
+  n,
   label,
   dot,
   text,
 }: {
+  n: number;
   label: string;
   dot: string;
   text: string;
@@ -231,7 +312,7 @@ function SeverityCount({
   return (
     <span className={cn("inline-flex items-center gap-1.5", text)}>
       <span className={cn("h-[7px] w-[7px] rounded-full", dot)} aria-hidden="true" />
-      {label}
+      {n} {label}
     </span>
   );
 }
@@ -241,15 +322,16 @@ function NewRegressionsCard({ findings }: { findings: Finding[] }) {
   return (
     <StatCard label="New / Regressions">
       <div className="mt-2.5 flex items-baseline gap-1.5">
-        <span className="text-[30px] font-semibold leading-none tracking-tight tabular-nums text-status-info-fg">
-          {counts.new}
-        </span>
-        <span className="text-xs text-muted-foreground">new</span>
-        <span className="mx-1 text-muted-foreground">·</span>
-        <span className="text-[30px] font-semibold leading-none tracking-tight tabular-nums text-status-flaky-fg">
+        <span className={cn(BIG_NUMBER, "text-status-info-solid")}>{counts.new}</span>
+        <span className="text-[13px] text-status-neutral-solid">new</span>
+        <span className="mx-0.5 text-lg text-marker">·</span>
+        <span className={cn(BIG_NUMBER, "text-severity-major-fg")}>
           {counts.regression}
         </span>
-        <span className="text-xs text-muted-foreground">regr</span>
+        <span className="text-[13px] text-status-neutral-solid">regr</span>
+      </div>
+      <div className="mt-2.5 text-xs text-muted-foreground">
+        compared with the previous run
       </div>
     </StatCard>
   );
@@ -265,15 +347,15 @@ function ConfidenceCard({ findings }: { findings: Finding[] }) {
 
   return (
     <StatCard label="Confidence">
-      <div className="mt-2 text-sm font-semibold text-foreground">
+      <div className="mb-3 mt-2.5 text-[15px] font-semibold text-foreground">
         {confidenceLabel(mix)}
       </div>
-      <div className="mt-3 flex h-1.5 gap-0.5 overflow-hidden rounded-full bg-status-neutral-bg">
+      <div className="flex h-1.5 gap-0.5 overflow-hidden rounded-full bg-border-subtle">
         {segments.map((s) => (
           <div key={s.key} className={s.bar} style={{ flexGrow: s.count }} />
         ))}
       </div>
-      <div className="mt-2 flex gap-3 text-[11px] text-muted-foreground">
+      <div className="mt-2.5 flex gap-3 text-[11px] text-muted-foreground">
         <MixLegend dot="bg-trust-rule-solid" count={mix.rule} />
         <MixLegend dot="bg-trust-char-solid" count={mix.characterization} />
         <MixLegend dot="bg-trust-spec-solid" count={mix.spec} />
@@ -291,7 +373,69 @@ function MixLegend({ dot, count }: { dot: string; count: number }) {
   );
 }
 
-// ---- filters ----------------------------------------------------------------
+// ---- findings list (master) -------------------------------------------------
+
+function FindingsList({
+  visible,
+  selectedId,
+  onSelect,
+  filters,
+  onFilters,
+}: {
+  visible: Finding[];
+  selectedId: string | null;
+  onSelect: (finding: Finding) => void;
+  filters: FindingFilters;
+  onFilters: (next: FindingFilters) => void;
+}) {
+  return (
+    <section
+      aria-label="Findings"
+      className="flex flex-col overflow-hidden rounded-xl border border-border bg-surface min-[1024px]:min-h-0 min-[1024px]:w-[42%] min-[1024px]:min-w-[380px]"
+    >
+      <div className="flex-none border-b border-border-subtle px-4 py-3.5">
+        <div className="mb-3 flex items-center justify-between">
+          <span className="text-[13px] font-semibold text-foreground">
+            Findings{" "}
+            <span className="font-normal text-status-neutral-solid">· ranked</span>
+          </span>
+          <span className="font-mono text-[11px] text-status-neutral-solid">
+            {visible.length} shown
+          </span>
+        </div>
+        <Filters filters={filters} onChange={onFilters} />
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {visible.length === 0 ? (
+          <div className="px-6 py-10 text-center">
+            <p className="text-sm text-muted-foreground">
+              No findings match these filters.
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-3"
+              onClick={() => onFilters(EMPTY_FILTERS)}
+            >
+              Clear filters
+            </Button>
+          </div>
+        ) : (
+          visible.map((finding) => (
+            <FindingRow
+              key={finding.id}
+              finding={finding}
+              selected={finding.id === selectedId}
+              onSelect={onSelect}
+            />
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+// ---- filters (pills) --------------------------------------------------------
 
 function Filters({
   filters,
@@ -301,9 +445,9 @@ function Filters({
   onChange: (next: FindingFilters) => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-      <FilterSelect
-        label="Severity"
+    <div className="flex flex-wrap items-center gap-[7px]">
+      <FilterPill
+        name="Severity"
         value={filters.severity}
         onChange={(v) => onChange({ ...filters, severity: v })}
         options={[
@@ -312,8 +456,8 @@ function Filters({
           ["minor", "Minor"],
         ]}
       />
-      <FilterSelect
-        label="Layer"
+      <FilterPill
+        name="Layer"
         value={filters.layer}
         onChange={(v) => onChange({ ...filters, layer: v })}
         options={[
@@ -322,8 +466,8 @@ function Filters({
           ["db", "db"],
         ]}
       />
-      <FilterSelect
-        label="Trust"
+      <FilterPill
+        name="Trust"
         value={filters.confidence}
         onChange={(v) => onChange({ ...filters, confidence: v })}
         options={[
@@ -332,8 +476,8 @@ function Filters({
           ["spec-grounded", "Spec-grounded"],
         ]}
       />
-      <FilterSelect
-        label="Status"
+      <FilterPill
+        name="Status"
         value={filters.status}
         onChange={(v) => onChange({ ...filters, status: v })}
         options={[
@@ -343,89 +487,91 @@ function Filters({
           ["known", "Known"],
         ]}
       />
-      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <input
-          type="checkbox"
-          checked={filters.hideMuted}
-          onChange={(event) =>
-            onChange({ ...filters, hideMuted: event.target.checked })
-          }
-          className="h-3.5 w-3.5 rounded border-border text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        />
-        Hide muted
-      </label>
+      <HideMutedToggle
+        checked={filters.hideMuted}
+        onChange={(hide) => onChange({ ...filters, hideMuted: hide })}
+      />
     </div>
   );
 }
 
-function FilterSelect({
-  label,
+/** A filter as a pill-styled native select (shows the filter name until set). */
+function FilterPill({
+  name,
   value,
   onChange,
   options,
 }: {
-  label: string;
+  name: string;
   value: string;
   onChange: (value: string) => void;
   options: [string, string][];
 }) {
-  const id = `filter-${label.toLowerCase()}`;
   return (
-    <div className="flex items-center gap-1.5">
-      <label htmlFor={id} className="text-xs text-muted-foreground">
-        {label}
-      </label>
-      <Select
-        id={id}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-8 w-auto"
-      >
-        <option value={ALL}>All</option>
-        {options.map(([optionValue, optionLabel]) => (
-          <option key={optionValue} value={optionValue}>
-            {optionLabel}
-          </option>
-        ))}
-      </Select>
+    <select
+      aria-label={name}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="rounded-[7px] border border-border bg-background py-1 pl-2.5 pr-1.5 text-xs font-medium text-status-neutral-fg focus-visible:border-accent"
+    >
+      <option value={ALL}>{name}</option>
+      {options.map(([optionValue, optionLabel]) => (
+        <option key={optionValue} value={optionValue}>
+          {optionLabel}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function HideMutedToggle({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="ml-1 inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-muted-foreground">
+      <input
+        type="checkbox"
+        className="peer sr-only"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span className="relative h-4 w-[26px] rounded-full bg-border transition-colors peer-checked:bg-accent peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent">
+        <span className="absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-surface transition-transform peer-checked:translate-x-2.5" />
+      </span>
+      Hide muted
+    </label>
+  );
+}
+
+// ---- states -----------------------------------------------------------------
+
+function SelectAFinding() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-6 py-16 text-center">
+      <h2 className="text-[15px] font-semibold text-foreground">Select a finding</h2>
+      <p className="mt-1.5 max-w-[260px] text-[13px] text-muted-foreground">
+        Pick a finding on the left to see its blast path, evidence, and history.
+      </p>
     </div>
   );
 }
 
-function FilteredEmpty({ onClear }: { onClear: () => void }) {
+function LoadingState() {
   return (
-    <div className="rounded-xl border border-dashed border-border bg-surface px-6 py-10 text-center">
-      <p className="text-sm text-muted-foreground">No findings match these filters.</p>
-      <Button variant="ghost" size="sm" className="mt-3" onClick={onClear}>
-        Clear filters
-      </Button>
-    </div>
-  );
-}
-
-function Loading() {
-  return (
-    <div className="space-y-6">
-      <p className="text-sm text-muted-foreground">Loading run…</p>
-      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="flex flex-col gap-4 px-6 pt-5">
+      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 min-[1024px]:grid-cols-4">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="h-24 rounded-xl border border-border bg-surface" />
+          <div
+            key={i}
+            className="h-[104px] rounded-xl border border-border bg-surface"
+          />
         ))}
       </div>
-    </div>
-  );
-}
-
-function ErrorBlock({ message }: { message: string }) {
-  return (
-    <div
-      role="alert"
-      className="rounded-xl border border-border bg-surface px-4 py-3 text-sm"
-    >
-      <span className="text-status-fail-fg">Couldn&rsquo;t load this run.</span>{" "}
-      <span className="text-muted-foreground">
-        {message} Check the run id and try again.
-      </span>
+      <p className="text-sm text-muted-foreground">Loading run…</p>
     </div>
   );
 }
