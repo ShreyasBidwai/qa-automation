@@ -1,14 +1,13 @@
 import { useState, type FormEvent } from "react";
 
 import { Link } from "@/components/Link";
-import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth/useAuth";
 
-import { AuthField, AuthLayout } from "./AuthLayout";
+import { AuthField, AuthLayout, AuthSubmit } from "./AuthLayout";
 
 const MIN_PASSWORD = 8;
 
-/** Sign up — wired to the B2 session endpoint (name is set via the profile). */
+/** Sign up — wired to B2; presentation per Polaris Auth.dc.html. */
 export function SignUpPage() {
   const { signUp } = useAuth();
   const [name, setName] = useState("");
@@ -39,7 +38,7 @@ export function SignUpPage() {
   return (
     <AuthLayout
       title="Create your account"
-      subtitle="QA you can trust"
+      subtitle="Start finding problems before your users do."
       footer={
         <>
           Already have an account?{" "}
@@ -54,7 +53,7 @@ export function SignUpPage() {
           id="name"
           label="Name"
           autoComplete="name"
-          placeholder="Ada Lovelace"
+          placeholder="Jordan Lee"
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
@@ -83,9 +82,9 @@ export function SignUpPage() {
           </p>
         ) : null}
 
-        <Button type="submit" className="w-full" disabled={submitting}>
+        <AuthSubmit disabled={submitting}>
           {submitting ? "Creating account…" : "Create account"}
-        </Button>
+        </AuthSubmit>
       </form>
     </AuthLayout>
   );

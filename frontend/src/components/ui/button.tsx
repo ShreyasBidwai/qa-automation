@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 // `primary` is the only variant that uses the indigo accent — keeping the
 // accent restrained to primary actions (PRD §9).
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {

@@ -112,9 +112,17 @@ export function App() {
 
   const standalone = renderStandaloneRoute(pathname);
 
-  // Signed out: only the public front-door pages render; any other route falls
-  // back to sign-in (in place, so the deep link is preserved through login).
+  // Signed out: the public front-door pages and the public system-status view
+  // render; any other route falls back to sign-in (in place, so the deep link is
+  // preserved through login).
   if (status === "anonymous") {
+    if (clean === "/status") {
+      return (
+        <main className="mx-auto max-w-3xl px-6 py-8">
+          <SystemStatusPage />
+        </main>
+      );
+    }
     return standalone ?? <SignInPage />;
   }
 

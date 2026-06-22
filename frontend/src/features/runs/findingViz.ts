@@ -1,11 +1,11 @@
 /**
- * Per-axis visual mappings for the run dashboard + finding detail, in the new
- * design language (design brief). Each returns Tailwind class strings built from
- * the centralized tokens — never raw hex. Colour always travels with a word
- * (the label), so it never carries meaning alone.
- *
- * Kept apart from findingBadges.ts (which yields generic Badge levels): these are
- * the bespoke severity pill / dot and the history tag the hero screens use.
+ * Per-axis visual mappings for the run dashboard + finding detail. The severity
+ * (sevViz) and history (histViz) colour maps are lifted VERBATIM from
+ * "Polaris UI/Polaris Run Dashboard.dc.html" into centralized tokens (index.css):
+ *   sevViz:  critical → red, major → amber, minor → slate
+ *   histViz: new → blue, regression → amber, known → zinc, flaky → violet
+ * (trustViz lives with the TrustMark, already verbatim.) Each returns token-backed
+ * Tailwind classes — never raw hex; colour always travels with its label.
  */
 
 export interface SeverityViz {
@@ -23,23 +23,23 @@ export function severityViz(severity: string): SeverityViz {
     case "critical":
       return {
         label: "Critical",
-        pill: "bg-status-fail-bg text-status-fail-fg",
-        fg: "text-status-fail-fg",
-        dot: "bg-status-fail-solid",
+        pill: "bg-severity-critical-bg text-severity-critical-fg",
+        fg: "text-severity-critical-fg",
+        dot: "bg-severity-critical-dot",
       };
     case "major":
       return {
         label: "Major",
-        pill: "bg-status-flaky-bg text-status-flaky-fg",
-        fg: "text-status-flaky-fg",
-        dot: "bg-status-flaky-solid",
+        pill: "bg-severity-major-bg text-severity-major-fg",
+        fg: "text-severity-major-fg",
+        dot: "bg-severity-major-dot",
       };
     case "minor":
       return {
         label: "Minor",
-        pill: "bg-status-neutral-bg text-status-neutral-fg",
-        fg: "text-status-neutral-fg",
-        dot: "bg-status-neutral-solid",
+        pill: "bg-severity-minor-bg text-severity-minor-fg",
+        fg: "text-severity-minor-fg",
+        dot: "bg-severity-minor-dot",
       };
     default:
       return {
@@ -53,40 +53,50 @@ export function severityViz(severity: string): SeverityViz {
 
 export interface HistoryViz {
   label: string;
-  /** Label colour. */
+  /** Label + dot colour. */
   text: string;
-  /** The leading dot. */
+  /** The leading dot (same colour as the label). */
   dot: string;
+  /** Soft background for the detail-panel history pill. */
+  bg: string;
 }
 
-/** History tag: new = blue, regression = amber, known = zinc, flaky = amber. */
 export function historyViz(status: string): HistoryViz {
   switch (status) {
     case "new":
-      return { label: "New", text: "text-status-info-fg", dot: "bg-status-info-solid" };
+      return {
+        label: "New",
+        text: "text-history-new-fg",
+        dot: "bg-history-new-fg",
+        bg: "bg-history-new-bg",
+      };
     case "regression":
       return {
         label: "Regression",
-        text: "text-status-flaky-fg",
-        dot: "bg-status-flaky-solid",
+        text: "text-history-regression-fg",
+        dot: "bg-history-regression-fg",
+        bg: "bg-history-regression-bg",
       };
     case "flaky":
       return {
         label: "Flaky",
-        text: "text-status-flaky-fg",
-        dot: "bg-status-flaky-solid",
+        text: "text-history-flaky-fg",
+        dot: "bg-history-flaky-fg",
+        bg: "bg-history-flaky-bg",
       };
     case "known":
       return {
         label: "Known",
-        text: "text-muted-foreground",
-        dot: "bg-status-neutral-solid",
+        text: "text-history-known-fg",
+        dot: "bg-history-known-fg",
+        bg: "bg-history-known-bg",
       };
     default:
       return {
         label: status,
         text: "text-muted-foreground",
         dot: "bg-status-neutral-solid",
+        bg: "bg-status-neutral-bg",
       };
   }
 }

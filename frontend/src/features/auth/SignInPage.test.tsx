@@ -40,7 +40,7 @@ describe("SignInPage", () => {
     });
 
     renderWithAuth(<SignInPage />);
-    fireEvent.change(screen.getByLabelText("Work email"), {
+    fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "a@b.com" },
     });
     fireEvent.change(screen.getByLabelText("Password"), {
@@ -66,7 +66,7 @@ describe("SignInPage", () => {
     });
 
     renderWithAuth(<SignInPage />);
-    fireEvent.change(screen.getByLabelText("Work email"), {
+    fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "a@b.com" },
     });
     fireEvent.change(screen.getByLabelText("Password"), {

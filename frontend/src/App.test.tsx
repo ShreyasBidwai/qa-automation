@@ -29,7 +29,7 @@ vi.mock("@/lib/api/client", () => ({
   healthApi: { liveness: vi.fn(), readiness: vi.fn() },
 }));
 
-import { authApi, projectApi } from "@/lib/api/client";
+import { authApi, healthApi, projectApi } from "@/lib/api/client";
 import { AuthProvider } from "@/lib/auth/AuthContext";
 import { clearToken, setToken } from "@/lib/auth/session";
 
@@ -53,7 +53,9 @@ describe("App auth gating", () => {
   it("sends an unauthenticated visitor to sign in (no app data shown)", async () => {
     renderApp();
 
-    expect(await screen.findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Sign in to Polaris" }),
+    ).toBeInTheDocument();
     // The protected projects data is never requested while signed out.
     expect(projectApi.list).not.toHaveBeenCalled();
   });
@@ -75,7 +77,28 @@ describe("App auth gating", () => {
 
     // The real projects screen renders (not the sign-in front door).
     expect(await screen.findByText("No projects yet")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Sign in" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Sign in to Polaris" })).toBeNull();
     expect(projectApi.list).toHaveBeenCalled();
+  });
+
+  it("serves the public system-status page without a session", async () => {
+    window.history.pushState({}, "", "/status");
+    vi.mocked(healthApi.liveness).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { status: "ok" },
+    });
+    vi.mocked(healthApi.readiness).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { status: "ok", checks: { database: "ok" } },
+    });
+
+    renderApp(); // anonymous (no token)
+
+    expect(
+      await screen.findByRole("heading", { name: "System status" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Sign in to Polaris" })).toBeNull();
   });
 });
