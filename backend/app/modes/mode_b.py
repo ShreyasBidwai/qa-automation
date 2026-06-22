@@ -25,10 +25,12 @@ from typing import Protocol
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.brain.cross_layer import Impact, Subgraph
+from app.db_state.run_phase import DbStatePhaseReport, DbStateRunPhase
 from app.execution.lifecycle import RunLifecycle
 from app.execution.types import ExecutionRunner, PestScript, TargetEnv
 from app.models.enums import RunMode, RunTrigger
 from app.models.finding import Finding
+from app.models.result import Result
 from app.reporting import FindingAssembler, HistoryClassifier, SeverityScorer
 from app.repositories.result_repository import ResultRepository
 from app.repositories.test_case_repository import TestCaseRepository
@@ -99,6 +101,10 @@ class ModeBRunReport:
     cases_reused: int
     status: str
     ranked_findings: tuple[Finding, ...]
+    # DB-state phase outcome (B11, ADR-0044): None when no DB-state phase is wired
+    # (default) or the project is ``off``; carries the refusal reason when the
+    # non-prod gate refused the target. Additive — internal report only.
+    db_state: DbStatePhaseReport | None = None
 
 
 def _trigger_for(kind: SelectionStrategyKind) -> RunTrigger:
@@ -116,6 +122,7 @@ class ModeBOrchestrator:
         target_env: TargetEnv,
         resolver: BrainResolver,
         generator: TargetGenerator,
+        db_state: DbStateRunPhase | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._session = session
@@ -123,6 +130,7 @@ class ModeBOrchestrator:
         self._target_env = target_env
         self._resolver = resolver
         self._generator = generator
+        self._db_state = db_state
         self._clock = clock
         self._cases = TestCaseRepository(session)
         self._scripts = TestScriptRepository(session)
@@ -163,10 +171,14 @@ class ModeBOrchestrator:
         )
         results = await ResultRepository(self._session).list_for_run(project_id, run.id)
 
-        # Reporting pipeline (reused): assemble → score → classify → rank.
+        # Reporting pipeline (reused): assemble → DB-state phase → score → classify
+        # → rank. DB-state findings (layer=db) land before scoring so they flow
+        # through the rest of the pipeline like any other finding.
         await FindingAssembler(self._session, resolver=self._resolver).assemble(
             project_id=project_id, results=results
         )
+        db_state_report = await self._run_db_state_phase(project_id, run.id, results)
+
         scorer = SeverityScorer(self._session, impact_resolver=self._resolver)
         await scorer.score_run(project_id, run.id)
         await HistoryClassifier(self._session).classify_run(project_id, run.id)
@@ -181,6 +193,7 @@ class ModeBOrchestrator:
             cases_reused=len(ensured) - generated,
             status=run.status,
             ranked_findings=tuple(ranked),
+            db_state=db_state_report,
         )
         logger.info(
             "modes.mode_b.completed",
@@ -196,6 +209,35 @@ class ModeBOrchestrator:
             },
         )
         return report
+
+    async def _run_db_state_phase(
+        self,
+        project_id: uuid.UUID,
+        run_id: uuid.UUID,
+        results: Sequence[Result],
+    ) -> DbStatePhaseReport | None:
+        """Run the DB-state phase if wired; NEVER let it crash the run (defensive).
+
+        The safety gate lives inside the phase (it refuses + reports for a prod/
+        unflagged target); this outer guard catches anything unexpected so the run's
+        own findings/score/classify pipeline is unaffected no matter what.
+        """
+        if self._db_state is None:
+            return None
+        try:
+            return await self._db_state.run(
+                project_id=project_id,
+                run_id=run_id,
+                target_env_db_url=self._target_env.execution_db.url,
+                target_db_ephemeral=self._target_env.execution_db.ephemeral,
+                results=results,
+            )
+        except Exception:  # noqa: BLE001 — DB-state must never crash the rest of a run
+            logger.exception(
+                "modes.mode_b.db_state_phase_failed",
+                extra={"project_id": str(project_id), "run_id": str(run_id)},
+            )
+            return None
 
     async def _ensure_cases(
         self,
