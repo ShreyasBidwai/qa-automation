@@ -16,6 +16,7 @@ export default {
         surface: "var(--color-surface)",
         border: "var(--color-border)",
         foreground: "var(--color-foreground)",
+        "foreground-secondary": "var(--color-foreground-secondary)",
         "muted-foreground": "var(--color-muted-foreground)",
         accent: {
           DEFAULT: "var(--color-accent)",

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -29,10 +29,12 @@ describe("auth screens", () => {
   it("sign in renders its fields and a create-account link", () => {
     renderWithAuth(<SignInPage />);
 
-    expect(screen.getByRole("heading", { name: "Sign in" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Work email")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Sign in to Polaris" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Email")).toBeInTheDocument();
     expect(screen.getByLabelText("Password")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Create an account" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Create account" })).toBeInTheDocument();
   });
 
   it("sign up renders its fields and a sign-in link", () => {
@@ -46,13 +48,16 @@ describe("auth screens", () => {
     expect(screen.getByRole("link", { name: "Sign in" })).toBeInTheDocument();
   });
 
-  it("forgot renders the reset request and is honestly marked not-yet-wired", () => {
+  it("forgot renders the reset request and is honest that it isn't wired yet", () => {
     renderWithAuth(<ForgotPasswordPage />);
 
     expect(
       screen.getByRole("heading", { name: "Reset your password" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Send reset link" })).toBeInTheDocument();
-    expect(screen.getByText(/wired up yet/i)).toBeInTheDocument();
+    const submit = screen.getByRole("button", { name: "Send reset link" });
+    expect(submit).toBeInTheDocument();
+
+    fireEvent.click(submit);
+    expect(screen.getByText(/available yet/i)).toBeInTheDocument();
   });
 });

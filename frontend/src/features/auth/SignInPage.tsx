@@ -1,13 +1,17 @@
 import { useState, type FormEvent } from "react";
 
 import { Link } from "@/components/Link";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth/useAuth";
 
-import { AuthField, AuthLayout } from "./AuthLayout";
+import {
+  AuthDivider,
+  AuthField,
+  AuthLayout,
+  AuthSubmit,
+  SsoButton,
+} from "./AuthLayout";
 
-/** Sign in — wired to the B2 session endpoint. */
+/** Sign in — wired to the B2 session endpoint; presentation per Polaris Auth.dc.html. */
 export function SignInPage() {
   const { signIn } = useAuth();
   const [email, setEmail] = useState("");
@@ -34,48 +38,51 @@ export function SignInPage() {
 
   return (
     <AuthLayout
-      title="Sign in"
-      subtitle="QA you can trust"
+      title={
+        <>
+          Sign in to Polar<span className="text-accent">i</span>s
+        </>
+      }
+      titleText="Sign in to Polaris"
+      subtitle="Welcome back. Pick up where you left off."
       footer={
         <>
           New to Polaris?{" "}
           <Link to="/signup" className="font-medium text-accent hover:underline">
-            Create an account
+            Create account
           </Link>
         </>
       }
     >
       <form className="space-y-4" onSubmit={onSubmit} noValidate>
+        <SsoButton label="Continue with SSO" />
+        <AuthDivider />
         <AuthField
           id="email"
-          label="Work email"
+          label="Email"
           type="email"
           autoComplete="email"
           placeholder="you@company.com"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
         />
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label htmlFor="password" className="text-sm font-medium text-foreground">
-              Password
-            </label>
+        <AuthField
+          id="password"
+          label="Password"
+          type="password"
+          autoComplete="current-password"
+          placeholder="••••••••"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          labelAccessory={
             <Link
               to="/forgot"
-              className="text-xs font-medium text-accent hover:underline"
+              className="text-[12.5px] font-medium text-accent hover:underline"
             >
               Forgot password?
             </Link>
-          </div>
-          <Input
-            id="password"
-            type="password"
-            autoComplete="current-password"
-            placeholder="••••••••"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-        </div>
+          }
+        />
 
         {error ? (
           <p role="alert" className="text-sm text-status-fail-fg">
@@ -83,9 +90,9 @@ export function SignInPage() {
           </p>
         ) : null}
 
-        <Button type="submit" className="w-full" disabled={submitting}>
+        <AuthSubmit disabled={submitting}>
           {submitting ? "Signing in…" : "Sign in"}
-        </Button>
+        </AuthSubmit>
       </form>
     </AuthLayout>
   );
