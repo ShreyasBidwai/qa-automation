@@ -20,7 +20,9 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.factory import build_ai_provider
 from app.core.config import Settings
+from app.embeddings.factory import build_embedding_provider
 from app.models.enums import (
     AuthoredBy,
     FindingLayer,
@@ -166,21 +168,62 @@ class StubIngestor:
 
 
 def build_run_executor(settings: Settings) -> RunExecutor:
-    """Resolve the run-executor port from settings (default: stub)."""
+    """Resolve the run-executor port from settings.
+
+    ``stub`` → the zero-dependency demo executor. ``orchestrator`` → the FULLY-WIRED
+    real executor: a real per-stack runner + target env, the AI/embedding providers
+    (from the factories), and the session-scoped Brain resolver + AI-backed target
+    generator built per run (the B5 gap, now closed). Only a runner worker that
+    carries the toolchains composes this (ADR-0036).
+    """
     if settings.executor_mode == "stub":
         return StubRunExecutor()
+    if settings.executor_mode == "orchestrator":
+        from app.brain.cross_layer import CrossLayerResolver
+
+        from .execution import OrchestratorRunExecutor
+        from .real_execution import (
+            OrchestratorTargetGenerator,
+            build_runner,
+            build_target_env,
+        )
+
+        ai_provider = build_ai_provider(settings)
+        embedding_provider = build_embedding_provider(settings)
+        budget = settings.ai_max_budget_tokens
+        return OrchestratorRunExecutor(
+            runner=build_runner(settings),
+            target_env=build_target_env(settings),
+            # Session-scoped: built per run from the job's session.
+            resolver_factory=CrossLayerResolver,
+            target_generator_factory=lambda session: OrchestratorTargetGenerator(
+                session, ai_provider=ai_provider, budget_tokens=budget
+            ),
+            ai_provider=ai_provider,
+            embedding_provider=embedding_provider,
+        )
     raise ApiConfigError(
-        f"executor_mode={settings.executor_mode!r} requires the orchestrator + "
-        "runner toolchains, which are not wired into the packaged image "
-        "(docs/running.md)."
+        f"unknown executor_mode {settings.executor_mode!r} "
+        "(expected 'stub' or 'orchestrator')"
     )
 
 
 def build_ingestor(settings: Settings) -> Ingestor:
-    """Resolve the ingestor port from settings (default: stub)."""
+    """Resolve the ingestor port from settings.
+
+    ``stub`` → no-op. ``laravel`` → the real Laravel ingestor (reads the repo,
+    builds the Brain). Only a runner worker with PHP/Composer + git composes this.
+    """
     if settings.ingestor_mode == "stub":
         return StubIngestor()
+    if settings.ingestor_mode == "laravel":
+        from .real_execution import LaravelIngestorAdapter
+
+        return LaravelIngestorAdapter(
+            repo_path=settings.target_repo_path,
+            embedding_provider=build_embedding_provider(settings),
+        )
     raise ApiConfigError(
-        f"ingestor_mode={settings.ingestor_mode!r} requires git + the source "
-        "adapter, which are not wired into the packaged image (docs/running.md)."
+        f"unknown ingestor_mode {settings.ingestor_mode!r} "
+        "(expected 'stub' or 'laravel')"
     )

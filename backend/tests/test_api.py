@@ -877,8 +877,8 @@ async def test_orchestrator_executor_runs_mode_b(db_session: AsyncSession) -> No
     executor = OrchestratorRunExecutor(
         runner=_StubRunner(),
         target_env=_ENV,
-        resolver=_FakeResolver(),
-        target_generator=_StubGenerator(db_session),
+        resolver_factory=lambda _session: _FakeResolver(),
+        target_generator_factory=lambda session: _StubGenerator(session),
     )
     execution = await executor.execute(
         session=db_session,
@@ -899,8 +899,8 @@ async def test_orchestrator_executor_mode_c_unconfigured_raises(
     executor = OrchestratorRunExecutor(
         runner=_StubRunner(),
         target_env=_ENV,
-        resolver=_FakeResolver(),
-        target_generator=_StubGenerator(db_session),
+        resolver_factory=lambda _session: _FakeResolver(),
+        target_generator_factory=lambda session: _StubGenerator(session),
     )  # no AI/embedding providers
     with pytest.raises(ApiConfigError):
         await executor.execute(

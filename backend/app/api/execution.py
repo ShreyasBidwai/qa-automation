@@ -10,6 +10,7 @@ them — so the fast lane can stub the ``RunExecutor`` port entirely.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,15 +41,18 @@ class OrchestratorRunExecutor:
         *,
         runner: ExecutionRunner,
         target_env: TargetEnv,
-        resolver: BrainResolver,
-        target_generator: TargetGenerator,
+        resolver_factory: Callable[[AsyncSession], BrainResolver],
+        target_generator_factory: Callable[[AsyncSession], TargetGenerator],
         ai_provider: AIProvider | None = None,
         embedding_provider: EmbeddingProvider | None = None,
     ) -> None:
         self._runner = runner
         self._target_env = target_env
-        self._resolver = resolver
-        self._generator = target_generator
+        # Resolver + generator are SESSION-scoped (the resolver wraps a session, the
+        # generator persists through it), so they're built per-execute from the
+        # job's session — not held as singletons (the prior B5 gap).
+        self._resolver_factory = resolver_factory
+        self._generator_factory = target_generator_factory
         self._ai = ai_provider
         self._embed = embedding_provider
 
@@ -66,18 +70,20 @@ class OrchestratorRunExecutor:
     async def _run_mode_b(
         self, session: AsyncSession, project_id: uuid.UUID, request: RunRequest
     ) -> RunExecution:
+        resolver = self._resolver_factory(session)
+        generator = self._generator_factory(session)
         strategy = build_selection_strategy(
             request.strategy or SelectionStrategyKind.FULL_SWEEP,
             session=session,
-            resolver=self._resolver,
+            resolver=resolver,
             changeset=ChangeSet.of(request.changeset),
         )
         orchestrator = ModeBOrchestrator(
             session=session,
             runner=self._runner,
             target_env=self._target_env,
-            resolver=self._resolver,
-            generator=self._generator,
+            resolver=resolver,
+            generator=generator,
         )
         report = await orchestrator.run(
             project_id=project_id,

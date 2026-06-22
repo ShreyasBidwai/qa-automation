@@ -71,6 +71,23 @@ class Settings(BaseSettings):
     executor_mode: str = "stub"
     ingestor_mode: str = "stub"
 
+    # --- Real execution wiring (orchestrator mode; runner worker) -------------
+    # The orchestrator executor drives a real per-stack runner against a target.
+    # These configure WHERE/AGAINST WHAT it runs; only consulted in orchestrator
+    # mode (the slim backend never executes — B5/ADR-0036).
+    runner_framework: str = "pest"  # pest | playwright
+    # The target app the runner executes in (Pest: the Laravel app dir; Playwright:
+    # the node project dir) and the repo the Laravel ingestor reads.
+    target_app_path: str = ""
+    target_repo_path: str = ""
+    # The writable, EPHEMERAL test DB the runner uses (dual-DB rule, Arch §9) — must
+    # be a throwaway test target, never a real database.
+    execution_db_url: str = "sqlite::memory:"
+    # Where the runner writes evidence (JUnit, logs, traces).
+    evidence_dir: str = "/tmp/polaris-evidence"
+    # The running target frontend a browser runner drives (Playwright only).
+    target_base_url: str | None = None
+
     # --- AI layer (pluggable; dev shells to `claude -p`) (TRD §6, Arch §8) ---
     # Provider selection: claude_cli (dev) | stub (tests). api/self-host land later.
     # NOTE: the packaged backend image ships no `claude` CLI; switching to
