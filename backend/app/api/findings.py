@@ -60,7 +60,12 @@ async def _enrich(
         detail.update(await reader.detail_for(project_id, run_id, findings))
 
     return [
-        build_finding_response(item.finding, detail[item.finding.id], item.triage)
+        build_finding_response(
+            item.finding,
+            detail[item.finding.id],
+            item.triage,
+            superseded_by_heal=item.superseded,
+        )
         for item in page
     ]
 
@@ -71,11 +76,20 @@ async def list_open_findings(
     session: Annotated[AsyncSession, Depends(get_session)],
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    include_superseded: Annotated[bool, Query()] = False,
 ) -> OpenFindingsResponse:
-    """The global inbox: what's broken across the user's viewable orgs (ADR-0033)."""
+    """The global inbox: what's broken across the user's viewable orgs (ADR-0033).
+
+    Heal-superseded findings (addressing drift) are excluded by default; pass
+    ``include_superseded=true`` to see them tagged.
+    """
     org_ids = await OrganizationRepository(session).member_org_ids(current_user.id)
     page, total = await OpenFindingsReader(session).open_findings(
-        None, limit=limit, offset=offset, org_ids=org_ids
+        None,
+        limit=limit,
+        offset=offset,
+        org_ids=org_ids,
+        include_superseded=include_superseded,
     )
     return OpenFindingsResponse(
         items=await _enrich(session, page), total=total, limit=limit, offset=offset
@@ -89,11 +103,16 @@ async def list_project_open_findings(
     session: Annotated[AsyncSession, Depends(get_session)],
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    include_superseded: Annotated[bool, Query()] = False,
 ) -> OpenFindingsResponse:
-    """The currently-open findings for one project (404 if unknown/inaccessible)."""
+    """The currently-open findings for one project (404 if unknown/inaccessible).
+
+    Heal-superseded findings (addressing drift) are excluded by default; pass
+    ``include_superseded=true`` to see them tagged.
+    """
     await authorize_project(session, project_id, current_user, Permission.VIEW)
     page, total = await OpenFindingsReader(session).open_findings(
-        project_id, limit=limit, offset=offset
+        project_id, limit=limit, offset=offset, include_superseded=include_superseded
     )
     return OpenFindingsResponse(
         items=await _enrich(session, page), total=total, limit=limit, offset=offset

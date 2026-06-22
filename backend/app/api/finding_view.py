@@ -31,9 +31,14 @@ def triage_info(record: FindingTriage | None) -> TriageInfo:
 
 
 def build_finding_response(
-    finding: Finding, detail: FindingDetail, triage: FindingTriage | None
+    finding: Finding,
+    detail: FindingDetail,
+    triage: FindingTriage | None,
+    *,
+    superseded_by_heal: bool = False,
 ) -> FindingResponse:
     return FindingResponse(
+        superseded_by_heal=superseded_by_heal,
         id=finding.id,
         project_id=finding.project_id,
         run_id=finding.run_id,

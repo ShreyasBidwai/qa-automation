@@ -70,9 +70,16 @@ def _location_payload(subgraph: Subgraph | None) -> dict[str, Any]:
     if subgraph is None:
         return {}
     nodes = subgraph.nodes
+    # The signature blast path is page → endpoint → MODEL → table. The journey
+    # already traverses endpoint→model→table (model nodes are in the subgraph when
+    # the Brain has the edges), so surfacing them is a pure read — no extra query.
+    # When the endpoint→model edge is absent the list is simply empty and the path
+    # degrades to page → endpoint → table (additive; ``_anchor`` ignores models, so
+    # the root_cause_key is unchanged).
     return {
         "page": next((n.name for n in nodes if n.kind is NodeKind.PAGE), None),
         "endpoints": [n.name for n in nodes if n.kind is NodeKind.ENDPOINT],
+        "models": [n.name for n in nodes if n.kind is NodeKind.MODEL],
         "tables": [n.name for n in nodes if n.kind is NodeKind.TABLE],
     }
 

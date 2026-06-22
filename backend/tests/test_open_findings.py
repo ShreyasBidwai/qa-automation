@@ -255,6 +255,7 @@ async def test_open_findings_selection_is_batched_no_n_plus_one(
     page, total = await reader.open_findings(project_id, limit=100, offset=0)
 
     assert total == 6
-    # Latest-run DISTINCT-ON + findings read + triage read — a fixed handful of
+    # Latest-run DISTINCT-ON + findings read + triage read + the two heal-
+    # reconciliation reads (result→case, active heals) — a fixed handful of
     # statements regardless of finding count (no per-finding query).
-    assert len(calls) <= 4
+    assert len(calls) <= 6

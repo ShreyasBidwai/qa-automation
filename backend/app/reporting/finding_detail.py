@@ -58,11 +58,17 @@ def location_anchor(location: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def location_payload(location: Mapping[str, Any]) -> dict[str, Any]:
-    """The anchor plus the full cross-layer blast path the ribbon renders."""
+    """The anchor plus the full cross-layer blast path the ribbon renders.
+
+    The path is page → endpoint → model → table; ``models`` is additive and empty
+    for findings whose endpoint→model edge the Brain didn't resolve (and for rows
+    assembled before B-follow-up), so the ribbon degrades to the shorter path.
+    """
     return {
         "anchor": location_anchor(location),
         "page": location.get("page"),
         "endpoints": [str(e) for e in (location.get("endpoints") or [])],
+        "models": [str(m) for m in (location.get("models") or [])],
         "tables": [str(t) for t in (location.get("tables") or [])],
     }
 

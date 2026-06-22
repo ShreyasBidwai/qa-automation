@@ -290,11 +290,17 @@ class FindingLocationAnchor(BaseModel):
 
 
 class FindingLocation(BaseModel):
-    """The anchor plus the full cross-layer blast path the ribbon renders."""
+    """The anchor plus the full cross-layer blast path the ribbon renders.
+
+    The path is page → endpoint → model → table; ``models`` is additive and empty
+    when the Brain didn't resolve the endpoint→model edge (the ribbon then renders
+    the shorter page → endpoint → table path).
+    """
 
     anchor: FindingLocationAnchor
     page: str | None = None
     endpoints: list[str] = Field(default_factory=list)
+    models: list[str] = Field(default_factory=list)
     tables: list[str] = Field(default_factory=list)
 
 
@@ -358,6 +364,10 @@ class FindingResponse(BaseModel):
     evidence_ref: str | None = None
     # Triage disposition, keyed by root_cause_key (ADR-0027); absent record = open.
     triage: TriageInfo
+    # True when an active heal masks this finding (B8): a LOCATION failure that's
+    # addressing drift ("test needs re-addressing"), not a broken app. Dropped from
+    # the default inbox; reachable via the heals list or ``include_superseded``.
+    superseded_by_heal: bool = False
 
 
 class FindingsResponse(BaseModel):

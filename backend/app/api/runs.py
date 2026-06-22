@@ -18,6 +18,7 @@ from app.models.enums import JobKind, Outcome, TriageStatus
 from app.models.job import Job
 from app.models.user import User
 from app.reporting import FindingDetailReader, rank_findings
+from app.reporting.heal_reconciliation import superseded_finding_ids
 from app.repositories.finding_repository import FindingRepository
 from app.repositories.finding_triage_repository import FindingTriageRepository
 from app.repositories.result_repository import ResultRepository
@@ -183,8 +184,16 @@ async def get_run_findings(
     triage = await FindingTriageRepository(session).get_for_keys(
         job.project_id, [f.root_cause_key for f in ranked]
     )
+    # The run dashboard shows every finding but TAGS heal-superseded ones (addressing
+    # drift) rather than dropping them — the per-run view is non-lossy by design.
+    superseded = await superseded_finding_ids(session, ranked)
     items = [
-        build_finding_response(f, detail[f.id], triage.get(f.root_cause_key))
+        build_finding_response(
+            f,
+            detail[f.id],
+            triage.get(f.root_cause_key),
+            superseded_by_heal=f.id in superseded,
+        )
         for f in ranked
     ]
     return FindingsResponse(run_id=run_id, count=len(items), findings=items)
@@ -225,4 +234,10 @@ async def triage_finding(
     detail = await FindingDetailReader(session).detail_for(
         job.project_id, job.run_id, [finding]
     )
-    return build_finding_response(finding, detail[finding.id], record)
+    superseded = await superseded_finding_ids(session, [finding])
+    return build_finding_response(
+        finding,
+        detail[finding.id],
+        record,
+        superseded_by_heal=finding.id in superseded,
+    )

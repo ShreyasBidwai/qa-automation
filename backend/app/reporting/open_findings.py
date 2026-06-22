@@ -25,6 +25,7 @@ from app.models.finding_triage import FindingTriage
 from app.models.project import Project
 from app.models.run import Run
 
+from .heal_reconciliation import superseded_finding_ids
 from .scoring import rank_key
 
 # Dispositions that take an issue OUT of "currently open" (ADR-0027/0028).
@@ -34,13 +35,25 @@ _MUTED: frozenset[TriageStatus] = frozenset(
 
 
 class OpenFinding:
-    """One open finding plus its triage record (None = untriaged → open)."""
+    """One open finding plus its triage record (None = untriaged → open).
 
-    __slots__ = ("finding", "triage")
+    ``superseded`` marks a finding masked by an active heal (B8) — addressing drift,
+    not a broken app. Such findings are dropped from the default inbox and only
+    surface (tagged) when the caller opts in.
+    """
 
-    def __init__(self, finding: Finding, triage: FindingTriage | None) -> None:
+    __slots__ = ("finding", "triage", "superseded")
+
+    def __init__(
+        self,
+        finding: Finding,
+        triage: FindingTriage | None,
+        *,
+        superseded: bool = False,
+    ) -> None:
         self.finding = finding
         self.triage = triage
+        self.superseded = superseded
 
 
 class OpenFindingsReader:
@@ -81,12 +94,16 @@ class OpenFindingsReader:
         limit: int,
         offset: int,
         org_ids: Sequence[uuid.UUID] | None = None,
+        include_superseded: bool = False,
     ) -> tuple[list[OpenFinding], int]:
         """A severity-ranked page of currently-open findings + the total.
 
         Batched: one DISTINCT-ON for latest runs, one findings read, one triage
-        read — constant statements regardless of finding count (no N+1). Scoped to
-        the caller's viewable orgs when ``org_ids`` is given (ADR-0033).
+        read, two heal-reconciliation reads — constant statements regardless of
+        finding count (no N+1). Scoped to the caller's viewable orgs when
+        ``org_ids`` is given (ADR-0033). Findings masked by an active heal
+        (addressing drift) are dropped unless ``include_superseded`` is set, in
+        which case they are returned tagged.
         """
         run_ids = await self.latest_run_ids(project_id, org_ids)
         if not run_ids:
@@ -105,14 +122,25 @@ class OpenFindingsReader:
         triage = await self._triage_for(
             {(f.project_id, f.root_cause_key) for f in findings}
         )
+        superseded = await superseded_finding_ids(self._session, findings)
 
         # Each (project, root_cause_key) is unique within its latest run (unique
-        # index), so the set is already deduped; we only drop muted dispositions.
-        open_items = [
-            OpenFinding(f, triage.get((f.project_id, f.root_cause_key)))
-            for f in findings
-            if not _is_muted(triage.get((f.project_id, f.root_cause_key)))
-        ]
+        # index), so the set is already deduped; we drop muted dispositions and —
+        # unless asked to include them — heal-superseded addressing drift.
+        open_items: list[OpenFinding] = []
+        for finding in findings:
+            if _is_muted(triage.get((finding.project_id, finding.root_cause_key))):
+                continue
+            is_superseded = finding.id in superseded
+            if is_superseded and not include_superseded:
+                continue
+            open_items.append(
+                OpenFinding(
+                    finding,
+                    triage.get((finding.project_id, finding.root_cause_key)),
+                    superseded=is_superseded,
+                )
+            )
         total = len(open_items)
         open_items.sort(key=lambda item: rank_key(item.finding))
         return open_items[offset : offset + limit], total
