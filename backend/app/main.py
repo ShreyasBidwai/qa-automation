@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from .api.auth import router as auth_router
 from .api.documents import router as documents_router
 from .api.findings import router as findings_router
+from .api.heals import router as heals_router
 from .api.health import router as health_router
 from .api.ops import router as ops_router
 from .api.orgs import router as orgs_router
@@ -56,5 +57,6 @@ def create_app() -> FastAPI:
     app.include_router(findings_router)
     app.include_router(ops_router)
     app.include_router(documents_router)
+    app.include_router(heals_router)
 
     return app
