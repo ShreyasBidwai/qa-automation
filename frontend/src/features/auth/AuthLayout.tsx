@@ -37,7 +37,7 @@ export function AuthLayout({
     <div className="flex h-screen w-full overflow-hidden bg-surface text-foreground">
       <BrandPanel />
 
-      <div className="flex w-full flex-col min-[900px]:w-[600px] min-[900px]:flex-none">
+      <div className="flex w-full flex-col min-[900px]:w-[720px] min-[900px]:flex-none">
         {/* Header — the wordmark shows here only below 900px (the brand panel hides). */}
         <header className="flex h-16 flex-none items-center px-6 min-[900px]:px-14">
           <Link to="/" aria-label="Polaris — home" className="flex min-[900px]:hidden">
@@ -46,7 +46,7 @@ export function AuthLayout({
         </header>
 
         <main className="flex flex-1 flex-col overflow-y-auto px-6 py-6 min-[900px]:px-14">
-          <div className="m-auto w-full max-w-[400px]">
+          <div className="m-auto w-full max-w-[460px]">
             <h1
               aria-label={titleText}
               className="text-[23px] font-semibold tracking-[-0.015em] text-foreground"
@@ -74,10 +74,10 @@ function BrandPanel() {
     <aside className="hidden flex-1 flex-col border-r border-border bg-background px-14 py-10 min-[900px]:flex">
       <Wordmark className="text-[40px] tracking-[-0.025em]" />
 
-      {/* The content block is centered in the height between the pinned wordmark
-       *  and footer, on a consistent rhythm (heading→para 12px; para→card and
-       *  card→legend 24px). */}
-      <div className="flex max-w-[440px] flex-1 flex-col justify-center gap-6">
+      {/* The content block is anchored to the bottom of the height between the
+       *  pinned wordmark and footer, on a consistent rhythm (heading→para 12px;
+       *  para→card and card→legend 24px). */}
+      <div className="flex max-w-[440px] flex-1 flex-col justify-end gap-6">
         <div>
           <h2 className="text-[30px] font-semibold leading-[1.2] tracking-[-0.025em] text-foreground">
             Tests you can trust.
