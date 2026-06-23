@@ -100,3 +100,12 @@ tmp/
 # CI / test report output (coverage, junit, playwright report)
 # ---------------------------------------------------------------------------
 .artifacts/
+
+# ---------------------------------------------------------------------------
+# Local scratch / design exports — not part of the tracked repo
+# ---------------------------------------------------------------------------
+run.txt
+Polaris UI/
+
+
+
