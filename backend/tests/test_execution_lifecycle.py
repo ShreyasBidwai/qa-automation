@@ -92,6 +92,7 @@ async def test_lifecycle_persists_results_and_marks_passed(
     assert run.status == STATUS_PASSED
     assert run.started_at is not None and run.finished_at is not None
     assert run.commit_sha == "abc123"
+    assert run.run_number == 1  # friendly per-project number assigned at creation
     assert runner.teardown_called == 1
 
     rows = await ResultRepository(db_session).list_for_run(project.id, run.id)

@@ -240,6 +240,10 @@ async def test_run_mode_b_enqueues_and_creates_scoped_run(
     assert body["status"] == "succeeded"
     assert body["mode"] == "mode_b"
     assert body["summary"]["mode"] == "mode_b"
+    # Enriched run-status payload (ADR-0048): the run row's number + timestamps are
+    # surfaced (run_number is null here — the stub bypasses the assignment path).
+    assert "run_number" in body
+    assert body["created_at"] is not None
 
 
 async def test_run_findings_shape(
@@ -263,6 +267,7 @@ async def test_run_findings_shape(
     assert finding["oracle_source"] == "rule-derived"
     assert finding["layer"] == "api"
     assert finding["explains_count"] == 1
+    assert finding["created_at"] is not None  # age/"when" for the drawer (ADR-0048)
 
     # widened detail the drawer renders ------------------------------------
     location = finding["location"]

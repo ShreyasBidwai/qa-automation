@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, String, text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -53,6 +53,12 @@ class Project(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # validates the value and gates changes behind MANAGE_PROJECT.
     db_state_tier: Mapped[str] = mapped_column(
         String(16), nullable=False, server_default=text("'off'")
+    )
+    # Monotonic per-project run counter (ADR-0048): the source of friendly run
+    # numbers. Claimed atomically (UPDATE ... RETURNING) at run creation so
+    # concurrent runs never collide. Backfilled to each project's run count.
+    run_counter: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
     )
     # Soft-delete marker (ADR-0029): set on DELETE; reads exclude non-null rows.
     deleted_at: Mapped[datetime | None] = mapped_column(

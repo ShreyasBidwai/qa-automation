@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.enums import TriageStatus
+from app.models.enums import Severity, TriageStatus
 from app.models.finding import Finding
 from app.models.finding_triage import FindingTriage
 from app.models.project import Project
@@ -31,6 +31,11 @@ from .scoring import rank_key
 # Dispositions that take an issue OUT of "currently open" (ADR-0027/0028).
 _MUTED: frozenset[TriageStatus] = frozenset(
     {TriageStatus.RESOLVED, TriageStatus.WONT_FIX, TriageStatus.FALSE_POSITIVE}
+)
+
+# The scored severities counted in a per-run breakdown (unscored "unset" excluded).
+_COUNTED_SEVERITIES: frozenset[str] = frozenset(
+    {Severity.CRITICAL.value, Severity.MAJOR.value, Severity.MINOR.value}
 )
 
 
@@ -173,6 +178,24 @@ class OpenFindingsReader:
         counts: dict[uuid.UUID, int] = {}
         for item in await self._open_findings_for_runs(run_ids):
             counts[item.finding.project_id] = counts.get(item.finding.project_id, 0) + 1
+        return counts
+
+    async def severity_counts_by_run(
+        self, run_ids: Sequence[uuid.UUID]
+    ) -> dict[uuid.UUID, dict[str, int]]:
+        """Per-run open-findings counts by severity (critical/major/minor).
+
+        Reuses the inbox's "currently open" definition (``_open_findings_for_runs`` —
+        muted + heal-superseded excluded) and the existing severity vocabulary, so
+        the per-run breakdown can't drift from the inbox. Batched: a fixed number of
+        queries regardless of how many runs are on the page (no N+1).
+        """
+        counts: dict[uuid.UUID, dict[str, int]] = {}
+        for item in await self._open_findings_for_runs(run_ids):
+            severity = item.finding.severity
+            if severity in _COUNTED_SEVERITIES:
+                bucket = counts.setdefault(item.finding.run_id, {})
+                bucket[severity] = bucket.get(severity, 0) + 1
         return counts
 
     async def _triage_for(

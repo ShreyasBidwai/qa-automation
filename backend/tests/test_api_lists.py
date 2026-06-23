@@ -83,7 +83,12 @@ async def _seed_run(
 
 
 async def _seed_open_finding(
-    app: FastAPI, project_id: uuid.UUID, run_id: uuid.UUID, *, key: str
+    app: FastAPI,
+    project_id: uuid.UUID,
+    run_id: uuid.UUID,
+    *,
+    key: str,
+    severity: str = "major",
 ) -> None:
     async with app.state.sessionmaker() as session:
         case = make_test_case(project_id)
@@ -105,7 +110,7 @@ async def _seed_open_finding(
                 confidence_mixed=False,
                 expected={},
                 location={},
-                severity="major",
+                severity=severity,
                 status="new",
             )
         )
@@ -292,3 +297,63 @@ async def test_list_project_runs_pagination(
         await client.get(f"/api/v1/projects/{project_id}/runs?limit=2&offset=2")
     ).json()
     assert [item["id"] for item in page2["items"]] == [str(r1)]
+
+
+async def test_list_project_runs_carries_run_number_timestamps_and_severity(
+    authed_client: tuple[AsyncClient, FastAPI],
+) -> None:
+    """Additive enrichment (ADR-0048): RunListItem carries the friendly run number,
+    created/finished timestamps, and the per-run open-findings severity breakdown."""
+    client, app = authed_client
+    org_id = await _personal_org_id(client)
+    project_id = await _seed_project(app, name="Enrich", hour=1, org_id=org_id)
+
+    # A run with a friendly number, a finish time, and a mix of open findings.
+    async with app.state.sessionmaker() as session:
+        rich = make_run(
+            project_id,
+            mode=RunMode.B,
+            status="failed",
+            run_number=7,
+            created_at=_BASE + timedelta(hours=8),
+            finished_at=_BASE + timedelta(hours=9),
+        )
+        session.add(rich)
+        await session.flush()
+        rich_id = rich.id
+        await session.commit()
+    seeded = [("c", "critical"), ("m1", "major"), ("m2", "major"), ("n", "minor")]
+    for fkey, sev in seeded:
+        await _seed_open_finding(app, project_id, rich_id, key=fkey, severity=sev)
+
+    # A later run with NO findings → zeros, and no finish time yet.
+    async with app.state.sessionmaker() as session:
+        bare = make_run(
+            project_id,
+            mode=RunMode.B,
+            status="running",
+            run_number=8,
+            created_at=_BASE + timedelta(hours=10),
+        )
+        session.add(bare)
+        await session.flush()
+        bare_id = bare.id
+        await session.commit()
+
+    items = {
+        item["id"]: item
+        for item in (await client.get(f"/api/v1/projects/{project_id}/runs")).json()[
+            "items"
+        ]
+    }
+
+    rich_item = items[str(rich_id)]
+    assert rich_item["run_number"] == 7
+    assert rich_item["created_at"] is not None
+    assert rich_item["finished_at"] is not None
+    assert rich_item["severity_breakdown"] == {"critical": 1, "major": 2, "minor": 1}
+
+    bare_item = items[str(bare_id)]
+    assert bare_item["run_number"] == 8
+    assert bare_item["finished_at"] is None
+    assert bare_item["severity_breakdown"] == {"critical": 0, "major": 0, "minor": 0}

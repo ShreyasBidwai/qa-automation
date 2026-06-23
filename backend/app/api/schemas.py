@@ -339,6 +339,11 @@ class RunStatusResponse(BaseModel):
     mode: str
     status: str
     summary: dict[str, Any] | None = None
+    # Additive enrichment (ADR-0048): null until the run row exists (e.g. a queued
+    # job or a mode-c authoring run that produces no run).
+    run_number: int | None = None
+    created_at: datetime | None = None
+    finished_at: datetime | None = None
 
 
 class FindingLocationAnchor(BaseModel):
@@ -428,6 +433,8 @@ class FindingResponse(BaseModel):
     # addressing drift ("test needs re-addressing"), not a broken app. Dropped from
     # the default inbox; reachable via the heals list or ``include_superseded``.
     superseded_by_heal: bool = False
+    # When the finding was first recorded — the "when"/age the screens show (ADR-0048).
+    created_at: datetime | None = None
 
 
 class FindingsResponse(BaseModel):
@@ -498,12 +505,25 @@ class ProjectListResponse(BaseModel):
     offset: int
 
 
+class SeverityBreakdown(BaseModel):
+    """Per-run open-findings counts by severity (ADR-0048). Defaults to zeros."""
+
+    critical: int = 0
+    major: int = 0
+    minor: int = 0
+
+
 class RunListItem(BaseModel):
     id: uuid.UUID
     mode: str
     status: str
     created_at: datetime
     pass_rate: float | None = None  # passed / total over the run's results
+    # Additive enrichment (ADR-0048): a friendly per-project run number, when the
+    # run finished, and its open-findings severity breakdown.
+    run_number: int | None = None
+    finished_at: datetime | None = None
+    severity_breakdown: SeverityBreakdown = Field(default_factory=SeverityBreakdown)
 
 
 class RunListResponse(BaseModel):
