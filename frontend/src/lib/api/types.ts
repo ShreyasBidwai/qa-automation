@@ -32,6 +32,72 @@ export interface ProfileUpdateBody {
   email?: string;
 }
 
+/** POST /auth/change-password (B2/B11). The policy is enforced server-side. */
+export interface ChangePasswordBody {
+  current_password: string;
+  new_password: string;
+}
+
+/** One field-level validation message from a 422 (problem+json `errors[]`, B11). */
+export interface FieldError {
+  field: string;
+  message: string;
+}
+
+// --- organizations / membership / invites (B3, ADR-0032/0033) ---------------
+
+export type OrgRoleName = "owner" | "admin" | "member" | "viewer";
+
+export interface OrgResponse {
+  id: string;
+  name: string;
+  is_personal: boolean;
+  role: OrgRoleName; // the caller's role in THIS org (authoritative for gating)
+  created_at: string;
+}
+
+export interface OrgListResponse {
+  items: OrgResponse[];
+  total: number;
+}
+
+export interface MemberResponse {
+  user_id: string;
+  email: string;
+  name: string | null;
+  role: OrgRoleName;
+  created_at: string; // when they joined the org
+}
+
+export interface MemberListResponse {
+  items: MemberResponse[];
+  total: number;
+}
+
+export interface RoleUpdateBody {
+  role: OrgRoleName;
+}
+
+export interface InviteCreateBody {
+  email: string;
+  role: OrgRoleName;
+}
+
+/** A pending/accepted invite — deliberately WITHOUT the token (ADR-0033). */
+export interface InviteResponse {
+  id: string;
+  email: string;
+  role: OrgRoleName;
+  expires_at: string;
+  accepted_at: string | null;
+  created_at: string;
+}
+
+export interface InviteListResponse {
+  items: InviteResponse[];
+  total: number;
+}
+
 // --- health (top-level endpoints) -------------------------------------------
 
 export interface HealthzResponse {

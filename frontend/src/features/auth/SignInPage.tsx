@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 
 import { Link } from "@/components/Link";
+import type { FieldError } from "@/lib/api/types";
 import { useAuth } from "@/lib/auth/useAuth";
 
 import { AuthField, AuthLayout, AuthSubmit } from "./AuthLayout";
@@ -11,11 +12,13 @@ export function SignInPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldError[]>();
   const [submitting, setSubmitting] = useState(false);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    setFieldErrors(undefined);
     if (!email.trim() || !password) {
       setError("Enter your email and password.");
       return;
@@ -26,7 +29,13 @@ export function SignInPage() {
     // only handle the failure path here.
     if (!result.ok) {
       setSubmitting(false);
-      setError(result.error ?? "Could not sign in. Try again.");
+      // B11: surface per-field validation messages where they belong; fall back
+      // to a single message for credential / rate-limit (429) / generic errors.
+      if (result.fieldErrors?.length) {
+        setFieldErrors(result.fieldErrors);
+      } else {
+        setError(result.error ?? "Could not sign in. Try again.");
+      }
     }
   }
 
@@ -57,6 +66,7 @@ export function SignInPage() {
           placeholder="you@company.com"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
+          error={fieldErrors?.find((entry) => entry.field === "email")?.message}
         />
         <AuthField
           id="password"
@@ -66,6 +76,7 @@ export function SignInPage() {
           placeholder="••••••••"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
+          error={fieldErrors?.find((entry) => entry.field === "password")?.message}
           labelAccessory={
             <Link
               to="/forgot"

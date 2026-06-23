@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearToken, getToken, setToken } from "@/lib/auth/session";
 
-import { findingApi, projectApi, runApi } from "./client";
+import { authApi, findingApi, projectApi, runApi } from "./client";
 
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
@@ -158,6 +158,53 @@ describe("api client", () => {
     expect(result.status).toBe(422);
     expect(result.error).toBe("Request validation failed.");
     expect(result.data).toBeNull();
+  });
+
+  it("surfaces 422 field errors[] and prefers them over the generic title (B11)", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        {
+          title: "Unprocessable Entity",
+          detail: "Request validation failed.",
+          code: "validation_error",
+          errors: [
+            {
+              field: "new_password",
+              message: "Password must be at least 8 characters.",
+            },
+          ],
+        },
+        422,
+      ),
+    );
+
+    const result = await authApi.changePassword({
+      current_password: "old",
+      new_password: "short",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.fieldErrors).toEqual([
+      { field: "new_password", message: "Password must be at least 8 characters." },
+    ]);
+    // The voiced field message wins over the generic "Request validation failed."
+    expect(result.error).toBe("Password must be at least 8 characters.");
+  });
+
+  it("honours a 429 Retry-After with an voiced message (B11)", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 429,
+      headers: { get: (key: string) => (key === "Retry-After" ? "30" : null) },
+      json: async () => ({ title: "Too Many Requests", code: "http_429" }),
+    });
+
+    const result = await authApi.signIn({ email: "a@b.com", password: "x" });
+
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(429);
+    expect(result.retryAfter).toBe(30);
+    expect(result.error).toContain("30 seconds");
   });
 
   it("attaches the bearer token when signed in", async () => {

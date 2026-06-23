@@ -3,12 +3,20 @@ import { clearToken, getToken } from "@/lib/auth/session";
 import type {
   AuthTokenResponse,
   AuthUser,
+  ChangePasswordBody,
+  FieldError,
   Finding,
   FindingsResponse,
   HealthzResponse,
   IngestResponse,
+  InviteCreateBody,
+  InviteListResponse,
+  InviteResponse,
   JobStatus,
+  MemberListResponse,
+  MemberResponse,
   OpenFindingsResponse,
+  OrgListResponse,
   PageParams,
   Project,
   ProjectCreateBody,
@@ -16,6 +24,7 @@ import type {
   ProfileUpdateBody,
   ProjectUpdateBody,
   ReadyzResponse,
+  RoleUpdateBody,
   RunCreateBody,
   RunListResponse,
   RunResponse,
@@ -38,19 +47,43 @@ export interface ApiResult<T> {
   status: number;
   data: T | null;
   error?: string;
+  /** Field-level validation messages from a 422 (problem+json `errors[]`, B11). */
+  fieldErrors?: FieldError[];
+  /** Seconds to wait, from a 429's `Retry-After` header (B11 rate limiting). */
+  retryAfter?: number;
 }
 
 interface ProblemJson {
   title?: string;
   detail?: string;
   code?: string;
+  errors?: FieldError[];
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 const REQUEST_TIMEOUT_MS = 8000;
 
+/** An honest, voiced "too many attempts" message that respects Retry-After. */
+function rateLimitMessage(retryAfter: number): string {
+  if (!retryAfter || retryAfter <= 1) {
+    return "Too many attempts. Please wait a moment and try again.";
+  }
+  if (retryAfter < 60) {
+    return `Too many attempts. Please try again in ${retryAfter} seconds.`;
+  }
+  const minutes = Math.ceil(retryAfter / 60);
+  return `Too many attempts. Please try again in ${minutes} minute${
+    minutes === 1 ? "" : "s"
+  }.`;
+}
+
 function problemMessage(data: unknown, status: number): string {
   const problem = (data ?? {}) as ProblemJson;
+  // Prefer the per-field messages (e.g. the B11 password policy) over the generic
+  // "Request validation failed." title, so the surfaced error is the real one.
+  if (problem.errors && problem.errors.length > 0) {
+    return problem.errors.map((entry) => entry.message).join(" ");
+  }
   return problem.detail ?? problem.title ?? `Request failed (${status})`;
 }
 
@@ -79,11 +112,28 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiResult<T
       // A 401 means the session is gone (expired / revoked) — drop the token so
       // the app falls back to sign-in instead of looping on dead requests.
       if (response.status === 401) clearToken();
+      const fieldErrors = (body as ProblemJson | null)?.errors;
+      // B11: honour Retry-After on a 429 and voice it instead of a raw title.
+      if (response.status === 429) {
+        const retryAfter = Number.parseInt(
+          response.headers.get("Retry-After") ?? "",
+          10,
+        );
+        const seconds = Number.isFinite(retryAfter) ? retryAfter : 0;
+        return {
+          ok: false,
+          status: 429,
+          data: null,
+          error: rateLimitMessage(seconds),
+          retryAfter: seconds,
+        };
+      }
       return {
         ok: false,
         status: response.status,
         data: null,
         error: problemMessage(body, response.status),
+        fieldErrors: fieldErrors && fieldErrors.length > 0 ? fieldErrors : undefined,
       };
     }
     return { ok: true, status: response.status, data: body as T };
@@ -133,6 +183,35 @@ export const authApi = {
   /** PATCH /auth/me — update the account profile (name / email). */
   updateProfile: (body: ProfileUpdateBody) =>
     patchJson<AuthUser>(`${API_BASE}/auth/me`, body),
+  /** POST /auth/change-password — change the password (B2; policy enforced, 204). */
+  changePassword: (body: ChangePasswordBody) =>
+    postJson<null>(`${API_BASE}/auth/change-password`, body),
+};
+
+/**
+ * Organizations / team membership (B3, ADR-0032/0033). The API is the security
+ * boundary: every management call is authorized server-side by the caller's role
+ * (owner-only owner management, last-owner guard) and surfaces 403/409 — the
+ * client only hides actions it knows will be refused, it never grants access.
+ */
+export const orgApi = {
+  /** GET /orgs — the orgs the caller belongs to, with their role in each. */
+  listOrgs: () => getJson<OrgListResponse>(`${API_BASE}/orgs`),
+  /** GET /orgs/{id}/members — the org's members + their roles. */
+  listMembers: (orgId: string) =>
+    getJson<MemberListResponse>(`${API_BASE}/orgs/${orgId}/members`),
+  /** GET /orgs/{id}/invites — pending/accepted invites (owner/admin only). */
+  listInvites: (orgId: string) =>
+    getJson<InviteListResponse>(`${API_BASE}/orgs/${orgId}/invites`),
+  /** POST /orgs/{id}/invites — invite a member (owner/admin; owner-only to invite owners). */
+  invite: (orgId: string, body: InviteCreateBody) =>
+    postJson<InviteResponse>(`${API_BASE}/orgs/${orgId}/invites`, body),
+  /** PATCH /orgs/{id}/members/{uid} — change a member's role. */
+  changeRole: (orgId: string, userId: string, body: RoleUpdateBody) =>
+    patchJson<MemberResponse>(`${API_BASE}/orgs/${orgId}/members/${userId}`, body),
+  /** DELETE /orgs/{id}/members/{uid} — remove a member (204). */
+  removeMember: (orgId: string, userId: string) =>
+    del(`${API_BASE}/orgs/${orgId}/members/${userId}`),
 };
 
 export const healthApi = {

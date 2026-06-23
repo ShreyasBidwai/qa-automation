@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 
 import { Link } from "@/components/Link";
+import type { FieldError } from "@/lib/api/types";
 import { useAuth } from "@/lib/auth/useAuth";
 
 import { AuthField, AuthLayout, AuthSubmit } from "./AuthLayout";
@@ -14,11 +15,13 @@ export function SignUpPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldError[]>();
   const [submitting, setSubmitting] = useState(false);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    setFieldErrors(undefined);
     if (!email.trim()) {
       setError("Enter your work email.");
       return;
@@ -31,7 +34,13 @@ export function SignUpPage() {
     const result = await signUp(email.trim(), password, name);
     if (!result.ok) {
       setSubmitting(false);
-      setError(result.error ?? "Could not create your account. Try again.");
+      // B11: surface the server's per-field policy messages on the field itself;
+      // fall back to a single message for duplicate-email / rate-limit / generic.
+      if (result.fieldErrors?.length) {
+        setFieldErrors(result.fieldErrors);
+      } else {
+        setError(result.error ?? "Could not create your account. Try again.");
+      }
     }
   }
 
@@ -65,6 +74,7 @@ export function SignUpPage() {
           placeholder="you@company.com"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
+          error={fieldErrors?.find((entry) => entry.field === "email")?.message}
         />
         <AuthField
           id="password"
@@ -74,6 +84,7 @@ export function SignUpPage() {
           placeholder="At least 8 characters"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
+          error={fieldErrors?.find((entry) => entry.field === "password")?.message}
         />
 
         {error ? (

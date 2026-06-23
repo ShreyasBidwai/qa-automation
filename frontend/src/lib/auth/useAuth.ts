@@ -15,6 +15,8 @@ export interface AuthContextValue {
     name?: string,
   ) => Promise<ApiResult<AuthTokenResponse>>;
   signOut: () => Promise<void>;
+  /** Replace the cached user (e.g. after a profile update) so chrome stays in sync. */
+  setUser: (user: AuthUser) => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);

@@ -7,6 +7,7 @@ import { NotFoundPage } from "@/components/NotFoundPage";
 import { ForgotPasswordPage } from "@/features/auth/ForgotPasswordPage";
 import { SignInPage } from "@/features/auth/SignInPage";
 import { SignUpPage } from "@/features/auth/SignUpPage";
+import { AccountPage } from "@/features/account/AccountPage";
 import { FindingsInboxPage } from "@/features/findings/FindingsInboxPage";
 import { HelpCenterPage } from "@/features/help/HelpCenterPage";
 import { PlaceholderPage } from "@/features/placeholders/PlaceholderPage";
@@ -68,12 +69,7 @@ function renderRoute(pathname: string): ReactElement {
   }
 
   if (segments[0] === "account" && segments.length === 1) {
-    return (
-      <PlaceholderPage
-        title="Account"
-        description="Your profile and team settings arrive with sign-in in a later slice."
-      />
-    );
+    return <AccountPage />;
   }
 
   if (segments[0] === "settings" && segments.length === 1) {

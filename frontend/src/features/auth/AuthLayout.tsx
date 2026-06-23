@@ -204,12 +204,15 @@ export function AuthField({
   label,
   labelAccessory,
   className,
+  error,
   ...props
 }: {
   id: string;
   label: string;
   /** Optional element on the right of the label row (e.g. "Forgot password?"). */
   labelAccessory?: ReactNode;
+  /** A field-level validation message (e.g. a B11 password-policy error). */
+  error?: string;
 } & InputHTMLAttributes<HTMLInputElement>) {
   return (
     <div>
@@ -224,6 +227,8 @@ export function AuthField({
       </div>
       <input
         id={id}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? `${id}-error` : undefined}
         className={cn(
           "h-[42px] w-full rounded-[9px] border border-border bg-surface px-[13px] text-sm text-foreground transition-colors placeholder:text-status-neutral-solid",
           "focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 focus-visible:ring-offset-background",
@@ -231,6 +236,11 @@ export function AuthField({
         )}
         {...props}
       />
+      {error ? (
+        <p id={`${id}-error`} className="mt-1.5 text-[13px] text-status-fail-fg">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
