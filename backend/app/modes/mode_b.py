@@ -24,14 +24,17 @@ from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.usage import UsageCollector, install_collector, reset_collector
 from app.brain.cross_layer import Impact, Subgraph
 from app.db_state.run_phase import DbStatePhaseReport, DbStateRunPhase
 from app.execution.lifecycle import RunLifecycle
 from app.execution.types import ExecutionRunner, PestScript, TargetEnv
+from app.models.ai_usage import AiUsage
 from app.models.enums import RunMode, RunTrigger
 from app.models.finding import Finding
 from app.models.result import Result
 from app.reporting import FindingAssembler, HistoryClassifier, SeverityScorer
+from app.repositories.ai_usage_repository import AiUsageRepository
 from app.repositories.result_repository import ResultRepository
 from app.repositories.test_case_repository import TestCaseRepository
 from app.repositories.test_script_repository import TestScriptRepository
@@ -142,7 +145,32 @@ class ModeBOrchestrator:
         strategy: SelectionStrategy,
         bounds: ModeBBounds,
     ) -> ModeBRunReport:
-        """Select → ensure → execute → report, autonomously (deterministic, scoped)."""
+        """Select → ensure → execute → report, autonomously (deterministic, scoped).
+
+        Wraps the run in an AI-usage collection context (ADR-0049): provider calls
+        during generation buffer their usage here, and ``_run`` drains + persists it
+        once the run row exists. Best-effort — capture never alters the run.
+        """
+        collector = UsageCollector()
+        token = install_collector(collector)
+        try:
+            return await self._run(
+                project_id=project_id,
+                strategy=strategy,
+                bounds=bounds,
+                usage=collector,
+            )
+        finally:
+            reset_collector(token)
+
+    async def _run(
+        self,
+        *,
+        project_id: uuid.UUID,
+        strategy: SelectionStrategy,
+        bounds: ModeBBounds,
+        usage: UsageCollector,
+    ) -> ModeBRunReport:
         requested_kind = strategy.kind
         selection = await strategy.select(project_id)
 
@@ -169,6 +197,9 @@ class ModeBOrchestrator:
             trigger=_trigger_for(requested_kind),
             mode=RunMode.B,
         )
+        # Attribute + persist the AI usage buffered during generation now that the
+        # run row exists (best-effort; ADR-0049).
+        await self._flush_usage(project_id, run.id, usage)
         results = await ResultRepository(self._session).list_for_run(project_id, run.id)
 
         # Reporting pipeline (reused): assemble → DB-state phase → score → classify
@@ -209,6 +240,44 @@ class ModeBOrchestrator:
             },
         )
         return report
+
+    async def _flush_usage(
+        self, project_id: uuid.UUID, run_id: uuid.UUID, usage: UsageCollector
+    ) -> None:
+        """Persist the run's buffered AI usage; best-effort — NEVER break the run.
+
+        The write runs in a SAVEPOINT so a failure rolls back only the usage insert
+        and leaves the run's own transaction (findings/score/classify, then the
+        caller's commit) intact — usage capture must never poison the session.
+        """
+        if not usage.records:
+            return
+        try:
+            async with self._session.begin_nested():
+                await AiUsageRepository(self._session).add_all(
+                    AiUsage(
+                        project_id=project_id,
+                        run_id=run_id,
+                        phase=record.phase,
+                        model=record.usage.model,
+                        input_tokens=record.usage.input_tokens,
+                        output_tokens=record.usage.output_tokens,
+                        cache_creation_input_tokens=(
+                            record.usage.cache_creation_input_tokens
+                        ),
+                        cache_read_input_tokens=record.usage.cache_read_input_tokens,
+                        total_cost_usd=record.usage.total_cost_usd,
+                        model_cost_usd=record.usage.model_cost_usd,
+                        usage_available=record.usage.available,
+                        is_error=record.usage.is_error,
+                    )
+                    for record in usage.records
+                )
+        except Exception:  # noqa: BLE001 — usage capture must never crash a run
+            logger.exception(
+                "modes.mode_b.usage_flush_failed",
+                extra={"project_id": str(project_id), "run_id": str(run_id)},
+            )
 
     async def _run_db_state_phase(
         self,

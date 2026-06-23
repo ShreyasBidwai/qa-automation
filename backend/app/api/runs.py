@@ -14,6 +14,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import Permission
+from app.models.ai_usage import AiUsage
 from app.models.enums import JobKind, TriageStatus
 from app.models.job import Job
 from app.models.user import User
@@ -21,6 +22,12 @@ from app.reporting import FindingDetailReader, rank_findings
 from app.reporting.heal_reconciliation import superseded_finding_ids
 from app.reporting.open_findings import OpenFindingsReader
 from app.reporting.project_summary import pass_rate
+from app.repositories.ai_usage_repository import (
+    AiUsageRepository,
+    RunUsageTotals,
+    UsageBucket,
+    aggregate,
+)
 from app.repositories.finding_repository import FindingRepository
 from app.repositories.finding_triage_repository import FindingTriageRepository
 from app.repositories.result_repository import ResultRepository
@@ -33,6 +40,8 @@ from .finding_view import build_finding_response
 from .jobs import dispatch_job
 from .ports import run_request_to_payload, to_run_request
 from .schemas import (
+    AiUsageBucket,
+    AiUsageRecord,
     FindingResponse,
     FindingsResponse,
     RunCreate,
@@ -40,6 +49,8 @@ from .schemas import (
     RunListResponse,
     RunResponse,
     RunStatusResponse,
+    RunUsageAggregate,
+    RunUsageResponse,
     SeverityBreakdown,
     TriagePatch,
 )
@@ -168,6 +179,77 @@ async def get_run(
         run_number=run.run_number if run is not None else None,
         created_at=run.created_at if run is not None else None,
         finished_at=run.finished_at if run is not None else None,
+    )
+
+
+def _usage_bucket(bucket: UsageBucket) -> AiUsageBucket:
+    return AiUsageBucket(
+        call_count=bucket.call_count,
+        total_cost_usd=bucket.total_cost_usd,
+        input_tokens=bucket.input_tokens,
+        output_tokens=bucket.output_tokens,
+        cache_creation_input_tokens=bucket.cache_creation_input_tokens,
+        cache_read_input_tokens=bucket.cache_read_input_tokens,
+    )
+
+
+def _usage_aggregate(agg: RunUsageTotals) -> RunUsageAggregate:
+    return RunUsageAggregate(
+        call_count=agg.call_count,
+        available_call_count=agg.available_call_count,
+        unavailable_call_count=agg.unavailable_call_count,
+        error_count=agg.error_count,
+        total_cost_usd=agg.total_cost_usd,
+        input_tokens=agg.input_tokens,
+        output_tokens=agg.output_tokens,
+        cache_creation_input_tokens=agg.cache_creation_input_tokens,
+        cache_read_input_tokens=agg.cache_read_input_tokens,
+        per_phase={k: _usage_bucket(v) for k, v in agg.per_phase.items()},
+        per_model={k: _usage_bucket(v) for k, v in agg.per_model.items()},
+    )
+
+
+def _usage_record(record: AiUsage) -> AiUsageRecord:
+    return AiUsageRecord(
+        phase=record.phase,
+        model=record.model,
+        input_tokens=record.input_tokens,
+        output_tokens=record.output_tokens,
+        cache_creation_input_tokens=record.cache_creation_input_tokens,
+        cache_read_input_tokens=record.cache_read_input_tokens,
+        # Stored as Numeric (Decimal at runtime); the float schema field coerces it.
+        total_cost_usd=record.total_cost_usd,
+        model_cost_usd=record.model_cost_usd,
+        usage_available=record.usage_available,
+        is_error=record.is_error,
+        created_at=record.created_at,
+    )
+
+
+@router.get("/runs/{run_id}/usage", response_model=RunUsageResponse)
+async def get_run_usage(
+    run_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> RunUsageResponse:
+    """Per-call AI usage + the per-run aggregate (actual billed cost, ADR-0049).
+
+    Authorized read (VIEW); a queued/authoring run with no executed run row returns
+    an empty record set + zeroed aggregate.
+    """
+    job = await _authorized_run_job(
+        run_id,
+        session=session,
+        user=current_user,
+        permission=Permission.VIEW,
+    )
+    if job.run_id is None:
+        return RunUsageResponse(run_id=run_id)
+    records = await AiUsageRepository(session).list_for_run(job.project_id, job.run_id)
+    return RunUsageResponse(
+        run_id=run_id,
+        aggregate=_usage_aggregate(aggregate(job.run_id, records)),
+        records=[_usage_record(record) for record in records],
     )
 
 

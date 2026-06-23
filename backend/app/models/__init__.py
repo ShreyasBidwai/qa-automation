@@ -4,6 +4,7 @@ so Alembic autogenerate and ``verify_migrations`` see the full schema.
 
 from __future__ import annotations
 
+from .ai_usage import AiUsage
 from .auth_challenge_log import AuthChallengeLog
 from .base import Base
 from .coverage import Coverage
@@ -56,4 +57,5 @@ __all__ = [
     "SpecDivergence",
     "TestHeal",
     "Incident",
+    "AiUsage",
 ]

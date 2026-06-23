@@ -29,6 +29,7 @@ from .budget import (
 from .errors import AIInvocationError, AITimeout, AITransientError
 from .retry import with_retries
 from .types import FailureEvidence, Subgraph, TriageLabel
+from .usage import PHASE_GENERATION, parse_envelope, record_usage
 
 logger = logging.getLogger("app.ai")
 
@@ -125,7 +126,10 @@ class ClaudeCliProvider:
         return output
 
     def _invoke(self, assembled: str) -> str:
-        argv = [self._cli_path, "-p", "--model", self._model]
+        # ``--output-format json`` returns a single envelope carrying the model text
+        # (``result``) plus the actual billed usage; parsing is internal — callers
+        # still receive only the output text (ADR-0049).
+        argv = [self._cli_path, "-p", "--output-format", "json", "--model", self._model]
         result = self._runner(argv, assembled, self._timeout)
         if result.returncode != 0:
             # stderr may echo prompt content — log the code only, not the body.
@@ -134,7 +138,11 @@ class ClaudeCliProvider:
                 extra={"model": self._model, "returncode": result.returncode},
             )
             raise AITransientError(f"claude CLI exited with code {result.returncode}")
-        output = result.stdout.strip()
+        # Best-effort capture: malformed/non-JSON output falls back to the raw stdout
+        # as the text and flags usage unavailable — never breaks or alters generation.
+        output, usage = parse_envelope(result.stdout, model=self._model)
+        record_usage(usage, phase=PHASE_GENERATION)
+        output = output.strip()
         if not output:
             raise AITransientError("claude CLI returned empty output")
         return output
