@@ -81,6 +81,25 @@ describe("App auth gating", () => {
     expect(projectApi.list).toHaveBeenCalled();
   });
 
+  it("renders the in-shell 404 for an authenticated unknown path", async () => {
+    setToken("tok-1");
+    vi.mocked(authApi.me).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { id: "u1", email: "a@b.com", name: null, created_at: "2026-01-01" },
+    });
+    window.history.pushState({}, "", "/no/such/route");
+
+    renderApp();
+
+    expect(
+      await screen.findByRole("heading", { name: "This page doesn't exist" }),
+    ).toBeInTheDocument();
+    // A real way back, rendered inside the app shell (the top bar is present).
+    expect(screen.getByRole("link", { name: "Back to projects" })).toBeInTheDocument();
+    expect(screen.getByRole("banner")).toBeInTheDocument();
+  });
+
   it("serves the public system-status page without a session", async () => {
     window.history.pushState({}, "", "/status");
     vi.mocked(healthApi.liveness).mockResolvedValue({

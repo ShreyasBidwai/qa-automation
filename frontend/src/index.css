@@ -33,6 +33,7 @@
     --color-status-pass-bg: #ecfdf5; /* emerald-50 */
     --color-status-pass-fg: #047857; /* emerald-700 */
     --color-status-pass-solid: #059669; /* emerald-600 */
+    --color-status-pass-border: #a7f3d0; /* emerald-200 — success state-circle border */
 
     /* Status: fail = red */
     --color-status-fail-bg: #fef2f2; /* red-50 */

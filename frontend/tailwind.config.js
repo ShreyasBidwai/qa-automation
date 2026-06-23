@@ -32,6 +32,7 @@ export default {
           "pass-bg": "var(--color-status-pass-bg)",
           "pass-fg": "var(--color-status-pass-fg)",
           "pass-solid": "var(--color-status-pass-solid)",
+          "pass-border": "var(--color-status-pass-border)",
           "fail-bg": "var(--color-status-fail-bg)",
           "fail-fg": "var(--color-status-fail-fg)",
           "fail-solid": "var(--color-status-fail-solid)",

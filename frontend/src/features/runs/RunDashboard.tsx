@@ -1,4 +1,10 @@
-import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2 } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  CheckCircle2,
+  MousePointerClick,
+} from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { LoadingFact } from "@/components/LoadingFact";
@@ -438,11 +444,13 @@ function FindingsList({
 
 function SelectAFinding() {
   return (
-    <div className="flex h-full flex-col items-center justify-center px-6 py-16 text-center">
-      <h2 className="text-[15px] font-semibold text-foreground">Select a finding</h2>
-      <p className="mt-1.5 max-w-[260px] text-[13px] text-muted-foreground">
-        Pick a finding on the left to see its blast path, evidence, and history.
-      </p>
+    <div className="flex h-full items-center justify-center">
+      <StatePanel
+        size="sm"
+        icon={MousePointerClick}
+        title="Select a finding"
+        description="Pick a finding on the left to see its blast path, evidence, and history."
+      />
     </div>
   );
 }

@@ -19,8 +19,9 @@ export function GenericErrorPage({ errorId }: { errorId?: string }) {
       <StatePanel
         icon={AlertTriangle}
         tone="danger"
+        size="lg"
         title="Something went wrong on our end"
-        description="We hit an unexpected error. Try again in a moment — if it keeps happening, head back to your projects."
+        description="We hit an unexpected error and our team has been notified. Try again in a moment."
         code={errorId ? `error_id · ${errorId}` : undefined}
         actions={
           <>
