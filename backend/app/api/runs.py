@@ -14,11 +14,12 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import Permission
-from app.models.enums import JobKind, Outcome, TriageStatus
+from app.models.enums import JobKind, TriageStatus
 from app.models.job import Job
 from app.models.user import User
 from app.reporting import FindingDetailReader, rank_findings
 from app.reporting.heal_reconciliation import superseded_finding_ids
+from app.reporting.project_summary import pass_rate
 from app.repositories.finding_repository import FindingRepository
 from app.repositories.finding_triage_repository import FindingTriageRepository
 from app.repositories.result_repository import ResultRepository
@@ -42,15 +43,6 @@ from .schemas import (
 )
 
 router = APIRouter(prefix="/api/v1", tags=["runs"])
-
-
-def _pass_rate(counts: dict[Outcome, int] | None) -> float | None:
-    if not counts:
-        return None
-    total = sum(counts.values())
-    if total == 0:
-        return None
-    return round(counts.get(Outcome.PASS, 0) / total, 4)
 
 
 async def _authorized_run_job(
@@ -129,7 +121,7 @@ async def list_project_runs(
             mode=run.mode.value,
             status=run.status,
             created_at=run.created_at,
-            pass_rate=_pass_rate(counts.get(run.id)),
+            pass_rate=pass_rate(counts.get(run.id)),
         )
         for run in runs
     ]

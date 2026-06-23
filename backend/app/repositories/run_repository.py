@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 
 from sqlalchemy import and_, func, or_, select
 
@@ -13,6 +14,27 @@ from .base import ProjectScopedRepository
 
 class RunRepository(ProjectScopedRepository[Run]):
     model = Run
+
+    async def latest_run_per_project(
+        self, project_ids: Sequence[uuid.UUID]
+    ) -> dict[uuid.UUID, Run]:
+        """The most-recent run per project, batched — ONE ``DISTINCT ON`` query.
+
+        Same latest-run ordering as the open-findings reader (``created_at`` desc,
+        ``id`` desc as the deterministic tiebreaker). Keyed by ``project_id``;
+        projects with no runs are simply absent. Scoped to the passed ``project_ids``
+        (the caller's already-authorized page) — no N+1 across projects.
+        """
+        ids = list(project_ids)
+        if not ids:
+            return {}
+        stmt = (
+            select(Run)
+            .where(Run.project_id.in_(ids))
+            .order_by(Run.project_id, Run.created_at.desc(), Run.id.desc())
+            .distinct(Run.project_id)
+        )
+        return {run.project_id: run for run in (await self.session.scalars(stmt)).all()}
 
     async def list_for_project(
         self, project_id: uuid.UUID, *, limit: int, offset: int

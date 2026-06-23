@@ -71,3 +71,29 @@ class ResultRepository(ProjectScopedRepository[Result]):
         for run_id, outcome, count in (await self.session.execute(stmt)).all():
             counts.setdefault(run_id, {})[outcome] = int(count)
         return counts
+
+    async def outcome_counts_by_run(
+        self,
+        project_ids: Sequence[uuid.UUID],
+        run_ids: Sequence[uuid.UUID],
+    ) -> dict[uuid.UUID, dict[Outcome, int]]:
+        """Outcome counts grouped by run across MANY projects — one grouped query.
+
+        The cross-project sibling of :meth:`outcome_counts_for_runs` (which is scoped
+        to a single project): backs per-run pass rates for the projects-list page in
+        one statement, no N+1. Scoped to the page's already-authorized ``project_ids``.
+        """
+        if not run_ids:
+            return {}
+        stmt = (
+            select(Result.run_id, Result.outcome, func.count())
+            .where(
+                Result.project_id.in_(list(project_ids)),
+                Result.run_id.in_(list(run_ids)),
+            )
+            .group_by(Result.run_id, Result.outcome)
+        )
+        counts: dict[uuid.UUID, dict[Outcome, int]] = {}
+        for run_id, outcome, count in (await self.session.execute(stmt)).all():
+            counts.setdefault(run_id, {})[outcome] = int(count)
+        return counts

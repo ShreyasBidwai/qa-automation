@@ -106,27 +106,45 @@ class OpenFindingsReader:
         which case they are returned tagged.
         """
         run_ids = await self.latest_run_ids(project_id, org_ids)
-        if not run_ids:
-            return [], 0
+        open_items = await self._open_findings_for_runs(
+            run_ids, include_superseded=include_superseded
+        )
+        total = len(open_items)
+        open_items.sort(key=lambda item: rank_key(item.finding))
+        return open_items[offset : offset + limit], total
 
+    async def _open_findings_for_runs(
+        self,
+        run_ids: Sequence[uuid.UUID],
+        *,
+        include_superseded: bool = False,
+    ) -> list[OpenFinding]:
+        """The currently-open findings for a set of latest-run ids (no pagination).
+
+        The single definition of "currently open" reused by the inbox and the
+        projects-list count: a run's findings (each ``(project, root_cause_key)`` is
+        unique per run → already deduped), minus muted dispositions
+        (resolved/wont_fix/false_positive) and — unless asked to include them —
+        heal-superseded addressing drift (B8). Batched: one findings read, one triage
+        read, two heal-reconciliation reads — constant regardless of finding count.
+        """
+        if not run_ids:
+            return []
         findings = list(
             (
                 await self._session.scalars(
-                    select(Finding).where(Finding.run_id.in_(run_ids))
+                    select(Finding).where(Finding.run_id.in_(list(run_ids)))
                 )
             ).all()
         )
         if not findings:
-            return [], 0
+            return []
 
         triage = await self._triage_for(
             {(f.project_id, f.root_cause_key) for f in findings}
         )
         superseded = await superseded_finding_ids(self._session, findings)
 
-        # Each (project, root_cause_key) is unique within its latest run (unique
-        # index), so the set is already deduped; we drop muted dispositions and —
-        # unless asked to include them — heal-superseded addressing drift.
         open_items: list[OpenFinding] = []
         for finding in findings:
             if _is_muted(triage.get((finding.project_id, finding.root_cause_key))):
@@ -141,9 +159,21 @@ class OpenFindingsReader:
                     superseded=is_superseded,
                 )
             )
-        total = len(open_items)
-        open_items.sort(key=lambda item: rank_key(item.finding))
-        return open_items[offset : offset + limit], total
+        return open_items
+
+    async def open_counts_by_project(
+        self, run_ids: Sequence[uuid.UUID]
+    ) -> dict[uuid.UUID, int]:
+        """Per-project open-findings counts for the given latest-run ids.
+
+        Exactly the inbox's "currently open" definition (``_open_findings_for_runs``),
+        grouped by project — so the projects-list count can never drift from the
+        inbox total. Batched (no N+1 across projects).
+        """
+        counts: dict[uuid.UUID, int] = {}
+        for item in await self._open_findings_for_runs(run_ids):
+            counts[item.finding.project_id] = counts.get(item.finding.project_id, 0) + 1
+        return counts
 
     async def _triage_for(
         self, pairs: set[tuple[uuid.UUID, str]]
