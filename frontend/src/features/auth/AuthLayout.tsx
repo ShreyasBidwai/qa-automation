@@ -71,13 +71,13 @@ export function AuthLayout({
 
 function BrandPanel() {
   return (
-    <aside className="hidden flex-1 flex-col border-r border-border bg-background px-14 py-10 min-[900px]:flex">
+    <aside className="m-4 hidden flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-background px-14 py-10 shadow-card min-[900px]:flex">
       <Wordmark className="text-[40px] tracking-[-0.025em]" />
 
       {/* The content block is anchored to the bottom of the height between the
        *  pinned wordmark and footer, on a consistent rhythm (heading→para 12px;
        *  para→card and card→legend 24px). */}
-      <div className="flex max-w-[440px] flex-1 flex-col justify-end gap-6">
+      <div className="mb-12 flex max-w-[440px] flex-1 flex-col justify-end gap-6">
         <div>
           <h2 className="text-[30px] font-semibold leading-[1.2] tracking-[-0.025em] text-foreground">
             Tests you can trust.
