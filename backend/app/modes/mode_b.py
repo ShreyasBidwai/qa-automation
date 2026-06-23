@@ -56,6 +56,7 @@ from .selection import (
     SelectionStrategy,
     SelectionStrategyKind,
     Target,
+    targets_for_layers,
 )
 
 logger = logging.getLogger("app.modes.mode_b")
@@ -94,6 +95,9 @@ class ModeBBounds:
 
     max_targets: int  # hard cap on how many targets a run drives
     max_seconds: float | None = None  # wall-clock budget for the ensure loop
+    # Optional layer scope (ADR-0052): which of ui/api/db this run exercises. None =
+    # the full set — targets are unfiltered and the DB-state phase runs as before.
+    layers: frozenset[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -199,7 +203,10 @@ class ModeBOrchestrator:
             selection = await FullSweepStrategy(self._session).select(project_id)
             full_sweep_fallback = True
 
-        targets = selection.targets[: bounds.max_targets]  # hard count bound
+        # Layer scope (ADR-0052): narrow to the requested layers' targets BEFORE the
+        # count bound, so a UI-only run drives UI targets (None = full, unchanged).
+        scoped = targets_for_layers(selection.targets, bounds.layers)
+        targets = scoped[: bounds.max_targets]  # hard count bound
         await emit(
             phase=PHASE_SELECT,
             step=f"Select targets ({requested_kind.value})",
@@ -207,6 +214,7 @@ class ModeBOrchestrator:
             detail={
                 "targets": len(targets),
                 "full_sweep_fallback": full_sweep_fallback,
+                "layers": sorted(bounds.layers) if bounds.layers else None,
             },
         )
         ensured = await self._ensure_cases(project_id, targets, bounds)
@@ -233,7 +241,14 @@ class ModeBOrchestrator:
         await FindingAssembler(self._session, resolver=self._resolver).assemble(
             project_id=project_id, results=results
         )
-        db_state_report = await self._run_db_state_phase(project_id, run.id, results)
+        # DB-state phase only when the run scope includes the DB layer (ADR-0052);
+        # None = full scope, so it runs as before (still tier-gated inside).
+        db_in_scope = bounds.layers is None or "db" in bounds.layers
+        db_state_report = (
+            await self._run_db_state_phase(project_id, run.id, results)
+            if db_in_scope
+            else None
+        )
 
         scorer = SeverityScorer(self._session, impact_resolver=self._resolver)
         await scorer.score_run(project_id, run.id)

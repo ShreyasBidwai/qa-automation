@@ -28,6 +28,8 @@ class RunRequest:
     changeset: tuple[str, ...] = ()
     max_targets: int = 50
     prompt: str | None = None
+    # Optional layer scope (ADR-0052); None = the full set (UI/API/DB).
+    layers: frozenset[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -66,6 +68,7 @@ def to_run_request(body: ModeBRunRequest | ModeCRunRequest) -> RunRequest:
             strategy=SelectionStrategyKind(body.strategy),
             changeset=tuple(body.changeset or ()),
             max_targets=body.max_targets,
+            layers=frozenset(body.layers) if body.layers else None,
         )
     return RunRequest(mode=RunMode.C, prompt=body.prompt)
 
@@ -78,16 +81,19 @@ def run_request_to_payload(request: RunRequest) -> dict[str, Any]:
         "changeset": list(request.changeset),
         "max_targets": request.max_targets,
         "prompt": request.prompt,
+        "layers": sorted(request.layers) if request.layers else None,
     }
 
 
 def run_request_from_payload(payload: dict[str, Any]) -> RunRequest:
     """Rebuild a run request from a durable job payload (the worker's input)."""
     strategy = payload.get("strategy")
+    layers = payload.get("layers")
     return RunRequest(
         mode=RunMode(payload["mode"]),
         strategy=SelectionStrategyKind(strategy) if strategy else None,
         changeset=tuple(payload.get("changeset") or ()),
         max_targets=payload.get("max_targets", 50),
         prompt=payload.get("prompt"),
+        layers=frozenset(layers) if layers else None,
     )

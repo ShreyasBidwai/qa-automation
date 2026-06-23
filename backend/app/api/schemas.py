@@ -303,6 +303,11 @@ class JobStatusResponse(BaseModel):
     detail: str | None = None
 
 
+# Which layers a run exercises (ADR-0052): UI = page targets, API = endpoint
+# targets, DB = the DB-state phase. Values match the FindingLayer vocabulary.
+RunLayer = Literal["ui", "api", "db"]
+
+
 class ModeBRunRequest(BaseModel):
     """Autonomous run: a selection strategy + (for change_impact) a changeset."""
 
@@ -310,11 +315,23 @@ class ModeBRunRequest(BaseModel):
     strategy: Literal["full_sweep", "change_impact"]
     changeset: list[str] | None = None
     max_targets: int = Field(default=50, ge=1, le=1000)
+    # Optional layer scope (ADR-0052): which of ui/api/db the run tests. Omitted/null
+    # = the full set (existing behaviour unchanged); deduped, must be non-empty.
+    layers: list[RunLayer] | None = None
 
     @model_validator(mode="after")
     def _require_changeset_for_change_impact(self) -> ModeBRunRequest:
         if self.strategy == "change_impact" and not self.changeset:
             raise ValueError("changeset is required for the change_impact strategy")
+        return self
+
+    @model_validator(mode="after")
+    def _normalize_layers(self) -> ModeBRunRequest:
+        if self.layers is not None:
+            if not self.layers:
+                raise ValueError("layers, when given, must list at least one layer")
+            # Dedupe while preserving a deterministic order.
+            self.layers = sorted(set(self.layers))
         return self
 
 
