@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { HELP_SECTIONS } from "./helpContent";
 
 describe("HELP_SECTIONS", () => {
-  it("covers all 11 documented sections", () => {
-    expect(HELP_SECTIONS).toHaveLength(11);
+  it("covers all 14 documented sections", () => {
+    expect(HELP_SECTIONS).toHaveLength(14);
   });
 
   it("has unique, non-empty ids and titles", () => {
@@ -42,17 +42,14 @@ describe("HELP_SECTIONS", () => {
     expect(new Set(block.items.map((m) => m.symbol)).size).toBe(3);
   });
 
-  it("draws the blast path as a 4-node chain with a valid failing node", () => {
+  it("draws the blast path as a 3-node chain with a valid failing node", () => {
     const section = HELP_SECTIONS.find((s) => s.id === "blast-path");
     const block = section?.body.find((b) => b.kind === "blastPath");
     if (block?.kind !== "blastPath") throw new Error("expected a blastPath block");
 
-    expect(block.nodes.map((n) => n.tier)).toEqual([
-      "Page",
-      "Endpoint",
-      "Model",
-      "Table",
-    ]);
+    // page → endpoint → table, matching what the run dashboard's ribbon renders
+    // (UI / API / DB tiers; there is no separate "model" node on screen).
+    expect(block.nodes.map((n) => n.tier)).toEqual(["Page", "Endpoint", "Table"]);
     expect(block.failingIndex).toBeGreaterThanOrEqual(0);
     expect(block.failingIndex).toBeLessThan(block.nodes.length);
   });
@@ -70,8 +67,7 @@ describe("HELP_SECTIONS", () => {
       "blast path",
       "mode",
       "scope",
-      "the brain",
-      "crawl",
+      "model",
       "run",
       "severity",
       "confidence",
