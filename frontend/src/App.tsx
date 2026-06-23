@@ -17,6 +17,7 @@ import { EditProjectPage } from "@/features/projects/EditProjectPage";
 import { ProjectPage } from "@/features/projects/ProjectPage";
 import { ProjectsListPage } from "@/features/projects/ProjectsListPage";
 import { StartRunPage } from "@/features/projects/StartRunPage";
+import { LiveRunView } from "@/features/runs/LiveRunView";
 import { RunDashboard } from "@/features/runs/RunDashboard";
 import { RunStatusPage } from "@/features/runs/RunStatusPage";
 import { RunsListPage } from "@/features/runs/RunsListPage";
@@ -61,6 +62,9 @@ function renderRoute(pathname: string): ReactElement {
     if (segments.length === 1) return <RunsListPage />;
     if (segments.length === 3 && segments[2] === "findings") {
       return <RunDashboard runId={segments[1]} />;
+    }
+    if (segments.length === 3 && segments[2] === "live") {
+      return <LiveRunView runId={segments[1]} />;
     }
     if (segments.length === 2) return <RunStatusPage runId={segments[1]} />;
   }

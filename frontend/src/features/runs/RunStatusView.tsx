@@ -1,4 +1,4 @@
-import { Check } from "lucide-react";
+import { ArrowRight, Check } from "lucide-react";
 
 import { Link } from "@/components/Link";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -39,6 +39,16 @@ export function RunStatusView({ runId }: { runId: string }) {
         <StatusBadge status={descriptor} />
         <span className="font-mono text-xs text-muted-foreground">{runId}</span>
       </div>
+
+      {/* The live, step-by-step journey (live for an in-progress run, replay for a
+       *  finished one) — the run status here is intentionally coarse. */}
+      <Link
+        to={`/runs/${runId}/live`}
+        className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline"
+      >
+        {done ? "Replay the run journey" : "Watch the live run"}
+        <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+      </Link>
 
       <ol className="space-y-2.5" aria-label="Run progress">
         {PHASES.map((phase) => (
