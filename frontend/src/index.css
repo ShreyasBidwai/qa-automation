@@ -166,4 +166,16 @@
   .animate-shimmer {
     animation: shimmer 1.3s ease-in-out infinite;
   }
+
+  /* Soft one-shot fade-in for the loading-state QA fact (LoadingFact). Under
+   * reduced-motion the global rule above collapses it, so the fact just appears. */
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  .animate-fade-in {
+    animation: fade-in 600ms ease-out;
+  }
 }
