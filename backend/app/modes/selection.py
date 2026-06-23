@@ -72,6 +72,27 @@ def _sorted_targets(targets: Iterable[Target]) -> tuple[Target, ...]:
     return tuple(sorted(targets, key=lambda t: (t.kind.value, t.name, str(t.node_id))))
 
 
+# The run layer a testable target belongs to (ADR-0052). DB has no target kind — it
+# is the DB-state phase, gated separately in the orchestrator.
+_LAYER_OF_KIND: dict[NodeKind, str] = {
+    NodeKind.PAGE: "ui",
+    NodeKind.ENDPOINT: "api",
+}
+
+
+def targets_for_layers(
+    targets: tuple[Target, ...], layers: frozenset[str] | None
+) -> tuple[Target, ...]:
+    """Keep only targets whose layer is in ``layers`` (ADR-0052).
+
+    ``layers=None`` means the full set — returned unchanged (backward-compatible). A
+    target whose kind has no layer mapping is dropped when a scope is given.
+    """
+    if layers is None:
+        return targets
+    return tuple(t for t in targets if _LAYER_OF_KIND.get(t.kind) in layers)
+
+
 class FullSweepStrategy:
     """Every testable node in the project's Brain (deterministic, never uncertain)."""
 

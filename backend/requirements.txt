@@ -4,6 +4,9 @@ fastapi==0.137.1
 # (security bump, Standards §18 — clears 7 advisories present in 0.41.x).
 starlette==1.3.1
 uvicorn[standard]==0.32.1
+# Multipart form parsing for file uploads (B9 document upload, ADR-0052). FastAPI's
+# UploadFile/Form require it; not a default fastapi dependency.
+python-multipart==0.0.20
 psycopg[binary]==3.2.3
 SQLAlchemy[asyncio]==2.0.36
 alembic==1.14.0

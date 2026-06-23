@@ -21,6 +21,7 @@ from app.models.enums import TriageStatus
 from app.models.finding import Finding
 from app.models.project import Project
 from app.reporting import FindingDetail, FindingDetailReader, OpenFinding
+from app.reporting.heal_reconciliation import superseded_finding_ids
 from app.reporting.open_findings import OpenFindingsReader
 from app.repositories.finding_triage_repository import FindingTriageRepository
 from app.repositories.organization_repository import OrganizationRepository
@@ -78,15 +79,19 @@ async def list_open_findings(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
     include_superseded: Annotated[bool, Query()] = False,
+    project_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> OpenFindingsResponse:
     """The global inbox: what's broken across the user's viewable orgs (ADR-0033).
 
-    Heal-superseded findings (addressing drift) are excluded by default; pass
-    ``include_superseded=true`` to see them tagged.
+    Optional ``project_id`` narrows the inbox to one project SERVER-SIDE — the whole
+    result set + total, not just the current page (ADR-0052). It still rides the
+    caller's org scope, so a project the caller can't view simply yields nothing
+    (existence not leaked). Heal-superseded findings (addressing drift) are excluded
+    by default; pass ``include_superseded=true`` to see them tagged.
     """
     org_ids = await OrganizationRepository(session).member_org_ids(current_user.id)
     page, total = await OpenFindingsReader(session).open_findings(
-        None,
+        project_id,
         limit=limit,
         offset=offset,
         org_ids=org_ids,
@@ -171,6 +176,40 @@ async def bulk_triage(
         requested=len(body.finding_ids),
         updated=sorted(found_ids),
         not_found=not_found,
+    )
+
+
+@router.get("/findings/{finding_id}", response_model=FindingResponse)
+async def get_finding(
+    finding_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> FindingResponse:
+    """The full single-finding payload for the single-issue view (ADR-0052).
+
+    Reuses the run-dashboard builder (detail + triage + heal-supersede + the
+    has_screenshot flag). Authorized VIEW on the finding's project; 404 if unknown or
+    inaccessible (existence not leaked, ADR-0033) — the same pattern as the screenshot
+    endpoint.
+    """
+    finding = (
+        await session.scalars(select(Finding).where(Finding.id == finding_id))
+    ).one_or_none()
+    if finding is None:
+        raise HTTPException(status_code=404, detail="finding not found")
+    await authorize_project(session, finding.project_id, current_user, Permission.VIEW)
+    detail = await FindingDetailReader(session).detail_for(
+        finding.project_id, finding.run_id, [finding]
+    )
+    triage = await FindingTriageRepository(session).get_for_keys(
+        finding.project_id, [finding.root_cause_key]
+    )
+    superseded = await superseded_finding_ids(session, [finding])
+    return build_finding_response(
+        finding,
+        detail[finding.id],
+        triage.get(finding.root_cause_key),
+        superseded_by_heal=finding.id in superseded,
     )
 
 
