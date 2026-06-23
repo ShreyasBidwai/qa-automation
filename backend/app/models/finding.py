@@ -90,6 +90,10 @@ class Finding(Base, ProjectScopedMixin):
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
     evidence_ref: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Opaque ref to a failure screenshot (app.screenshots), copied from the
+    # representative result by the assembler. Null when no screenshot was captured;
+    # served only via the authorized GET /findings/{id}/screenshot (ADR-0051).
+    screenshot_ref: Mapped[str | None] = mapped_column(String(512), nullable=True)
     # Cross-layer location resolved from the Brain (page/endpoints/tables).
     location: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")

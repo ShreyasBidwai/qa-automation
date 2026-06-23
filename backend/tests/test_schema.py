@@ -61,7 +61,7 @@ async def test_migration_at_head(db_session: AsyncSession) -> None:
     revision = (
         await db_session.execute(text("SELECT version_num FROM alembic_version"))
     ).scalar_one()
-    assert revision == "0029_run_events"
+    assert revision == "0030_finding_screenshot"
 
 
 async def test_projects_has_app_url_and_soft_delete_columns(
@@ -85,6 +85,25 @@ async def test_projects_has_app_url_and_soft_delete_columns(
     assert "owner_id" not in columns
     assert "db_state_tier" in columns  # B10 (0025), ADR-0043
     assert "run_counter" in columns  # 0027, ADR-0048
+
+
+async def test_findings_and_results_have_screenshot_ref(
+    db_session: AsyncSession,
+) -> None:
+    for table in ("findings", "results"):
+        columns = set(
+            (
+                await db_session.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        f"WHERE table_name = '{table}'"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert "screenshot_ref" in columns  # 0030, ADR-0051
 
 
 async def test_model_nodes_has_embedding_column_and_hnsw_index(

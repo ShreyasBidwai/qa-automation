@@ -93,6 +93,10 @@ class Settings(BaseSettings):
     execution_db_url: str = "sqlite::memory:"
     # Where the runner writes evidence (JUnit, logs, traces).
     evidence_dir: str = "/tmp/polaris-evidence"
+    # Where failure screenshots are stored on local disk (gitignored; ADR-0051). The
+    # single indirection (app.screenshots) owns this path — swap to object storage at
+    # deploy. Relative to the backend working dir; gitignored via backend/.gitignore.
+    screenshot_dir: str = "var/screenshots"
     # The running target frontend a browser runner drives (Playwright only).
     target_base_url: str | None = None
 

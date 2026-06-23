@@ -435,6 +435,9 @@ class FindingResponse(BaseModel):
     superseded_by_heal: bool = False
     # When the finding was first recorded — the "when"/age the screens show (ADR-0048).
     created_at: datetime | None = None
+    # Whether a failure screenshot was captured — the UI shows the affordance and
+    # fetches it from GET /findings/{id}/screenshot (ADR-0051). Bytes never inline.
+    has_screenshot: bool = False
 
 
 class FindingsResponse(BaseModel):
