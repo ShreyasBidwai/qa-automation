@@ -1,15 +1,12 @@
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Link } from "@/components/Link";
-import { PageHeader } from "@/components/PageHeader";
 import { Skeleton } from "@/components/Skeleton";
 import { StatePanel } from "@/components/StatePanel";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { Finding, Project, RunListItem } from "@/lib/api/types";
+import type { Finding, RunListItem } from "@/lib/api/types";
 import { relativeTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -19,38 +16,31 @@ import { runRowStatusDescriptor, runStatusDescriptor } from "../runs/runStatus";
 import { useIngest } from "./useIngest";
 import { useProjectOverview } from "./useProjectOverview";
 
+/** Pass-rate tone (Polaris Projects.dc.html: ≥90 green, ≥70 amber, else red). */
+function passTone(pct: number) {
+  if (pct >= 90) return { text: "text-status-pass-fg", fill: "bg-status-pass-solid" };
+  if (pct >= 70) return { text: "text-status-flaky-fg", fill: "bg-status-flaky-solid" };
+  return { text: "text-status-fail-fg", fill: "bg-status-fail-solid" };
+}
+
 /** The project landing page (#3a): config, a health summary, and recent runs. */
 export function ProjectPage({ projectId }: { projectId: string }) {
   const { project, runs, openFindings, openTotal, loading, error } =
     useProjectOverview(projectId);
 
   return (
-    <>
-      <PageHeader
-        eyebrow={<Link to="/projects">Projects</Link>}
-        title={project?.name ?? "Project"}
-        description={
-          project ? (
-            <span className="font-mono text-xs">{project.slug}</span>
-          ) : undefined
-        }
-        action={
-          project ? (
-            <div className="flex items-center gap-2">
-              <Button variant="outline" asChild>
-                <Link to={`/projects/${projectId}/edit`}>Edit</Link>
-              </Button>
-              <Button asChild>
-                <Link to={`/projects/${projectId}/run`}>Start run</Link>
-              </Button>
-            </div>
-          ) : undefined
-        }
-      />
-      <main className="flex-1 space-y-6 px-6 py-8">
-        {loading ? (
-          <OverviewSkeleton />
-        ) : error || !project ? (
+    <div className="mx-auto max-w-[1080px] px-7 py-8">
+      <Link
+        to="/projects"
+        className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
+      >
+        ← Projects
+      </Link>
+
+      {loading ? (
+        <OverviewSkeleton />
+      ) : error || !project ? (
+        <div className="mt-6">
           <StatePanel
             icon={AlertTriangle}
             tone="danger"
@@ -63,26 +53,62 @@ export function ProjectPage({ projectId }: { projectId: string }) {
               </Button>
             }
           />
-        ) : (
-          <>
-            <HealthSummary
-              runs={runs}
-              openFindings={openFindings}
-              openTotal={openTotal}
-            />
-            <div className="grid gap-6 lg:grid-cols-3">
-              <div className="lg:col-span-2">
-                <RecentRuns runs={runs} />
+        </div>
+      ) : (
+        <>
+          <header className="mb-7 mt-3 flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-[22px] font-semibold tracking-[-0.015em] text-foreground">
+                  {project.name}
+                </h1>
+                {project.stack ? (
+                  <span className="rounded-[5px] border border-border bg-status-neutral-bg px-2 py-0.5 font-mono text-[11px] font-medium text-status-neutral-fg">
+                    {project.stack}
+                  </span>
+                ) : null}
               </div>
-              <div className="space-y-6">
-                <ConfigCard project={project} />
-                <ModelCard projectId={projectId} />
+              <div className="mt-2 flex flex-wrap items-center gap-x-3.5 gap-y-1 font-mono text-xs text-muted-foreground">
+                <span className="break-all">{project.repo_url}</span>
+                {project.app_url ? (
+                  <>
+                    <span className="text-marker" aria-hidden="true">
+                      ·
+                    </span>
+                    <a
+                      href={project.app_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="break-all text-accent hover:underline"
+                    >
+                      {project.app_url}
+                    </a>
+                  </>
+                ) : null}
               </div>
             </div>
-          </>
-        )}
-      </main>
-    </>
+            <div className="flex flex-none gap-2">
+              <Button variant="outline" asChild>
+                <Link to={`/projects/${projectId}/edit`}>Edit</Link>
+              </Button>
+              <Button asChild>
+                <Link to={`/projects/${projectId}/run`}>Start run</Link>
+              </Button>
+            </div>
+          </header>
+
+          <HealthSummary
+            runs={runs}
+            openFindings={openFindings}
+            openTotal={openTotal}
+          />
+
+          <RecentRuns runs={runs} />
+
+          <ModelCard projectId={projectId} />
+        </>
+      )}
+    </div>
   );
 }
 
@@ -100,94 +126,112 @@ function HealthSummary({
   const latest = runs[0] ?? null;
   const prior = runs[1] ?? null;
   const severity = severityCounts(openFindings);
+  const pct =
+    latest && latest.pass_rate !== null ? Math.round(latest.pass_rate * 100) : null;
+  const tone = pct === null ? null : passTone(pct);
 
   return (
-    <section className="grid grid-cols-1 gap-3.5 sm:grid-cols-3">
-      <StatCard label="Pass rate">
-        {latest && latest.pass_rate !== null ? (
-          <div className="flex items-baseline gap-2">
-            <span className="text-[28px] font-semibold leading-none tabular-nums text-foreground">
-              {Math.round(latest.pass_rate * 100)}%
-            </span>
-            <PassRateTrend latest={latest.pass_rate} prior={prior?.pass_rate ?? null} />
-          </div>
+    <section className="mb-7 grid grid-cols-1 gap-3.5 sm:grid-cols-3">
+      <HealthCard label="Pass rate">
+        {pct !== null ? (
+          <>
+            <div className="flex items-baseline gap-2.5">
+              <span className="text-[30px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">
+                {pct}%
+              </span>
+              <PassTrend latest={latest!.pass_rate!} prior={prior?.pass_rate ?? null} />
+            </div>
+            <div className="mt-3 h-[5px] overflow-hidden rounded-full bg-border-subtle">
+              <div
+                className={cn("h-full rounded-full", tone!.fill)}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+          </>
         ) : (
           <p className="text-sm text-muted-foreground">No runs yet</p>
         )}
-      </StatCard>
+      </HealthCard>
 
-      <StatCard label="Open findings">
+      <HealthCard label="Open findings">
         <div className="flex items-baseline gap-2">
-          <span className="text-[28px] font-semibold leading-none tabular-nums text-foreground">
+          <span className="text-[30px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">
             {openTotal}
           </span>
           <span className="text-xs text-muted-foreground">open</span>
         </div>
         {openTotal > 0 ? (
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium">
-            <SeverityCount
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium">
+            <SevCount
               n={severity.critical}
               label="critical"
-              dot="bg-status-fail-solid"
-              text="text-status-fail-fg"
+              dot="bg-severity-critical-dot"
+              text="text-severity-critical-fg"
             />
-            <SeverityCount
+            <SevCount
               n={severity.major}
               label="major"
-              dot="bg-status-flaky-solid"
-              text="text-status-flaky-fg"
+              dot="bg-severity-major-dot"
+              text="text-severity-major-fg"
             />
-            <SeverityCount
+            <SevCount
               n={severity.minor}
               label="minor"
-              dot="bg-status-neutral-solid"
-              text="text-muted-foreground"
+              dot="bg-severity-minor-dot"
+              text="text-severity-minor-fg"
             />
           </div>
         ) : null}
-      </StatCard>
+      </HealthCard>
 
-      <StatCard label="Last run">
+      <HealthCard label="Last run">
         {latest ? (
-          <div className="space-y-2">
-            <span className="text-sm font-medium text-foreground">
+          <>
+            <div className="text-[18px] font-semibold tracking-[-0.01em] text-foreground">
               {relativeTime(latest.created_at)}
-            </span>
-            <div>
-              <StatusBadge status={runRowStatusDescriptor(latest.status)} />
             </div>
-          </div>
+            <div className="mt-1.5 text-xs text-muted-foreground">
+              {modeLabel(latest.mode)}
+            </div>
+          </>
         ) : (
           <p className="text-sm text-muted-foreground">No runs yet</p>
         )}
-      </StatCard>
+      </HealthCard>
     </section>
   );
 }
 
-function StatCard({ label, children }: { label: string; children: ReactNode }) {
+function HealthCard({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="rounded-xl border border-border bg-surface p-4">
+    <div className="rounded-xl border border-border bg-surface px-5 py-[18px] shadow-card">
       <div className="mb-2.5 text-xs font-medium text-muted-foreground">{label}</div>
       {children}
     </div>
   );
 }
 
-function PassRateTrend({ latest, prior }: { latest: number; prior: number | null }) {
+function PassTrend({ latest, prior }: { latest: number; prior: number | null }) {
   if (prior === null) return null;
   const delta = Math.round((latest - prior) * 100);
   if (delta === 0)
     return <span className="text-xs text-muted-foreground">no change</span>;
   const up = delta > 0;
+  const Icon = up ? ArrowUp : ArrowDown;
   return (
-    <span className={cn("text-xs", up ? "text-status-pass-fg" : "text-status-fail-fg")}>
-      {up ? "▲" : "▼"} {Math.abs(delta)}%
+    <span
+      className={cn(
+        "inline-flex items-center gap-0.5 text-xs font-semibold",
+        up ? "text-status-pass-fg" : "text-status-flaky-fg",
+      )}
+    >
+      <Icon className="h-3 w-3" aria-hidden="true" />
+      {Math.abs(delta)}%
     </span>
   );
 }
 
-function SeverityCount({
+function SevCount({
   n,
   label,
   dot,
@@ -208,134 +252,114 @@ function SeverityCount({
 
 // ---- recent runs ------------------------------------------------------------
 
+const RUN_COLS = "grid-cols-[0.8fr_2fr_1fr_1.4fr_1fr]";
+
 function RecentRuns({ runs }: { runs: RunListItem[] }) {
   return (
-    <Card>
-      <CardHeader className="flex-row items-center justify-between gap-4 space-y-0">
-        <CardTitle>Recent runs</CardTitle>
-        <Link to="/runs" className="text-xs font-medium text-accent hover:underline">
-          All runs
+    <section className="mb-7">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-foreground">Recent runs</h2>
+        <Link
+          to="/runs"
+          className="text-[13px] font-medium text-accent hover:underline"
+        >
+          View all
         </Link>
-      </CardHeader>
-      <CardContent>
+      </div>
+      <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-card">
         {runs.length === 0 ? (
-          <p className="py-4 text-sm text-muted-foreground">
+          <p className="px-5 py-8 text-sm text-muted-foreground">
             No runs yet — build the model, then start a run to see results here.
           </p>
         ) : (
-          <ul className="divide-y divide-border">
-            {runs.map((run) => (
-              <li key={run.id}>
-                <Link
-                  to={`/runs/${run.id}/findings`}
-                  className="flex items-center justify-between gap-4 py-3 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                  <span className="flex items-center gap-3">
-                    <StatusBadge status={runRowStatusDescriptor(run.status)} />
-                    <span className="text-sm text-muted-foreground">
-                      {modeLabel(run.mode)}
-                    </span>
-                  </span>
-                  <span className="flex items-center gap-4">
-                    <span className="font-mono text-[13px] tabular-nums text-muted-foreground">
-                      {run.pass_rate === null
-                        ? "—"
-                        : `${Math.round(run.pass_rate * 100)}%`}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {relativeTime(run.created_at)}
-                    </span>
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-// ---- configuration + model --------------------------------------------------
-
-function ConfigCard({ project }: { project: Project }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Configuration</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <DetailRow label="Stack">
-          {project.stack ? (
-            <Badge level="neutral">{project.stack}</Badge>
-          ) : (
-            <span className="text-muted-foreground">Auto-detected</span>
-          )}
-        </DetailRow>
-        <DetailRow label="App URL">
-          {project.app_url ? (
-            <a
-              href={project.app_url}
-              target="_blank"
-              rel="noreferrer"
-              className="break-all font-mono text-[13px] text-accent hover:underline"
+          <>
+            <div
+              className={`grid ${RUN_COLS} border-b border-border-subtle bg-background px-5 py-2.5`}
             >
-              {project.app_url}
-            </a>
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          )}
-        </DetailRow>
-        <DetailRow label="Repository">
-          <span className="break-all font-mono text-[13px] text-foreground">
-            {project.repo_url}
-          </span>
-        </DetailRow>
-        <DetailRow label="Auth config">
-          <span className="break-all font-mono text-[13px] text-foreground">
-            {project.auth_config_ref ?? "—"}
-          </span>
-        </DetailRow>
-      </CardContent>
-    </Card>
+              <ColHead>Run</ColHead>
+              <ColHead>Mode</ColHead>
+              <ColHead>Pass</ColHead>
+              <ColHead>Status</ColHead>
+              <ColHead>When</ColHead>
+            </div>
+            {runs.map((run) => (
+              <RunRow key={run.id} run={run} />
+            ))}
+          </>
+        )}
+      </div>
+    </section>
   );
 }
 
-function DetailRow({ label, children }: { label: string; children: ReactNode }) {
+function RunRow({ run }: { run: RunListItem }) {
+  const pct = run.pass_rate === null ? null : Math.round(run.pass_rate * 100);
   return (
-    <div className="grid grid-cols-[88px_1fr] items-start gap-3 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="min-w-0">{children}</span>
-    </div>
+    <Link
+      to={`/runs/${run.id}/findings`}
+      className={`grid ${RUN_COLS} items-center border-b border-border-subtle px-5 py-3.5 transition-colors last:border-b-0 hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent`}
+    >
+      <span
+        className="truncate font-mono text-[13px] font-medium text-foreground"
+        title={run.id}
+      >
+        {run.id.slice(0, 8)}
+      </span>
+      <span className="min-w-0">
+        <span className="rounded-[5px] bg-status-neutral-bg px-[7px] py-0.5 font-mono text-[10.5px] text-status-neutral-fg">
+          {modeLabel(run.mode)}
+        </span>
+      </span>
+      <span
+        className={cn(
+          "text-[13px] font-semibold tabular-nums",
+          pct === null ? "text-muted-foreground" : passTone(pct).text,
+        )}
+      >
+        {pct === null ? "—" : `${pct}%`}
+      </span>
+      <span>
+        <StatusBadge status={runRowStatusDescriptor(run.status)} />
+      </span>
+      <span className="text-xs text-status-neutral-solid">
+        {relativeTime(run.created_at)}
+      </span>
+    </Link>
   );
 }
+
+function ColHead({ children }: { children: ReactNode }) {
+  return (
+    <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-status-neutral-solid">
+      {children}
+    </span>
+  );
+}
+
+// ---- model ------------------------------------------------------------------
 
 function ModelCard({ projectId }: { projectId: string }) {
   const ingest = useIngest(projectId);
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Model</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-sm text-muted-foreground">
-          Build the system model from the repository before running tests.
-        </p>
-        <div className="flex items-center gap-3">
-          <Button variant="outline" onClick={ingest.start} disabled={ingest.busy}>
-            {ingest.busy ? "Building model…" : "Build model"}
-          </Button>
-          {ingest.status ? (
-            <StatusBadge status={runStatusDescriptor(ingest.status)} />
-          ) : null}
-        </div>
-        {ingest.error ? (
-          <p role="alert" className="text-sm text-status-fail-fg">
-            {ingest.error}
-          </p>
+    <section className="rounded-xl border border-border bg-surface p-5 shadow-card">
+      <h2 className="text-sm font-semibold text-foreground">Model</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Build the system model from the repository before running tests.
+      </p>
+      <div className="mt-3 flex items-center gap-3">
+        <Button variant="outline" onClick={ingest.start} disabled={ingest.busy}>
+          {ingest.busy ? "Building model…" : "Build model"}
+        </Button>
+        {ingest.status ? (
+          <StatusBadge status={runStatusDescriptor(ingest.status)} />
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+      {ingest.error ? (
+        <p role="alert" className="mt-2 text-sm text-status-fail-fg">
+          {ingest.error}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -343,13 +367,14 @@ function ModelCard({ projectId }: { projectId: string }) {
 
 function OverviewSkeleton() {
   return (
-    <>
+    <div className="mt-3 space-y-7">
+      <Skeleton className="h-9 w-64 rounded-lg" />
       <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-3">
         {[0, 1, 2].map((i) => (
-          <Skeleton key={i} className="h-24 rounded-xl" />
+          <Skeleton key={i} className="h-28 rounded-xl" />
         ))}
       </div>
       <Skeleton className="h-64 rounded-xl" />
-    </>
+    </div>
   );
 }
