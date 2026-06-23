@@ -143,21 +143,79 @@ export const HELP_SECTIONS: HelpSection[] = [
     ],
   },
   {
+    id: "getting-around",
+    title: "Getting around",
+    summary: "Where things live: Projects, Findings, Runs, and your account.",
+    keywords: [
+      "navigation",
+      "navigate",
+      "sidebar",
+      "screens",
+      "projects",
+      "runs",
+      "findings",
+      "dashboard",
+      "inbox",
+      "account",
+      "getting around",
+    ],
+    body: [
+      {
+        kind: "text",
+        text: "Polaris keeps a sidebar on the left with three places, plus your account at the bottom. Here is what each one is for.",
+      },
+      {
+        kind: "definitions",
+        items: [
+          {
+            term: "Projects",
+            definition:
+              "Every codebase you have connected. Open one to see its health, recent runs, and settings — or to start a run.",
+          },
+          {
+            term: "Runs",
+            definition:
+              "The test runs for a project, newest first. Open a run to see its dashboard.",
+          },
+          {
+            term: "Findings",
+            definition:
+              "One inbox of every open problem across all your projects, worst first — what is broken right now.",
+          },
+          {
+            term: "Account",
+            definition:
+              "Your profile and password, and your team. It sits at the bottom of the sidebar, behind your initials.",
+          },
+        ],
+      },
+      {
+        kind: "text",
+        text: "A run’s dashboard is a master–detail view: the ranked list of findings on the left, and the finding you click open on the right — its blast path, evidence, and history. The findings inbox uses the same left-list, right-detail layout.",
+      },
+      {
+        kind: "example",
+        text: "Want the single most urgent thing across everything? Open Findings. Want to dig into one test run? Open Runs, pick a run, and click through its findings on the dashboard.",
+      },
+    ],
+  },
+  {
     id: "modes",
-    title: "The 3 ways to ask for tests",
-    summary: "Three modes: describe it, autonomous, or authoring.",
+    title: "The 2 ways to ask for tests",
+    summary: "Two ways: describe it in plain English, or let Polaris run autonomously.",
     keywords: [
       "mode",
       "modes",
       "describe it",
       "autonomous",
-      "authoring",
       "natural language",
+      "full sweep",
+      "what changed",
     ],
     body: [
       {
         kind: "text",
-        text: "You ask Polaris for tests in one of three ways. These are called modes. Pick whichever fits what you want to do.",
+        text: "You ask Polaris for tests in one of two ways. These are called modes. Pick whichever fits what you want to do.",
       },
       {
         kind: "definitions",
@@ -165,23 +223,18 @@ export const HELP_SECTIONS: HelpSection[] = [
           {
             term: "Describe it",
             definition:
-              "Write what to test in plain English, like “test checkout”. Polaris turns your sentence into tests. Best when you know the area you care about but don’t want to spell out every step.",
+              "Say what to test in plain English, like “orders require authentication”. Polaris turns your sentence into tests. Best when you know the area you care about but don’t want to spell out every step.",
           },
           {
             term: "Autonomous",
             definition:
-              "Let Polaris decide what to test. Aim it at everything, or at only what changed since the last run. Best for broad coverage with little effort.",
-          },
-          {
-            term: "Authoring",
-            definition:
-              "Write specific test cases yourself when you need exact, repeatable checks. Best when one particular behaviour must be pinned down precisely.",
+              "Let Polaris decide what to test. Choose “Test everything” for a full sweep, or “Test only what changed” to focus on the files you just touched. Best for broad coverage with little effort.",
           },
         ],
       },
       {
         kind: "example",
-        text: "Want to check one flow? Use Describe it and type “test checkout”. Want a full sweep after a big change? Use Autonomous and choose “test only what changed”. Need to lock down one exact rule? Use Authoring.",
+        text: "Want to check one flow? Use Describe it and type “orders require authentication”. Pushed a big change and want a full sweep? Use Autonomous → Test everything. Touched only a couple of files? Use Autonomous → Test only what changed.",
       },
     ],
   },
@@ -197,24 +250,36 @@ export const HELP_SECTIONS: HelpSection[] = [
       },
       {
         kind: "text",
-        text: "Every finding carries four labels so you can judge it at a glance:",
+        text: "Every finding carries a few labels so you can judge it at a glance:",
       },
       {
         kind: "definitions",
         items: [
-          { term: "Severity", definition: "How bad the problem is." },
-          { term: "Confidence", definition: "How sure Polaris is that it’s real." },
+          {
+            term: "Severity",
+            definition: "How bad the problem is — critical, major, or minor.",
+          },
+          {
+            term: "Confidence",
+            definition:
+              "How much to believe it. This is shown as the finding’s trust mark, not a separate score — the detail panel labels the field Confidence. See Trust marks.",
+          },
           { term: "Layer", definition: "Where it lives — api, ui, or db." },
+          {
+            term: "History",
+            definition:
+              "Whether you’ve seen it before — new, known, regression, or flaky. See History.",
+          },
           {
             term: "Status",
             definition:
-              "Where it is in your workflow — for example new, or already resolved.",
+              "What you’ve decided about it — open until you triage it, then acknowledged, resolved, won’t fix, or false positive. See Triage.",
           },
         ],
       },
       {
         kind: "example",
-        text: "A finding might read: “Orders accepted without authentication” — severity critical, high confidence, layer api, status new. One line tells you it’s serious, it’s almost certainly real, it’s in the API, and you haven’t seen it before.",
+        text: "A finding might read: “Orders accepted without authentication” — severity critical, a strong (rule-derived) trust mark, layer api, history new, status open. One line tells you it’s serious, the check follows a real rule, it’s in the API, you haven’t seen it before, and you haven’t triaged it yet.",
       },
     ],
   },
@@ -286,12 +351,13 @@ export const HELP_SECTIONS: HelpSection[] = [
   },
   {
     id: "severity-confidence",
-    title: "Severity & confidence",
+    title: "Severity & trust",
     summary:
-      "Severity is how bad; confidence is how sure. They are separate on purpose.",
+      "Severity is how bad; the trust mark is how much to believe it. They are separate on purpose.",
     keywords: [
       "severity",
       "confidence",
+      "trust",
       "critical",
       "major",
       "minor",
@@ -301,7 +367,7 @@ export const HELP_SECTIONS: HelpSection[] = [
     body: [
       {
         kind: "text",
-        text: "Severity and confidence answer two different questions. Polaris keeps them apart on purpose, because a problem can be very bad but uncertain, or very certain but minor.",
+        text: "Severity and trust answer two different questions. Polaris keeps them apart on purpose, because a problem can be very bad but only loosely confirmed, or rock-solid but minor.",
       },
       {
         kind: "definitions",
@@ -312,41 +378,42 @@ export const HELP_SECTIONS: HelpSection[] = [
               "Polaris combines blast radius (how much of the app it touches) with failure shape (how it breaks) into one of three levels: critical, major, or minor.",
           },
           {
-            term: "Confidence — how sure",
+            term: "Trust — how much to believe it",
             definition:
-              "How certain Polaris is that this is a real problem and not a false alarm.",
+              "This is the finding’s trust mark — how strong the check behind it is. The detail panel labels this field Confidence, but it shows the mark, not a how-sure score. A strong mark means the check follows a real rule; a weak one only pins down today’s behaviour. See Trust marks.",
           },
         ],
       },
       {
         kind: "text",
-        text: "Read them together. Critical and high confidence is a drop-everything bug. Critical but low confidence is worth a look yet might be a false alarm. Minor but high confidence is real, and can wait.",
+        text: "Read them together. Critical with a strong trust mark is a drop-everything bug. Critical with a weak mark is worth a look but might be an intended change. Minor with a strong mark is real, and can wait.",
       },
       {
         kind: "example",
-        text: "“Payment data stored unencrypted” could be critical severity but only medium confidence — Polaris isn’t certain the field holds card numbers. “Button label misspelled” is high confidence but minor severity. Different problems, sorted differently.",
+        text: "“Payment data stored unencrypted” might be critical severity but carry a weak trust mark — the check only noticed a behaviour change, so confirm it before acting. “Button label misspelled” carries a strong mark but minor severity. Different problems, sorted differently.",
       },
     ],
   },
   {
     id: "blast-path",
     title: "Cross-layer blast path",
-    summary:
-      "The chain page → endpoint → model → table that shows how far a problem reaches.",
+    summary: "The chain page → endpoint → table that shows how far a problem reaches.",
     keywords: [
       "blast path",
       "cross-layer",
       "cross layer",
       "page",
       "endpoint",
-      "model",
       "table",
+      "ui",
+      "api",
+      "db",
       "reach",
     ],
     body: [
       {
         kind: "text",
-        text: "The blast path shows how far a problem reaches across your app. It is a chain: the page a user sees → the endpoint it calls → the model that handles the data → the table underneath. The node where things break is lit up.",
+        text: "The blast path shows how far a problem reaches across your app. It is a chain across the layers Polaris can see: the page a user sees (UI) → the endpoint it calls (API) → the table underneath (DB). The node where things break is lit up.",
       },
       {
         kind: "text",
@@ -357,7 +424,6 @@ export const HELP_SECTIONS: HelpSection[] = [
         nodes: [
           { tier: "Page", label: "/checkout" },
           { tier: "Endpoint", label: "POST /api/orders" },
-          { tier: "Model", label: "Order" },
           { tier: "Table", label: "orders" },
         ],
         failingIndex: 1,
@@ -365,7 +431,7 @@ export const HELP_SECTIONS: HelpSection[] = [
       },
       {
         kind: "text",
-        text: "In this checkout example, the page /checkout calls POST /api/orders. That endpoint is lit — it accepted an order it should have rejected. The problem starts there and flows down to the Order model and the orders table, where a bad row gets written.",
+        text: "In this checkout example, the page /checkout calls POST /api/orders. That endpoint is lit — it accepted an order it should have rejected. The problem starts there and flows down to the orders table, where a bad row gets written. When Polaris can’t resolve the whole chain, it shows just the node that failed.",
       },
       {
         kind: "example",
@@ -469,35 +535,150 @@ export const HELP_SECTIONS: HelpSection[] = [
   {
     id: "run-scope",
     title: "Run scope",
-    summary: "Which layers a run covers: API, UI, or Full.",
-    keywords: ["scope", "run scope", "api", "ui", "full", "layers"],
+    summary:
+      "In autonomous mode, what a run covers: test everything, or only what changed.",
+    keywords: [
+      "scope",
+      "run scope",
+      "full sweep",
+      "change impact",
+      "what changed",
+      "everything",
+      "autonomous",
+      "changed files",
+    ],
     body: [
       {
         kind: "text",
-        text: "Scope is how much of your app a single run covers. Polaris works it out from what your project actually has — it never tests something that isn’t there.",
+        text: "When you run in Autonomous mode, Polaris asks how much to cover. On the Start-a-run screen this choice is labelled Scope, and there are two options.",
       },
       {
         kind: "definitions",
         items: [
           {
-            term: "API",
+            term: "Test everything",
             definition:
-              "Tests the backend endpoints only — the parts that handle data behind the scenes.",
+              "A full sweep across every testable target in your project. Best after a big change, or when you want broad coverage.",
           },
           {
-            term: "UI",
+            term: "Test only what changed",
             definition:
-              "Tests the user interface only — the pages and buttons a person clicks.",
-          },
-          {
-            term: "Full",
-            definition: "Tests both, plus how they connect — the complete picture.",
+              "Change-impact selection: you give Polaris the list of files you changed (one path per line) and it tests just what those touch. Best for a quick, focused check.",
           },
         ],
       },
       {
+        kind: "text",
+        text: "Either way, Polaris only tests the layers your project actually has — it never tests something that isn’t there. A backend-only service is checked at the API; add a website and connect it, and a run can follow a click on the page down through the endpoint to the database (that chain is the blast path).",
+      },
+      {
         kind: "example",
-        text: "A project that is only a backend service gets API scope. Add a website on top and connect it, and Polaris offers Full — so one run can follow a click on the page all the way down to the database.",
+        text: "Pushed a big refactor? Use Test everything. Touched two files in checkout? Use Test only what changed and paste those paths — Polaris focuses there instead of re-running the whole app.",
+      },
+    ],
+  },
+  {
+    id: "team",
+    title: "Your team",
+    summary: "Invite people, and what each role can do.",
+    keywords: [
+      "team",
+      "members",
+      "member",
+      "invite",
+      "role",
+      "roles",
+      "owner",
+      "admin",
+      "viewer",
+      "permissions",
+      "pending invite",
+      "organization",
+    ],
+    body: [
+      {
+        kind: "text",
+        text: "Open Account → Team to see who is on your team and to invite more people. Everyone has a role, and the role decides what they can do.",
+      },
+      {
+        kind: "definitions",
+        items: [
+          {
+            term: "Owner",
+            definition:
+              "Full control, including managing other owners. Every team keeps at least one owner.",
+          },
+          {
+            term: "Admin",
+            definition: "Can invite people and change roles, but cannot manage owners.",
+          },
+          {
+            term: "Member",
+            definition: "Can use Polaris and see findings, but cannot manage the team.",
+          },
+          {
+            term: "Viewer",
+            definition: "Read-only access to the team’s work.",
+          },
+        ],
+      },
+      {
+        kind: "text",
+        text: "To invite someone, type their email, pick a role, and send. They appear in the members list marked “Invite pending” until they accept. Inviting or removing people and changing roles is limited to owners and admins — if you do not see those controls, your role does not allow them, and Polaris enforces this on the server too.",
+      },
+      {
+        kind: "example",
+        text: "An admin can invite a new member and later promote them, but only an owner can add or remove another owner — and Polaris will not let the last owner be removed.",
+      },
+    ],
+  },
+  {
+    id: "account-security",
+    title: "Sign-in limits & passwords",
+    summary:
+      "Why a sign-in can be paused for a moment, and what makes a valid password.",
+    keywords: [
+      "rate limit",
+      "rate-limited",
+      "too many attempts",
+      "locked out",
+      "lockout",
+      "retry",
+      "password",
+      "password policy",
+      "8 characters",
+      "weak password",
+      "sign in",
+      "login",
+      "security",
+    ],
+    body: [
+      {
+        kind: "text",
+        text: "Two safeguards on the sign-in and password screens can stop you, and both are on purpose.",
+      },
+      {
+        kind: "definitions",
+        items: [
+          {
+            term: "Too many attempts",
+            definition:
+              "If you try to sign in (or repeat another sensitive action) too many times too quickly, Polaris pauses you with “Too many attempts. Please try again in N seconds.” It is a guard against password guessing — wait the few seconds it names and try again. Nothing is wrong with your account.",
+          },
+          {
+            term: "Password rules",
+            definition:
+              "A new password must be at least 8 characters, cannot be all numbers, and cannot be a common, easily-guessed password. If yours is rejected, the message says which rule it missed.",
+          },
+        ],
+      },
+      {
+        kind: "text",
+        text: "These apply when you sign up, sign in, or change your password. The exact reason always comes back on the field itself, so you never have to guess what to fix.",
+      },
+      {
+        kind: "example",
+        text: "Choose “12345678”? It is long enough, but all numbers — Polaris asks you to add letters or a symbol. Choose something short or obvious? It asks for something longer and less guessable.",
       },
     ],
   },
@@ -505,7 +686,7 @@ export const HELP_SECTIONS: HelpSection[] = [
     id: "glossary",
     title: "Glossary",
     summary: "Plain one-line definitions of every Polaris term and symbol.",
-    keywords: ["glossary", "definitions", "terms", "the brain", "crawl", "oracle"],
+    keywords: ["glossary", "definitions", "terms", "oracle", "model", "the brain"],
     body: [
       { kind: "text", text: "Every term and symbol in Polaris, one line each." },
       {
@@ -525,37 +706,38 @@ export const HELP_SECTIONS: HelpSection[] = [
               "A symbol (● ◌ ◉) showing how much to believe a test, based on its oracle.",
           },
           {
+            term: "Confidence",
+            definition:
+              "How much to believe a finding — shown as its trust mark (oracle tier), not a separate score. The detail panel labels this field Confidence.",
+          },
+          {
             term: "Blast path",
             definition:
-              "The page → endpoint → model → table chain showing how far a problem reaches.",
+              "The page → endpoint → table chain showing how far a problem reaches across the UI, API, and DB layers.",
           },
           {
             term: "Mode",
             definition:
-              "One of the three ways to ask for tests: describe it, autonomous, or authoring.",
-          },
-          { term: "Scope", definition: "Which layers a run covers: API, UI, or Full." },
-          {
-            term: "The Brain",
-            definition:
-              "Polaris’s internal model of your app — what it learned by reading the code.",
+              "One of the two ways to ask for tests: describe it, or autonomous.",
           },
           {
-            term: "Crawl",
+            term: "Scope",
             definition:
-              "When Polaris explores your running app to discover its pages and flows.",
+              "In autonomous mode, what a run covers: test everything, or test only what changed.",
+          },
+          {
+            term: "Model",
+            definition:
+              "Polaris’s internal picture of your app — what it learned by reading the code. You build it from the project page. (Internally it’s called the Brain.)",
           },
           {
             term: "Run",
-            definition: "One pass through the loop: understand, generate, run, review.",
+            definition:
+              "One pass through the loop: understand, generate, run, review, triage.",
           },
           {
             term: "Severity",
             definition: "How bad a finding is: critical, major, or minor.",
-          },
-          {
-            term: "Confidence",
-            definition: "How sure Polaris is that a finding is real.",
           },
           {
             term: "Triage",
