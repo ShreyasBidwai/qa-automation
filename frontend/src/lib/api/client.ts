@@ -28,6 +28,7 @@ import type {
   ReadyzResponse,
   RoleUpdateBody,
   RunCreateBody,
+  RunEventsResponse,
   RunListResponse,
   RunResponse,
   RunStatus,
@@ -62,7 +63,8 @@ interface ProblemJson {
   errors?: FieldError[];
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
+// Exported so the SSE fetch-stream consumer (run events) builds the same base.
+export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 const REQUEST_TIMEOUT_MS = 8000;
 
 /** An honest, voiced "too many attempts" message that respects Retry-After. */
@@ -284,6 +286,14 @@ export const runApi = {
   /** GET /runs/{id}/findings — the ranked findings. */
   findings: (runId: string) =>
     getJson<FindingsResponse>(`${API_BASE}/runs/${runId}/findings`),
+  /** GET /runs/{id}/events — replay/poll ordered progress events (after_seq cursor).
+   *  Serves a finished run's full journey AND the live view's on-connect catch-up. */
+  events: (runId: string, afterSeq?: number) =>
+    getJson<RunEventsResponse>(
+      `${API_BASE}/runs/${runId}/events${
+        afterSeq != null ? `?after_seq=${afterSeq}` : ""
+      }`,
+    ),
   /** PATCH /runs/{id}/findings/{fid} — set triage disposition; returns the finding. */
   triage: (runId: string, findingId: string, body: TriagePatchBody) =>
     patchJson<Finding>(`${API_BASE}/runs/${runId}/findings/${findingId}`, body),

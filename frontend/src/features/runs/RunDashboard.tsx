@@ -163,6 +163,14 @@ function RunHeaderBand({
           variant="outline"
           size="sm"
           className="h-[34px]"
+          onClick={() => navigate(`/runs/${runId}/live`)}
+        >
+          Replay journey
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-[34px]"
           onClick={() =>
             navigate(
               metrics.projectId ? `/projects/${metrics.projectId}/run` : "/projects",

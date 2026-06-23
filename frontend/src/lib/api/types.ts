@@ -205,6 +205,28 @@ export interface RunStatus {
   summary: Record<string, unknown> | null;
 }
 
+// --- run progress events (live run view, ADR-0050) --------------------------
+
+/** A step's lifecycle status: `started` opens it, the rest close it. */
+export type RunEventStatus = "started" | "passed" | "failed" | "skipped";
+
+/** One ordered run-progress event (GET /runs/{id}/events[/stream]). `seq` is a
+ *  per-run monotonic cursor; `detail` is optional structured context (counts,
+ *  endpoint, expected/actual, …); `status` is widened to string for forward-compat. */
+export interface RunProgressEvent {
+  seq: number;
+  phase: string;
+  step: string;
+  status: string;
+  detail?: Record<string, unknown> | null;
+  timestamp: string; // ISO 8601
+}
+
+export interface RunEventsResponse {
+  run_id: string;
+  events: RunProgressEvent[];
+}
+
 // --- findings ---------------------------------------------------------------
 
 /** The deepest failing node (the grouping anchor) — what broke, structurally. */
