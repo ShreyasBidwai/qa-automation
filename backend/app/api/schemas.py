@@ -587,6 +587,26 @@ class RunUsageResponse(BaseModel):
     records: list[AiUsageRecord] = Field(default_factory=list)
 
 
+# --- run-progress events for the live run view (ADR-0050) -------------------
+
+
+class RunEventItem(BaseModel):
+    """One ordered run-progress event. ``seq`` gives deterministic ordering;
+    ``detail`` is optional structured context (endpoint/page/test, counts, …)."""
+
+    seq: int
+    phase: str
+    step: str
+    status: str
+    detail: dict[str, Any] | None = None
+    timestamp: datetime
+
+
+class RunEventsResponse(BaseModel):
+    run_id: uuid.UUID
+    events: list[RunEventItem] = Field(default_factory=list)
+
+
 # --- business documents (B9) ------------------------------------------------
 
 DocumentKind = Literal[

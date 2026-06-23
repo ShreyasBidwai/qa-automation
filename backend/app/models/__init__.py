@@ -24,6 +24,7 @@ from .project import Project
 from .project_document import ProjectDocument
 from .result import Result
 from .run import Run
+from .run_event import RunEvent
 from .spec_divergence import SpecDivergence
 from .test_case import TestCase
 from .test_heal import TestHeal
@@ -58,4 +59,5 @@ __all__ = [
     "TestHeal",
     "Incident",
     "AiUsage",
+    "RunEvent",
 ]

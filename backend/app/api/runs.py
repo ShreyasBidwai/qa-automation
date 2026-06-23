@@ -7,17 +7,23 @@ polled. Findings are read through the reused reporting ranking.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import uuid
+from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.permissions import Permission
 from app.models.ai_usage import AiUsage
-from app.models.enums import JobKind, TriageStatus
+from app.models.enums import JobKind, JobStatus, TriageStatus
 from app.models.job import Job
+from app.models.run_event import RunEvent
 from app.models.user import User
+from app.progress import is_terminal
 from app.reporting import FindingDetailReader, rank_findings
 from app.reporting.heal_reconciliation import superseded_finding_ids
 from app.reporting.open_findings import OpenFindingsReader
@@ -31,6 +37,7 @@ from app.repositories.ai_usage_repository import (
 from app.repositories.finding_repository import FindingRepository
 from app.repositories.finding_triage_repository import FindingTriageRepository
 from app.repositories.result_repository import ResultRepository
+from app.repositories.run_event_repository import RunEventRepository
 from app.repositories.run_repository import RunRepository
 from app.services.job_queue import JobQueue
 
@@ -45,6 +52,8 @@ from .schemas import (
     FindingResponse,
     FindingsResponse,
     RunCreate,
+    RunEventItem,
+    RunEventsResponse,
     RunListItem,
     RunListResponse,
     RunResponse,
@@ -56,6 +65,15 @@ from .schemas import (
 )
 
 router = APIRouter(prefix="/api/v1", tags=["runs"])
+
+# Live-stream pacing: poll the run_events table on this cadence, bounded so a stream
+# can never hang forever (it normally closes on the terminal run event / a terminal
+# job status well before the cap). ~5 minutes of headroom for a real run.
+_STREAM_POLL_SECONDS = 0.25
+_STREAM_MAX_POLLS = 1200
+_TERMINAL_JOB_STATUSES = frozenset(
+    {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED}
+)
 
 
 async def _authorized_run_job(
@@ -250,6 +268,117 @@ async def get_run_usage(
         run_id=run_id,
         aggregate=_usage_aggregate(aggregate(job.run_id, records)),
         records=[_usage_record(record) for record in records],
+    )
+
+
+# --- run-progress events for the live run view (ADR-0050) -------------------
+
+
+def _event_item(event: RunEvent) -> RunEventItem:
+    return RunEventItem(
+        seq=event.seq,
+        phase=event.phase,
+        step=event.step,
+        status=event.status,
+        detail=event.detail,
+        timestamp=event.created_at,
+    )
+
+
+def _sse_frame(event: RunEvent) -> str:
+    """One Server-Sent-Events frame for a progress event."""
+    payload = json.dumps(
+        {
+            "seq": event.seq,
+            "phase": event.phase,
+            "step": event.step,
+            "status": event.status,
+            "detail": event.detail,
+            "timestamp": event.created_at.isoformat(),
+        }
+    )
+    return f"id: {event.seq}\nevent: progress\ndata: {payload}\n\n"
+
+
+@router.get("/runs/{run_id}/events", response_model=RunEventsResponse)
+async def get_run_events(
+    run_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    after_seq: Annotated[int | None, Query(ge=0)] = None,
+) -> RunEventsResponse:
+    """Replay/poll the ordered progress events for a run (ADR-0050).
+
+    Authorized read (VIEW). Works for a finished OR in-progress run; ``after_seq``
+    returns only events past that cursor (cheap incremental polling).
+    """
+    job = await _authorized_run_job(
+        run_id,
+        session=session,
+        user=current_user,
+        permission=Permission.VIEW,
+    )
+    events = await RunEventRepository(session).list_for_run(
+        job.project_id, run_id, after_seq=after_seq
+    )
+    return RunEventsResponse(
+        run_id=run_id, events=[_event_item(event) for event in events]
+    )
+
+
+async def _run_event_sse(
+    sessionmaker: async_sessionmaker[AsyncSession],
+    project_id: uuid.UUID,
+    run_id: uuid.UUID,
+) -> AsyncIterator[str]:
+    """Yield SSE frames for a run's progress, live (ADR-0050).
+
+    Polls the committed ``run_events`` (a seq cursor → only new events each round)
+    and closes on the terminal run event, or when the job is terminal and drained,
+    or at the safety cap — so a stream can never hang forever.
+    """
+    after = -1
+    for _ in range(_STREAM_MAX_POLLS):
+        async with sessionmaker() as session:
+            events = await RunEventRepository(session).list_for_run(
+                project_id, run_id, after_seq=after
+            )
+            job = await JobQueue(session).get(run_id)
+        for event in events:
+            after = event.seq
+            yield _sse_frame(event)
+            if is_terminal(event.phase, event.status):
+                return
+        job_done = job is None or job.status in _TERMINAL_JOB_STATUSES
+        if not events and job_done:
+            return  # drained + the run is over (no terminal event was emitted)
+        await asyncio.sleep(_STREAM_POLL_SECONDS)
+
+
+@router.get("/runs/{run_id}/events/stream")
+async def stream_run_events(
+    run_id: uuid.UUID,
+    request: Request,
+    current_user: CurrentUser,
+) -> StreamingResponse:
+    """Stream a run's progress events live over SSE (ADR-0050). Authorized (VIEW).
+
+    Authorizes up front on its own session, then streams from short read sessions
+    off the app sessionmaker so newly-committed events become visible mid-run.
+    """
+    sessionmaker = request.app.state.sessionmaker
+    async with sessionmaker() as session:
+        job = await _authorized_run_job(
+            run_id,
+            session=session,
+            user=current_user,
+            permission=Permission.VIEW,
+        )
+        project_id = job.project_id
+    return StreamingResponse(
+        _run_event_sse(sessionmaker, project_id, run_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
