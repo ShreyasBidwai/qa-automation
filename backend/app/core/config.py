@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     password_reset_ttl_seconds: int = 3_600  # 1 hour
     org_invite_ttl_seconds: int = 604_800  # 7 days (B3; ADR-0033)
 
+    # --- Rate limiting (B11; ADR-0046) ----------------------------------------
+    # Per-IP fixed-window caps on the sensitive auth endpoints (in-memory, single
+    # instance — see app.core.rate_limit). Sensible defaults; tune via env.
+    auth_rate_limit_window_seconds: int = 60
+    auth_signin_rate_limit: int = 10  # sign-in attempts per IP per window
+    auth_signup_rate_limit: int = 10  # sign-ups per IP per window
+    auth_password_reset_rate_limit: int = 5  # reset requests per IP per window
+
     # --- Durable job queue (B4; ADR-0034) -------------------------------------
     # The in-process worker poller drains the `jobs` table; enabled in the
     # packaged app, off by default (the fast lane drives jobs via the dispatch

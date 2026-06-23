@@ -102,6 +102,12 @@ def test_database_url() -> Iterator[str]:
     # single-process and use one connection at a time, so 1 is ample.
     os.environ["DB_POOL_SIZE"] = "1"
     os.environ["DB_POOL_MAX_OVERFLOW"] = "0"
+    # Generous auth rate limits for the DEFAULT test app so ordinary multi-request
+    # tests never trip the limiter (B11); the rate-limit tests override
+    # ``app.state.rate_limiter`` with small, clock-controlled limits explicitly.
+    os.environ["AUTH_SIGNIN_RATE_LIMIT"] = "100000"
+    os.environ["AUTH_SIGNUP_RATE_LIMIT"] = "100000"
+    os.environ["AUTH_PASSWORD_RESET_RATE_LIMIT"] = "100000"
     get_settings.cache_clear()
 
     # Apply migrations (pgvector + schema) via Alembic, exactly as production.

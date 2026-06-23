@@ -17,6 +17,11 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-qa_platform}:${POSTGRES_PASSWORD:-change-me-locally}@db:5432/${POSTGRES_DB:-qa_platform}
       LOG_LEVEL: WARNING
+      # ASGITransport tests drive async handlers whose DB calls run on SQLAlchemy's
+      # greenlets; the classic C-trace core supports greenlet concurrency reliably
+      # (sys.monitoring, the 3.12 default, doesn't), so coverage credits handler
+      # lines after a DB await instead of under-reporting them (B11, ADR-0046).
+      COVERAGE_CORE: ctrace
     volumes:
       - ./.artifacts/backend:/app/.artifacts
     command:

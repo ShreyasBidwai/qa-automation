@@ -27,14 +27,36 @@ def _problem(
     *,
     detail: str | None = None,
     code: str,
+    errors: list[dict[str, str]] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     body: dict[str, Any] = {"type": "about:blank", "title": title, "status": status}
     if detail:
         body["detail"] = detail
     body["code"] = code
+    if errors:
+        body["errors"] = errors
     return JSONResponse(
-        status_code=status, content=body, media_type=PROBLEM_CONTENT_TYPE
+        status_code=status,
+        content=body,
+        media_type=PROBLEM_CONTENT_TYPE,
+        headers=headers,
     )
+
+
+def _field_errors(exc: RequestValidationError) -> list[dict[str, str]]:
+    """Per-field messages (field name + message ONLY — never the input value).
+
+    Surfaces honest, voiced validation messages (e.g. the password policy) without
+    echoing the offending payload back. Pydantic prefixes custom ValueErrors with
+    "Value error, "; we strip it so the message reads in the interface's voice.
+    """
+    out: list[dict[str, str]] = []
+    for err in exc.errors():
+        loc = ".".join(str(p) for p in err.get("loc", ()) if p != "body")
+        message = str(err.get("msg", "")).removeprefix("Value error, ")
+        out.append({"field": loc or "request", "message": message})
+    return out
 
 
 async def _http_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -45,18 +67,26 @@ async def _http_exception_handler(request: Request, exc: Exception) -> JSONRespo
         else None
     )
     title = HTTPStatus(status).phrase
-    return _problem(status, title, detail=detail, code=f"http_{status}")
+    # Preserve safe response headers set on the exception (e.g. Retry-After on a 429
+    # from the rate limiter, B11) — the problem+json reformat must not drop them.
+    headers = getattr(exc, "headers", None)
+    return _problem(
+        status, title, detail=detail, code=f"http_{status}", headers=headers
+    )
 
 
 async def _validation_exception_handler(
     request: Request, exc: Exception
 ) -> JSONResponse:
-    # Do not echo the offending payload back (no PII / no full payloads).
+    # Echo per-field messages (additive ``errors``) so the interface can voice them;
+    # never the offending payload itself (no PII / no full payloads).
+    errors = _field_errors(exc) if isinstance(exc, RequestValidationError) else None
     return _problem(
         422,
         "Unprocessable Entity",
         detail="Request validation failed.",
         code="validation_error",
+        errors=errors,
     )
 
 

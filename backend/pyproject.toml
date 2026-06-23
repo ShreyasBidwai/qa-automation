@@ -52,3 +52,9 @@ select = ["E", "F", "I", "B", "UP", "ASYNC"]
 [tool.black]
 target-version = ["py312"]
 line-length = 88
+
+[tool.coverage.run]
+# ASGITransport tests drive async handlers whose DB calls run on SQLAlchemy's
+# greenlets; without greenlet+thread concurrency awareness coverage loses the main
+# context after a greenlet switch and under-reports API handler lines (B11).
+concurrency = ["thread", "greenlet"]

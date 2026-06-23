@@ -13,6 +13,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, BaseModel, Field, model_validator
 
+from app.core.password_policy import validate_password
+
 
 def _normalize_email(value: str) -> str:
     value = value.strip().lower()
@@ -26,6 +28,12 @@ def _normalize_email(value: str) -> str:
 Email = Annotated[
     str, Field(min_length=3, max_length=320), AfterValidator(_normalize_email)
 ]
+
+# A NEW password (sign up / reset confirm / change): the minimum policy is enforced
+# here (B11, ADR-0046) with honest, voiced errors. The length floor lives in
+# ``validate_password`` (not a Field ``min_length``) so its message reaches the user;
+# ``max_length`` caps the bcrypt input. Sign-in / current-password stay unconstrained.
+NewPassword = Annotated[str, Field(max_length=128), AfterValidator(validate_password)]
 
 
 class ProjectCreate(BaseModel):
@@ -94,7 +102,7 @@ class DbStateTierUpdate(BaseModel):
 
 class SignUpRequest(BaseModel):
     email: Email
-    password: str = Field(min_length=8, max_length=128)
+    password: NewPassword
 
 
 class SignInRequest(BaseModel):
@@ -123,7 +131,7 @@ class PasswordResetRequestBody(BaseModel):
 
 class PasswordResetConfirmBody(BaseModel):
     token: str = Field(min_length=1, max_length=512)
-    password: str = Field(min_length=8, max_length=128)
+    password: NewPassword
 
 
 # --- account profile (B3) ---------------------------------------------------
@@ -142,7 +150,7 @@ class ProfileUpdate(BaseModel):
 
 class ChangePasswordBody(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
-    new_password: str = Field(min_length=8, max_length=128)
+    new_password: NewPassword
 
 
 # --- organizations / membership / invites (B3, ADR-0032/0033) ---------------

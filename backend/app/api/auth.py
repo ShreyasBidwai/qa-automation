@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.rate_limit import PASSWORD_RESET, SIGNIN, SIGNUP
 from app.models.user import User
 from app.services.auth_service import AuthService
 from app.services.errors import (
@@ -21,6 +22,7 @@ from app.services.errors import (
 )
 
 from .deps import CurrentUser, bearer_token, get_session
+from .rate_limit import rate_limited
 from .schemas import (
     AuthTokenResponse,
     ChangePasswordBody,
@@ -55,7 +57,12 @@ def _token_response(user: User, token: str) -> AuthTokenResponse:
     return AuthTokenResponse(access_token=token, user=_user_response(user))
 
 
-@router.post("/signup", status_code=201, response_model=AuthTokenResponse)
+@router.post(
+    "/signup",
+    status_code=201,
+    response_model=AuthTokenResponse,
+    dependencies=[Depends(rate_limited(SIGNUP))],
+)
 async def sign_up(
     body: SignUpRequest,
     request: Request,
@@ -72,7 +79,11 @@ async def sign_up(
     return _token_response(user, token)
 
 
-@router.post("/signin", response_model=AuthTokenResponse)
+@router.post(
+    "/signin",
+    response_model=AuthTokenResponse,
+    dependencies=[Depends(rate_limited(SIGNIN))],
+)
 async def sign_in(
     body: SignInRequest,
     request: Request,
@@ -102,7 +113,11 @@ async def sign_out(
     return Response(status_code=204)
 
 
-@router.post("/password-reset/request", status_code=202)
+@router.post(
+    "/password-reset/request",
+    status_code=202,
+    dependencies=[Depends(rate_limited(PASSWORD_RESET))],
+)
 async def request_password_reset(
     body: PasswordResetRequestBody,
     request: Request,

@@ -20,6 +20,7 @@ from .api.runs import router as runs_router
 from .core.config import get_settings
 from .core.errors import register_exception_handlers
 from .core.lifespan import lifespan
+from .core.rate_limit import build_rate_limiter
 from .middleware.request_id import RequestIdMiddleware
 from .services.mailer import build_mailer
 
@@ -45,6 +46,9 @@ def create_app() -> FastAPI:
     # Transactional mailer (B2): the dev stub logs the reset link; a test overrides
     # this to capture it. Real SMTP is composed in later (no creds needed to boot).
     app.state.mailer = build_mailer()
+    # Per-IP rate limiter for the sensitive auth endpoints (B11, ADR-0046) —
+    # in-memory, single-instance. A test may override it with a clock-controlled one.
+    app.state.rate_limiter = build_rate_limiter(settings)
 
     # Liveness/readiness are unversioned, top-level endpoints (TRD §4).
     app.include_router(health_router)
