@@ -1,20 +1,19 @@
-import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Inbox } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
 import { Link } from "@/components/Link";
-import { PageHeader } from "@/components/PageHeader";
 import { Pagination } from "@/components/Pagination";
 import { SkeletonRows } from "@/components/Skeleton";
 import { StatePanel } from "@/components/StatePanel";
-import { Select } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { findingApi } from "@/lib/api/client";
 import type { Finding } from "@/lib/api/types";
 import { usePagedList } from "@/lib/usePagedList";
 
-import { FindingDrawer } from "../runs/FindingDrawer";
+import { FindingDetail } from "../runs/FindingDetail";
+import { FindingFilterBar } from "../runs/FindingFilterBar";
 import { FindingRow } from "../runs/FindingRow";
 import {
-  ALL,
   EMPTY_FILTERS,
   applyFilters,
   type FindingFilters,
@@ -23,10 +22,12 @@ import {
 const PAGE_SIZE = 25;
 
 /**
- * The findings inbox — "what's broken right now" across every project (GET
- * /findings). The open findings only (the API excludes muted/resolved), ranked,
- * with the shared run-dashboard row treatment. Selecting one opens the same
- * detail drawer (triage included) keyed to that finding's run.
+ * The findings inbox — "what's broken right now" across every project, reproducing
+ * Polaris Findings Inbox.dc.html as a master-detail: a ranked list on the left,
+ * the shared FindingDetail panel on the right. Bound to the cross-run open-findings
+ * aggregation (GET /findings, ADR-0028) — the open findings only, severity-ranked,
+ * never re-derived client-side. Selecting one opens the same detail (triage wired)
+ * keyed to that finding's run. The dashboard's filter pills filter the list.
  */
 export function FindingsInboxPage() {
   const fetchPage = useCallback(
@@ -37,7 +38,7 @@ export function FindingsInboxPage() {
 
   const [filters, setFilters] = useState<FindingFilters>(EMPTY_FILTERS);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  // Reflect a triage change locally so the row updates without a refetch.
+  // Reflect a triage change locally so the row + panel update without a refetch.
   const [overrides, setOverrides] = useState<Record<string, Finding>>({});
 
   const items = useMemo(
@@ -45,18 +46,24 @@ export function FindingsInboxPage() {
     [list.items, overrides],
   );
   const visible = applyFilters(items, filters);
-  const selected = items.find((finding) => finding.id === selectedId) ?? null;
+  // Default to the first finding (the file shows one selected on load); a click
+  // pins another. Fall back across filtering so the panel is never blank.
+  const selected =
+    items.find((finding) => finding.id === selectedId) ??
+    visible[0] ??
+    items[0] ??
+    null;
 
   return (
-    <>
-      <PageHeader
-        title="Findings"
-        description="Open across every project, worst first."
-      />
-      <main className="flex-1 px-6 py-8">
-        {list.loading ? (
+    <div className="flex flex-col min-[1024px]:h-full">
+      <InboxHeader total={list.total} loading={list.loading} />
+
+      {list.loading ? (
+        <div className="flex-1 px-6 py-8">
           <SkeletonRows label="Loading findings…" />
-        ) : list.error ? (
+        </div>
+      ) : list.error ? (
+        <div className="flex items-center justify-center px-6 py-8 min-[1024px]:min-h-0 min-[1024px]:flex-1">
           <StatePanel
             icon={AlertTriangle}
             tone="danger"
@@ -64,16 +71,18 @@ export function FindingsInboxPage() {
             description="Polaris couldn't reach the findings service. This is usually temporary."
             code={list.error}
             actions={
-              <button
-                type="button"
+              <Button
+                variant="primary"
+                size="sm"
                 onClick={() => window.location.reload()}
-                className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:bg-accent-hover"
               >
                 Retry
-              </button>
+              </Button>
             }
           />
-        ) : items.length === 0 ? (
+        </div>
+      ) : items.length === 0 ? (
+        <div className="flex items-center justify-center px-6 py-8 min-[1024px]:min-h-0 min-[1024px]:flex-1">
           <StatePanel
             icon={CheckCircle2}
             tone="success"
@@ -88,139 +97,116 @@ export function FindingsInboxPage() {
               </Link>
             }
           />
-        ) : (
-          <div className="space-y-3">
-            <Filters filters={filters} onChange={setFilters} count={visible.length} />
-            {visible.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-border bg-surface px-6 py-10 text-center text-sm text-muted-foreground">
-                No findings match these filters.
-              </p>
-            ) : (
-              <div className="overflow-hidden rounded-xl border border-border bg-surface">
-                {visible.map((finding) => (
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col min-[1024px]:flex-row">
+          <section
+            aria-label="Findings"
+            className="flex flex-col border-b border-border bg-surface min-[1024px]:min-h-0 min-[1024px]:w-[46%] min-[1024px]:min-w-[420px] min-[1024px]:border-b-0 min-[1024px]:border-r"
+          >
+            <div className="flex-none border-b border-border-subtle px-[18px] py-3">
+              <div className="flex items-center justify-between gap-3">
+                <FindingFilterBar filters={filters} onChange={setFilters} />
+                <span className="shrink-0 font-mono text-[11px] text-status-neutral-solid">
+                  {visible.length} shown
+                </span>
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {visible.length === 0 ? (
+                <div className="px-6 py-10 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    No findings match these filters.
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-3"
+                    onClick={() => setFilters(EMPTY_FILTERS)}
+                  >
+                    Clear filters
+                  </Button>
+                </div>
+              ) : (
+                visible.map((finding) => (
                   <FindingRow
                     key={finding.id}
                     finding={finding}
-                    selected={finding.id === selectedId}
+                    selected={finding.id === selected?.id}
                     onSelect={(f) => setSelectedId(f.id)}
                   />
-                ))}
-              </div>
-            )}
-            <Pagination
-              offset={list.offset}
-              pageSize={list.pageSize}
-              total={list.total}
-              hasPrev={list.hasPrev}
-              hasNext={list.hasNext}
-              onPrev={list.prev}
-              onNext={list.next}
-            />
-          </div>
-        )}
-      </main>
+                ))
+              )}
+            </div>
 
-      <FindingDrawer
-        finding={selected}
-        runId={selected?.run_id ?? ""}
-        onClose={() => setSelectedId(null)}
-        onTriaged={(updated) =>
-          setOverrides((current) => ({ ...current, [updated.id]: updated }))
-        }
-      />
-    </>
+            {list.total > list.pageSize ? (
+              <div className="flex-none border-t border-border-subtle px-[18px] py-2.5">
+                <Pagination
+                  offset={list.offset}
+                  pageSize={list.pageSize}
+                  total={list.total}
+                  hasPrev={list.hasPrev}
+                  hasNext={list.hasNext}
+                  onPrev={list.prev}
+                  onNext={list.next}
+                />
+              </div>
+            ) : null}
+          </section>
+
+          <section
+            aria-label="Finding detail"
+            className="flex flex-col overflow-hidden bg-surface min-[1024px]:min-h-0 min-[1024px]:flex-1"
+          >
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {selected ? (
+                <FindingDetail
+                  finding={selected}
+                  runId={selected.run_id ?? ""}
+                  onTriaged={(updated) =>
+                    setOverrides((current) => ({ ...current, [updated.id]: updated }))
+                  }
+                />
+              ) : (
+                <SelectAFinding />
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+    </div>
   );
 }
 
-function Filters({
-  filters,
-  onChange,
-  count,
-}: {
-  filters: FindingFilters;
-  onChange: (next: FindingFilters) => void;
-  count: number;
-}) {
+function InboxHeader({ total, loading }: { total: number; loading: boolean }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-      <FilterSelect
-        label="Severity"
-        value={filters.severity}
-        onChange={(v) => onChange({ ...filters, severity: v })}
-        options={[
-          ["critical", "Critical"],
-          ["major", "Major"],
-          ["minor", "Minor"],
-        ]}
-      />
-      <FilterSelect
-        label="Layer"
-        value={filters.layer}
-        onChange={(v) => onChange({ ...filters, layer: v })}
-        options={[
-          ["ui", "ui"],
-          ["api", "api"],
-          ["db", "db"],
-        ]}
-      />
-      <FilterSelect
-        label="Trust"
-        value={filters.confidence}
-        onChange={(v) => onChange({ ...filters, confidence: v })}
-        options={[
-          ["rule-derived", "Rule-derived"],
-          ["characterization", "Characterization"],
-          ["spec-grounded", "Spec-grounded"],
-        ]}
-      />
-      <FilterSelect
-        label="History"
-        value={filters.status}
-        onChange={(v) => onChange({ ...filters, status: v })}
-        options={[
-          ["new", "New"],
-          ["regression", "Regression"],
-          ["flaky", "Flaky"],
-          ["known", "Known"],
-        ]}
-      />
-      <span className="ml-auto font-mono text-xs text-muted-foreground">
-        {count} shown
+    <div className="flex flex-none items-center gap-3 border-b border-border bg-surface px-6 py-[18px]">
+      <span className="flex h-7 w-7 flex-none items-center justify-center rounded-[7px] border-[1.5px] border-marker">
+        <Inbox className="h-3.5 w-3.5 text-status-neutral-solid" aria-hidden="true" />
+      </span>
+      <h1 className="text-[18px] font-semibold tracking-[-0.01em] text-foreground">
+        Findings
+      </h1>
+      {!loading ? (
+        <span className="rounded-full bg-accent-subtle px-2 py-0.5 text-[11px] font-semibold tabular-nums text-accent">
+          {total}
+        </span>
+      ) : null}
+      <span className="text-[13px] text-status-neutral-solid">
+        Open across every project, worst first
       </span>
     </div>
   );
 }
 
-function FilterSelect({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: [string, string][];
-}) {
-  const id = `inbox-filter-${label.toLowerCase()}`;
+function SelectAFinding() {
   return (
-    <div className="flex items-center gap-1.5">
-      <label htmlFor={id} className="text-xs text-muted-foreground">
-        {label}
-      </label>
-      <Select
-        id={id}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-8 w-auto"
-      >
-        <option value={ALL}>All</option>
-        {options.map(([optionValue, optionLabel]) => (
-          <option key={optionValue} value={optionValue}>
-            {optionLabel}
-          </option>
-        ))}
-      </Select>
+    <div className="flex h-full flex-col items-center justify-center px-6 py-16 text-center">
+      <h2 className="text-[15px] font-semibold text-foreground">Select a finding</h2>
+      <p className="mt-1.5 max-w-[260px] text-[13px] text-muted-foreground">
+        Pick a finding on the left to see its blast path, evidence, and history.
+      </p>
     </div>
   );
 }

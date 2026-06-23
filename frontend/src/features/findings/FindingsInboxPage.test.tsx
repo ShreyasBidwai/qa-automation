@@ -44,6 +44,10 @@ function openPage(items: Finding[], total: number) {
   return { ok: true, status: 200, data: { items, total, limit: 25, offset: 0 } };
 }
 
+// The list (master) and the detail panel both render finding titles, so queries
+// are scoped to a region to keep them unambiguous.
+const listRegion = () => screen.findByRole("region", { name: "Findings" });
+
 describe("FindingsInboxPage", () => {
   beforeEach(() => vi.mocked(findingApi.listOpen).mockReset());
 
@@ -66,13 +70,16 @@ describe("FindingsInboxPage", () => {
 
     render(<FindingsInboxPage />);
 
-    const rowA = (
-      await screen.findByText("Orders accepted without authentication")
-    ).closest("button")!;
+    const list = await listRegion();
+    const rowA = within(list)
+      .getByText("Orders accepted without authentication")
+      .closest("button")!;
     expect(within(rowA).getByText("Critical")).toBeInTheDocument();
     expect(within(rowA).getByText("rule-derived")).toBeInTheDocument();
 
-    const rowB = screen.getByText("Checkout fails on empty cart").closest("button")!;
+    const rowB = within(list)
+      .getByText("Checkout fails on empty cart")
+      .closest("button")!;
     expect(within(rowB).getByText("characterization")).toBeInTheDocument();
     expect(within(rowB).getByText("Regression")).toBeInTheDocument();
   });
@@ -89,17 +96,17 @@ describe("FindingsInboxPage", () => {
     );
 
     render(<FindingsInboxPage />);
-    await screen.findByText("Critical one");
+    const list = await listRegion();
 
-    fireEvent.change(screen.getByLabelText("Severity"), {
+    fireEvent.change(within(list).getByLabelText("Severity"), {
       target: { value: "critical" },
     });
 
-    expect(screen.getByText("Critical one")).toBeInTheDocument();
-    expect(screen.queryByText("Minor one")).toBeNull();
+    expect(within(list).getByText("Critical one")).toBeInTheDocument();
+    expect(within(list).queryByText("Minor one")).toBeNull();
   });
 
-  it("opens the detail drawer when a finding is selected", async () => {
+  it("shows the selected finding's detail panel inline (the shared FindingDetail)", async () => {
     vi.mocked(findingApi.listOpen).mockResolvedValue(
       openPage(
         [finding({ id: "a", title: "Orders accepted without authentication" })],
@@ -108,9 +115,44 @@ describe("FindingsInboxPage", () => {
     );
 
     render(<FindingsInboxPage />);
-    fireEvent.click(await screen.findByText("Orders accepted without authentication"));
 
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    // The first finding is selected on load — its detail (title + blast path) shows
+    // without a click, in the same panel the run dashboard uses.
+    const detail = await screen.findByRole("region", { name: "Finding detail" });
+    expect(
+      within(detail).getByRole("heading", {
+        name: "Orders accepted without authentication",
+      }),
+    ).toBeInTheDocument();
+    expect(within(detail).getByText("Blast path")).toBeInTheDocument();
+  });
+
+  it("updates the detail panel when another finding is selected", async () => {
+    vi.mocked(findingApi.listOpen).mockResolvedValue(
+      openPage(
+        [
+          finding({ id: "a", title: "Orders accepted without authentication" }),
+          finding({
+            id: "b",
+            title: "Checkout fails on empty cart",
+            severity: "major",
+          }),
+        ],
+        2,
+      ),
+    );
+
+    render(<FindingsInboxPage />);
+
+    const list = await listRegion();
+    fireEvent.click(
+      within(list).getByText("Checkout fails on empty cart").closest("button")!,
+    );
+
+    const detail = screen.getByRole("region", { name: "Finding detail" });
+    expect(
+      within(detail).getByRole("heading", { name: "Checkout fails on empty cart" }),
+    ).toBeInTheDocument();
   });
 
   it("shows a clean state when nothing is open", async () => {
