@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +24,7 @@ from app.reporting import FindingDetail, FindingDetailReader, OpenFinding
 from app.reporting.open_findings import OpenFindingsReader
 from app.repositories.finding_triage_repository import FindingTriageRepository
 from app.repositories.organization_repository import OrganizationRepository
+from app.screenshots import get_screenshot
 
 from .authz import authorize_project
 from .deps import CurrentUser, get_session
@@ -171,3 +172,32 @@ async def bulk_triage(
         updated=sorted(found_ids),
         not_found=not_found,
     )
+
+
+@router.get("/findings/{finding_id}/screenshot")
+async def get_finding_screenshot(
+    finding_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    """Stream a finding's failure screenshot to an authorized caller (ADR-0051).
+
+    Screenshots may hold sensitive app state, so they are NEVER served from a public
+    path: the bytes are read through the single ``app.screenshots`` indirection and
+    returned only after authorizing VIEW on the finding's project. 404 if the finding
+    is unknown / inaccessible (existence not leaked, ADR-0033) or has no screenshot;
+    403 if the caller is in the org but the role lacks VIEW.
+    """
+    finding = (
+        await session.scalars(select(Finding).where(Finding.id == finding_id))
+    ).one_or_none()
+    if finding is None:
+        raise HTTPException(status_code=404, detail="finding not found")
+    # VIEW on the finding's project (404 for a non-member; 403 for in-org/no-perm).
+    await authorize_project(session, finding.project_id, current_user, Permission.VIEW)
+    if finding.screenshot_ref is None:
+        raise HTTPException(status_code=404, detail="no screenshot for this finding")
+    data = get_screenshot(finding.screenshot_ref)
+    if data is None:  # ref recorded but bytes gone (e.g. ephemeral disk wiped)
+        raise HTTPException(status_code=404, detail="screenshot not available")
+    return Response(content=data, media_type="image/png")

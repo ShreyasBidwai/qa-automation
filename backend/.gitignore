@@ -1,0 +1,4 @@
+# Local-disk screenshot storage (ADR-0051) — runtime artifact, never committed.
+# Swapped to object storage at deploy; see app/screenshots/storage.py.
+var/screenshots/
+var/

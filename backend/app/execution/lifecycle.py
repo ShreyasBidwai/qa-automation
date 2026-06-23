@@ -21,10 +21,11 @@ from app.models.result import Result
 from app.models.run import Run
 from app.repositories.result_repository import ResultRepository
 from app.repositories.run_repository import RunRepository
+from app.screenshots import store_screenshot
 
 from .dual_db import ensure_safe_target
 from .errors import ExecutionError
-from .types import ExecutionRunner, PestScript, TargetEnv
+from .types import ExecutionResult, ExecutionRunner, PestScript, TargetEnv
 
 logger = logging.getLogger("app.execution")
 
@@ -36,6 +37,24 @@ STATUS_ERRORED = "errored"  # infra/runner failure — the run could not complet
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _capture_screenshot(run_id: uuid.UUID, result: ExecutionResult) -> str | None:
+    """Store a failing result's screenshot via the single indirection (ADR-0051).
+
+    Best-effort + side-effect-safe: only fires for a FAILING result that carries
+    bytes, and any storage failure is logged, never raised — capturing a screenshot
+    can't break or fail a run (the same rule as incident capture).
+    """
+    if result.outcome is Outcome.PASS or result.screenshot is None:
+        return None
+    try:
+        return store_screenshot(result.screenshot)
+    except Exception:  # noqa: BLE001 — screenshot capture is best-effort, never fatal
+        logger.warning(
+            "execution.screenshot_capture_failed", extra={"run_id": str(run_id)}
+        )
+        return None
 
 
 class RunLifecycle:
@@ -92,6 +111,9 @@ class RunLifecycle:
                         outcome=er.outcome,
                         triage=None,  # Sprint 7
                         evidence_ref=er.evidence_ref,
+                        # Failure screenshot (ADR-0051); the assembler copies the ref
+                        # onto the finding. Best-effort — never breaks the run.
+                        screenshot_ref=_capture_screenshot(run.id, er),
                         message=er.message,  # B8: detail for heal classification
                     )
                 )

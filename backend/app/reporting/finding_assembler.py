@@ -236,6 +236,9 @@ class FindingAssembler:
                 confidence_mixed=len(oracle_tiers) > 1,
                 expected=dict(representative.case.expected),
                 evidence_ref=representative.result.evidence_ref,
+                # Carry the failure screenshot from the representative result onto
+                # the finding (same path as evidence_ref); null when none (ADR-0051).
+                screenshot_ref=representative.result.screenshot_ref,
                 location=representative.location,
                 severity=SEVERITY_UNSET,
                 status=STATUS_OPEN,

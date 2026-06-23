@@ -70,6 +70,10 @@ class ExecutionResult:
     outcome: Outcome
     evidence_ref: str | None
     message: str | None = None
+    # Raw screenshot bytes a browser runner (Playwright) captures of the failing UI
+    # state; the lifecycle stores them via app.screenshots and attaches the ref. The
+    # runner returns bytes (it has no DB access); None for non-browser/passing runs.
+    screenshot: bytes | None = None
 
 
 @runtime_checkable

@@ -15,6 +15,7 @@ packaged image.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any
 
@@ -50,9 +51,25 @@ from app.progress import (
     emit,
 )
 from app.repositories.project_repository import ProjectRepository
+from app.screenshots import placeholder_screenshot, store_screenshot
 
 from .errors import ApiConfigError
 from .ports import Ingestor, RunExecution, RunExecutor, RunRequest
+
+logger = logging.getLogger("app.api.composition")
+
+
+def _store_demo_screenshot() -> str | None:
+    """A placeholder screenshot for the demo failing finding (ADR-0051).
+
+    Best-effort + side-effect-safe: a storage failure is logged, never raised — so
+    the stub run completes regardless (the same rule as a real capture)."""
+    try:
+        return store_screenshot(placeholder_screenshot())
+    except Exception:  # noqa: BLE001 — screenshot capture must never break a run
+        logger.warning("composition.stub_screenshot_failed")
+        return None
+
 
 # The fabricated demo finding's shape — a believable, fully-detailed bug so the
 # clone→up walkthrough exercises the whole finding flow (detail drawer, triage).
@@ -126,12 +143,14 @@ class StubRunExecutor:
             status=STATUS_STARTED,
             detail={"tests": 1},
         )
+        screenshot_ref = _store_demo_screenshot()
         result = Result(
             project_id=project_id,
             run_id=run.id,
             test_case_id=case.id,
             outcome=Outcome.FAIL,
             evidence_ref=_DEMO_EVIDENCE,
+            screenshot_ref=screenshot_ref,
         )
         session.add(result)
         await session.flush()
@@ -155,6 +174,7 @@ class StubRunExecutor:
             expected=_DEMO_EXPECTED,
             location=_DEMO_LOCATION,
             evidence_ref=_DEMO_EVIDENCE,
+            screenshot_ref=screenshot_ref,
             severity="major",
             status="new",
         )
