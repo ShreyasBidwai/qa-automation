@@ -533,6 +533,60 @@ class RunListResponse(BaseModel):
     offset: int
 
 
+# --- AI usage + actual billed cost (ADR-0049) -------------------------------
+
+
+class AiUsageRecord(BaseModel):
+    """One model invocation's usage. ``total_cost_usd`` is the ACTUAL billed cost of
+    the invocation (includes Claude Code harness/cache — see ADR-0049), null when
+    capture was unavailable. cache_* are kept separate from input_tokens."""
+
+    phase: str
+    model: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_creation_input_tokens: int | None = None
+    cache_read_input_tokens: int | None = None
+    total_cost_usd: float | None = None
+    model_cost_usd: float | None = None
+    usage_available: bool
+    is_error: bool
+    created_at: datetime
+
+
+class AiUsageBucket(BaseModel):
+    """Summed usage for one slice (a phase or a model)."""
+
+    call_count: int = 0
+    total_cost_usd: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+
+
+class RunUsageAggregate(BaseModel):
+    """Per-run rollup computed over the persisted per-call records (ADR-0049)."""
+
+    call_count: int = 0
+    available_call_count: int = 0
+    unavailable_call_count: int = 0
+    error_count: int = 0
+    total_cost_usd: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    per_phase: dict[str, AiUsageBucket] = Field(default_factory=dict)
+    per_model: dict[str, AiUsageBucket] = Field(default_factory=dict)
+
+
+class RunUsageResponse(BaseModel):
+    run_id: uuid.UUID
+    aggregate: RunUsageAggregate = Field(default_factory=RunUsageAggregate)
+    records: list[AiUsageRecord] = Field(default_factory=list)
+
+
 # --- business documents (B9) ------------------------------------------------
 
 DocumentKind = Literal[

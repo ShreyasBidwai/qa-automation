@@ -10,10 +10,17 @@ from __future__ import annotations
 import hashlib
 
 from .types import FailureEvidence, Subgraph, TriageLabel
+from .usage import PHASE_GENERATION, CliUsage, record_usage
+
+# The stub never invokes a real model, so there is no billed cost and no real token
+# usage — it records a flagged-unavailable entry so the capture seam still fires
+# under the stub (the aggregate counts the call; cost/tokens stay null). ADR-0049.
+_STUB_USAGE = CliUsage.unavailable(model="stub")
 
 
 class StubAIProvider:
     def generate(self, prompt: str, context: Subgraph, budget_tokens: int) -> str:
+        record_usage(_STUB_USAGE, phase=PHASE_GENERATION)
         fingerprint = hashlib.sha256(
             f"{prompt}\x00{context.render()}".encode()
         ).hexdigest()[:12]
