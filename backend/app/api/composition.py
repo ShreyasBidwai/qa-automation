@@ -39,6 +39,16 @@ from app.models.finding_result import FindingResult
 from app.models.result import Result
 from app.models.run import Run
 from app.models.test_case import TestCase
+from app.progress import (
+    PHASE_EXECUTE,
+    PHASE_GENERATE,
+    PHASE_REVIEW,
+    PHASE_RUN,
+    STATUS_FAILED,
+    STATUS_PASSED,
+    STATUS_STARTED,
+    emit,
+)
 from app.repositories.project_repository import ProjectRepository
 
 from .errors import ApiConfigError
@@ -80,6 +90,16 @@ class StubRunExecutor:
         project = await ProjectRepository(session).get(project_id)
         target = project.name if project is not None else "Stub demo run"
 
+        # A believable progress journey so the live run view can be built + demoed
+        # before real execution (ADR-0050). Best-effort: no-op without an emitter.
+        await emit(phase=PHASE_RUN, step="run", status=STATUS_STARTED)
+        await emit(
+            phase=PHASE_GENERATE,
+            step="Generate test for POST api/orders",
+            status=STATUS_PASSED,
+            detail={"endpoint": "POST api/orders"},
+        )
+
         run = Run(
             project_id=project_id,
             trigger=RunTrigger.MANUAL,
@@ -100,6 +120,12 @@ class StubRunExecutor:
         session.add(case)
         await session.flush()
 
+        await emit(
+            phase=PHASE_EXECUTE,
+            step="Execute 1 test",
+            status=STATUS_STARTED,
+            detail={"tests": 1},
+        )
         result = Result(
             project_id=project_id,
             run_id=run.id,
@@ -109,6 +135,12 @@ class StubRunExecutor:
         )
         session.add(result)
         await session.flush()
+        await emit(
+            phase=PHASE_EXECUTE,
+            step="POST api/orders returns 201",
+            status=STATUS_FAILED,
+            detail={"endpoint": "POST api/orders", "expected": 201, "actual": 500},
+        )
 
         finding = Finding(
             project_id=project_id,
@@ -135,6 +167,20 @@ class StubRunExecutor:
             )
         )
         await session.flush()
+
+        await emit(
+            phase=PHASE_REVIEW,
+            step="Review complete",
+            status=STATUS_PASSED,
+            detail={"findings": 1},
+        )
+        # Terminal run event — ends the live stream (the stub run "failed").
+        await emit(
+            phase=PHASE_RUN,
+            step="run",
+            status=STATUS_FAILED,
+            detail={"status": "failed", "findings": 1},
+        )
 
         return RunExecution(
             run_id=run.id,

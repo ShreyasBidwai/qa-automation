@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import progress
 from app.models.enums import Outcome, RunMode, RunTrigger
 from app.models.result import Result
 from app.models.run import Run
@@ -73,6 +74,14 @@ class RunLifecycle:
         status = STATUS_ERRORED
         try:
             ensure_safe_target(target_env)  # dual-DB safety before any execution
+            # Run-progress (ADR-0050): the execute phase + a per-test step as each
+            # result lands — this is the journey the live view renders. Best-effort.
+            await progress.emit(
+                phase=progress.PHASE_EXECUTE,
+                step=f"Execute {len(scripts)} tests",
+                status=progress.STATUS_STARTED,
+                detail={"tests": len(scripts)},
+            )
             exec_results = self._runner.run(scripts, target_env)
             for er in exec_results:
                 await result_repo.add(
@@ -85,6 +94,16 @@ class RunLifecycle:
                         evidence_ref=er.evidence_ref,
                         message=er.message,  # B8: detail for heal classification
                     )
+                )
+                await progress.emit(
+                    phase=progress.PHASE_EXECUTE,
+                    step=er.name,
+                    status=(
+                        progress.STATUS_PASSED
+                        if er.outcome is Outcome.PASS
+                        else progress.STATUS_FAILED
+                    ),
+                    detail={"test": er.name, "outcome": er.outcome.value},
                 )
             status = (
                 STATUS_PASSED

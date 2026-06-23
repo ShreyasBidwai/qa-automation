@@ -27,12 +27,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.usage import UsageCollector, install_collector, reset_collector
 from app.brain.cross_layer import Impact, Subgraph
 from app.db_state.run_phase import DbStatePhaseReport, DbStateRunPhase
+from app.execution.lifecycle import STATUS_PASSED as RUN_STATUS_PASSED
 from app.execution.lifecycle import RunLifecycle
 from app.execution.types import ExecutionRunner, PestScript, TargetEnv
 from app.models.ai_usage import AiUsage
 from app.models.enums import RunMode, RunTrigger
 from app.models.finding import Finding
 from app.models.result import Result
+from app.progress import (
+    PHASE_GENERATE,
+    PHASE_REVIEW,
+    PHASE_RUN,
+    PHASE_SELECT,
+    STATUS_FAILED,
+    STATUS_PASSED,
+    STATUS_SKIPPED,
+    STATUS_STARTED,
+    emit,
+)
 from app.reporting import FindingAssembler, HistoryClassifier, SeverityScorer
 from app.repositories.ai_usage_repository import AiUsageRepository
 from app.repositories.result_repository import ResultRepository
@@ -172,6 +184,9 @@ class ModeBOrchestrator:
         usage: UsageCollector,
     ) -> ModeBRunReport:
         requested_kind = strategy.kind
+        # Run-progress (ADR-0050): the journey starts here and is narrated through
+        # select → generate → execute → review to a terminal run event. Best-effort.
+        await emit(phase=PHASE_RUN, step="run", status=STATUS_STARTED)
         selection = await strategy.select(project_id)
 
         full_sweep_fallback = False
@@ -185,6 +200,15 @@ class ModeBOrchestrator:
             full_sweep_fallback = True
 
         targets = selection.targets[: bounds.max_targets]  # hard count bound
+        await emit(
+            phase=PHASE_SELECT,
+            step=f"Select targets ({requested_kind.value})",
+            status=STATUS_PASSED,
+            detail={
+                "targets": len(targets),
+                "full_sweep_fallback": full_sweep_fallback,
+            },
+        )
         ensured = await self._ensure_cases(project_id, targets, bounds)
         scripts = [e.script for e in ensured]
         generated = sum(1 for e in ensured if e.generated)
@@ -205,6 +229,7 @@ class ModeBOrchestrator:
         # Reporting pipeline (reused): assemble → DB-state phase → score → classify
         # → rank. DB-state findings (layer=db) land before scoring so they flow
         # through the rest of the pipeline like any other finding.
+        await emit(phase=PHASE_REVIEW, step="Review findings", status=STATUS_STARTED)
         await FindingAssembler(self._session, resolver=self._resolver).assemble(
             project_id=project_id, results=results
         )
@@ -214,6 +239,12 @@ class ModeBOrchestrator:
         await scorer.score_run(project_id, run.id)
         await HistoryClassifier(self._session).classify_run(project_id, run.id)
         ranked = await scorer.ranked_for_run(project_id, run.id)
+        await emit(
+            phase=PHASE_REVIEW,
+            step="Review complete",
+            status=STATUS_PASSED,
+            detail={"findings": len(ranked)},
+        )
 
         report = ModeBRunReport(
             run_id=run.id,
@@ -238,6 +269,13 @@ class ModeBOrchestrator:
                 "reused": report.cases_reused,
                 "findings": len(ranked),
             },
+        )
+        # Terminal run event — ends the live stream (best-effort; ADR-0050).
+        await emit(
+            phase=PHASE_RUN,
+            step="run",
+            status=STATUS_PASSED if run.status == RUN_STATUS_PASSED else STATUS_FAILED,
+            detail={"status": run.status, "findings": len(ranked)},
         )
         return report
 
@@ -333,10 +371,31 @@ class ModeBOrchestrator:
     async def _ensure_for_target(
         self, project_id: uuid.UUID, target: Target
     ) -> list[EnsuredCase]:
+        step = f"{target.kind.value} {target.node_id}"
+        detail = {"kind": target.kind.value, "node_id": str(target.node_id)}
         reused = await self._reuse_scripts(project_id, target)
         if reused:  # never regenerate over an existing case (never-clobber)
+            # Reuse is part of the journey too — surfaced as a skipped generate step.
+            await emit(
+                phase=PHASE_GENERATE,
+                step=f"Reuse existing test for {step}",
+                status=STATUS_SKIPPED,
+                detail=detail,
+            )
             return [EnsuredCase(script=script, generated=False) for script in reused]
+        await emit(
+            phase=PHASE_GENERATE,
+            step=f"Generate test for {step}",
+            status=STATUS_STARTED,
+            detail=detail,
+        )
         generated = await self._generator.generate(project_id=project_id, target=target)
+        await emit(
+            phase=PHASE_GENERATE,
+            step=f"Generate test for {step}",
+            status=STATUS_PASSED,
+            detail=detail,
+        )
         return [EnsuredCase(script=generated, generated=True)]
 
     async def _reuse_scripts(

@@ -20,6 +20,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.incidents import IncidentRecorder, phase_for_job_kind, phase_of
 from app.models.enums import JobKind
+from app.progress import (
+    PHASE_RUN,
+    STATUS_FAILED,
+    RunProgressEmitter,
+    install_emitter,
+    reset_emitter,
+)
 from app.services.job_queue import ClaimedJob, JobQueue
 
 logger = logging.getLogger("app.jobs.worker")
@@ -89,31 +96,57 @@ class JobWorker:
         if handler is None:
             await self._finalize_failure(claimed, "no_handler")
             return
+        # Run-progress (ADR-0050): install a best-effort emitter for RUN jobs so the
+        # run path can emit lifecycle/step events; a non-run kind installs none, so
+        # its emit() seams (if any) are silent no-ops.
+        emitter = (
+            RunProgressEmitter(
+                self._sm, run_id=claimed.id, project_id=claimed.project_id
+            )
+            if claimed.kind is JobKind.RUN
+            else None
+        )
+        token = install_emitter(emitter) if emitter is not None else None
         try:
+            try:
+                async with self._sm() as session:
+                    run_id, summary = await handler(session, claimed)
+                    await session.commit()
+            except Exception as exc:  # task boundary: record + retry, never die
+                # Terminal run-failed so a live stream closes (best-effort).
+                if emitter is not None:
+                    await emitter.emit(
+                        phase=PHASE_RUN,
+                        step="run",
+                        status=STATUS_FAILED,
+                        detail={"error": type(exc).__name__},
+                    )
+                # Capture a structured incident BEFORE finalizing — best-effort, so a
+                # recording failure can't change the existing fail/retry behaviour. The
+                # phase is the one tagged inward (e.g. provider) or the job kind's.
+                await self._recorder.record(
+                    exc,
+                    phase=phase_of(exc, default=phase_for_job_kind(claimed.kind)),
+                    project_id=claimed.project_id,
+                    component=f"job:{claimed.kind.value}",
+                )
+                await self._finalize_failure(claimed, type(exc).__name__)
+                logger.error(
+                    "jobs.failed",
+                    extra={
+                        "job_id": str(claimed.id),
+                        "error_type": type(exc).__name__,
+                    },
+                )
+                return
             async with self._sm() as session:
-                run_id, summary = await handler(session, claimed)
+                await JobQueue(session).mark_succeeded(
+                    claimed.id, run_id=run_id, summary=summary
+                )
                 await session.commit()
-        except Exception as exc:  # task boundary: record + retry, never die silently
-            # Capture a structured incident BEFORE finalizing — best-effort, so a
-            # recording failure can't change the existing fail/retry behaviour. The
-            # phase is the one tagged inward (e.g. provider) or the job kind's.
-            await self._recorder.record(
-                exc,
-                phase=phase_of(exc, default=phase_for_job_kind(claimed.kind)),
-                project_id=claimed.project_id,
-                component=f"job:{claimed.kind.value}",
-            )
-            await self._finalize_failure(claimed, type(exc).__name__)
-            logger.error(
-                "jobs.failed",
-                extra={"job_id": str(claimed.id), "error_type": type(exc).__name__},
-            )
-            return
-        async with self._sm() as session:
-            await JobQueue(session).mark_succeeded(
-                claimed.id, run_id=run_id, summary=summary
-            )
-            await session.commit()
+        finally:
+            if token is not None:
+                reset_emitter(token)
 
     async def _finalize_failure(self, claimed: ClaimedJob, detail: str) -> None:
         async with self._sm() as session:
