@@ -83,7 +83,15 @@ function renderRoute(pathname: string): ReactElement {
 
   if (segments[0] === "help" && segments.length === 1) return <HelpCenterPage />;
 
-  if (segments[0] === "status") return <SystemStatusPage />;
+  if (segments[0] === "status") {
+    // In-shell the status page carried no page gutters (it rendered flush to the
+    // top bar and sidebar); give it the same balanced container the other screens use.
+    return (
+      <main className="mx-auto max-w-[860px] px-6 py-8">
+        <SystemStatusPage />
+      </main>
+    );
+  }
 
   return <NotFoundPage />;
 }

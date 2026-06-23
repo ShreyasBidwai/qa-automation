@@ -31,7 +31,7 @@ export function ProjectsListPage() {
   const list = usePagedList(fetchPage, { pageSize: PAGE_SIZE, resetKey: "projects" });
 
   return (
-    <div className="mx-auto max-w-[1080px] px-7 py-8">
+    <div className="mx-auto max-w-[1400px] px-6 py-8">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           <span className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg border-[1.5px] border-marker">

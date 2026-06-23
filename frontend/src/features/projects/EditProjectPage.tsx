@@ -18,7 +18,7 @@ export function EditProjectPage({ projectId }: { projectId: string }) {
   const { project, loading, error } = useProject(projectId);
 
   return (
-    <div className="mx-auto max-w-[640px] px-7 py-10">
+    <div className="mx-auto max-w-[760px] px-6 py-10">
       <Link
         to={`/projects/${projectId}`}
         className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"

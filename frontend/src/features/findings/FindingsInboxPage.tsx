@@ -1,12 +1,12 @@
 import { AlertTriangle, CheckCircle2, Inbox, MousePointerClick } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Link } from "@/components/Link";
 import { Pagination } from "@/components/Pagination";
 import { SkeletonRows } from "@/components/Skeleton";
 import { StatePanel } from "@/components/StatePanel";
 import { Button } from "@/components/ui/button";
-import { findingApi } from "@/lib/api/client";
+import { findingApi, projectApi } from "@/lib/api/client";
 import type { Finding } from "@/lib/api/types";
 import { usePagedList } from "@/lib/usePagedList";
 
@@ -40,6 +40,20 @@ export function FindingsInboxPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Reflect a triage change locally so the row + panel update without a refetch.
   const [overrides, setOverrides] = useState<Record<string, Finding>>({});
+  // Project-filter options — the projects the user can see. Best-effort: if this
+  // fails (or there are none) the Project pill simply doesn't appear; the inbox
+  // still works. Bounded to 100 to match the list endpoint's page cap.
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void projectApi.list({ limit: 100, offset: 0 }).then((result) => {
+      if (cancelled || !result.ok || !result.data) return;
+      setProjects(result.data.items.map((p) => ({ id: p.id, name: p.name })));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const items = useMemo(
     () => list.items.map((finding) => overrides[finding.id] ?? finding),
@@ -106,7 +120,11 @@ export function FindingsInboxPage() {
           >
             <div className="flex-none border-b border-border-subtle px-[18px] py-3">
               <div className="flex items-center justify-between gap-3">
-                <FindingFilterBar filters={filters} onChange={setFilters} />
+                <FindingFilterBar
+                  filters={filters}
+                  onChange={setFilters}
+                  projects={projects}
+                />
                 <span className="shrink-0 font-mono text-[11px] text-status-neutral-solid">
                   {visible.length} shown
                 </span>

@@ -5,16 +5,30 @@ import { ALL, type FindingFilters } from "./findingFilters";
  * "hide muted" toggle — the exact control used by the run dashboard and the
  * findings inbox, so the two screens filter identically (Polaris *.dc.html). A
  * filter as a pill-styled native select; it shows the filter name until set.
+ *
+ * `projects` is the cross-project inbox's extra lens: pass the projects the user
+ * can see and a leading Project pill appears. The run dashboard omits it (a single
+ * run is one project), so the pill is hidden there.
  */
 export function FindingFilterBar({
   filters,
   onChange,
+  projects,
 }: {
   filters: FindingFilters;
   onChange: (next: FindingFilters) => void;
+  projects?: { id: string; name: string }[];
 }) {
   return (
     <div className="flex flex-wrap items-center gap-[7px]">
+      {projects && projects.length > 0 ? (
+        <FilterPill
+          name="Project"
+          value={filters.project}
+          onChange={(v) => onChange({ ...filters, project: v })}
+          options={projects.map((p): [string, string] => [p.id, p.name])}
+        />
+      ) : null}
       <FilterPill
         name="Severity"
         value={filters.severity}

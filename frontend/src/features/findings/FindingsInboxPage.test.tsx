@@ -4,9 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/api/client", () => ({
   findingApi: { listOpen: vi.fn() },
   runApi: { triage: vi.fn() },
+  projectApi: { list: vi.fn() },
 }));
 
-import { findingApi } from "@/lib/api/client";
+import { findingApi, projectApi } from "@/lib/api/client";
 import type { Finding } from "@/lib/api/types";
 
 import { FindingsInboxPage } from "./FindingsInboxPage";
@@ -44,12 +45,38 @@ function openPage(items: Finding[], total: number) {
   return { ok: true, status: 200, data: { items, total, limit: 25, offset: 0 } };
 }
 
+function projectItem(id: string, name: string) {
+  return {
+    id,
+    name,
+    slug: name.toLowerCase().replace(/\s+/g, "-"),
+    repo_url: "https://example.test/repo",
+    app_url: null,
+    created_at: "2026-01-01T00:00:00Z",
+  };
+}
+
+function projectsPage(...projects: ReturnType<typeof projectItem>[]) {
+  return {
+    ok: true,
+    status: 200,
+    data: { items: projects, total: projects.length, limit: 100, offset: 0 },
+  };
+}
+
 // The list (master) and the detail panel both render finding titles, so queries
 // are scoped to a region to keep them unambiguous.
 const listRegion = () => screen.findByRole("region", { name: "Findings" });
 
 describe("FindingsInboxPage", () => {
-  beforeEach(() => vi.mocked(findingApi.listOpen).mockReset());
+  beforeEach(() => {
+    vi.mocked(findingApi.listOpen).mockReset();
+    vi.mocked(projectApi.list).mockReset();
+    // The inbox loads the project-filter options on mount; default to two projects.
+    vi.mocked(projectApi.list).mockResolvedValue(
+      projectsPage(projectItem("p1", "Acme Billing"), projectItem("p2", "Storefront")),
+    );
+  });
 
   it("lists open findings across projects with trust marks + badges", async () => {
     vi.mocked(findingApi.listOpen).mockResolvedValue(
@@ -104,6 +131,30 @@ describe("FindingsInboxPage", () => {
 
     expect(within(list).getByText("Critical one")).toBeInTheDocument();
     expect(within(list).queryByText("Minor one")).toBeNull();
+  });
+
+  it("filters the list by project (options from the projects the user can see)", async () => {
+    vi.mocked(findingApi.listOpen).mockResolvedValue(
+      openPage(
+        [
+          finding({ id: "a", title: "Acme issue", project_id: "p1" }),
+          finding({ id: "b", title: "Storefront issue", project_id: "p2" }),
+        ],
+        2,
+      ),
+    );
+
+    render(<FindingsInboxPage />);
+    const list = await listRegion();
+
+    // The Project pill appears once projectApi.list resolves; its options carry the
+    // project names, and selecting one narrows the list by finding.project_id.
+    const projectPill = await within(list).findByLabelText("Project");
+    expect(within(projectPill).getByText("Acme Billing")).toBeInTheDocument();
+    fireEvent.change(projectPill, { target: { value: "p1" } });
+
+    expect(within(list).getByText("Acme issue")).toBeInTheDocument();
+    expect(within(list).queryByText("Storefront issue")).toBeNull();
   });
 
   it("shows the selected finding's detail panel inline (the shared FindingDetail)", async () => {

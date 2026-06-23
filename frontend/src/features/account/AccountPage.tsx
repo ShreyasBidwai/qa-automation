@@ -54,7 +54,7 @@ export function AccountPage() {
   const [tab, setTab] = useState<Tab>("profile");
 
   return (
-    <div className="mx-auto max-w-[720px] px-7 py-8">
+    <div className="mx-auto max-w-[960px] px-6 py-8">
       <h1 className="mb-5 text-[20px] font-semibold tracking-[-0.01em] text-foreground">
         Account
       </h1>
