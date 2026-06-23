@@ -48,6 +48,18 @@ export function formatCount(value: number | null): string {
   return value === null ? "—" : String(value);
 }
 
+/**
+ * Pass-rate colour tone, shared across the run dashboard, project overview/list,
+ * and runs list (Polaris *.dc.html: ≥90 green, ≥70 amber, else red). `pct` is a
+ * whole-number percent. Returns a text class (for the number) and a fill class
+ * (for a progress bar).
+ */
+export function passTone(pct: number): { text: string; fill: string } {
+  if (pct >= 90) return { text: "text-status-pass-fg", fill: "bg-status-pass-solid" };
+  if (pct >= 70) return { text: "text-status-flaky-fg", fill: "bg-status-flaky-solid" };
+  return { text: "text-status-fail-fg", fill: "bg-status-fail-solid" };
+}
+
 export interface PassRateDelta {
   points: number; // whole percentage points vs the prior run
   direction: "up" | "down" | "flat";

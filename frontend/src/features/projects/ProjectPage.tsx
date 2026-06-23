@@ -12,16 +12,10 @@ import { cn } from "@/lib/utils";
 
 import { severityCounts } from "../runs/findingStats";
 import { modeLabel } from "../runs/modeLabel";
+import { passTone } from "../runs/runMetrics";
 import { runRowStatusDescriptor, runStatusDescriptor } from "../runs/runStatus";
 import { useIngest } from "./useIngest";
 import { useProjectOverview } from "./useProjectOverview";
-
-/** Pass-rate tone (Polaris Projects.dc.html: ≥90 green, ≥70 amber, else red). */
-function passTone(pct: number) {
-  if (pct >= 90) return { text: "text-status-pass-fg", fill: "bg-status-pass-solid" };
-  if (pct >= 70) return { text: "text-status-flaky-fg", fill: "bg-status-flaky-solid" };
-  return { text: "text-status-fail-fg", fill: "bg-status-fail-solid" };
-}
 
 /** The project landing page (#3a): config, a health summary, and recent runs. */
 export function ProjectPage({ projectId }: { projectId: string }) {

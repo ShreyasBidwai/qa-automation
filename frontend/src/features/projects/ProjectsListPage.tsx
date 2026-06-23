@@ -8,14 +8,18 @@ import { StatePanel } from "@/components/StatePanel";
 import { Button } from "@/components/ui/button";
 import type { ProjectListItem } from "@/lib/api/types";
 import { projectApi } from "@/lib/api/client";
+import { relativeTime } from "@/lib/time";
+import { cn } from "@/lib/utils";
 import { usePagedList } from "@/lib/usePagedList";
+
+import { passTone } from "../runs/runMetrics";
+import { projectStatusViz } from "./projectStatus";
 
 const PAGE_SIZE = 20;
 
-// The file's table is 5 columns. The list endpoint (ProjectListItem) only carries
-// the project identity today — stack / last-run / open-findings / status are a
-// separate in-flight enrichment, so those columns render an honest "—" and slot
-// in cleanly once the enriched payload lands (never fabricated, never N+1).
+// The file's 5-column table, bound to the read-time summary the list endpoint now
+// returns (ADR-0045): stack, last-run, open-findings count, status. A project with
+// no runs shows the honest never-run treatment, not a fabricated value.
 const COLS = "grid-cols-[2.4fr_1fr_1.3fr_1.5fr_1fr]";
 
 /** Projects list (#2): every codebase under test, newest first (GET /projects). */
@@ -116,6 +120,12 @@ function ColHead({ children }: { children: ReactNode }) {
 }
 
 function ProjectRow({ project }: { project: ProjectListItem }) {
+  const status = projectStatusViz(project.status);
+  const lastRun = project.last_run ?? null;
+  const pct =
+    lastRun && lastRun.pass_rate !== null ? Math.round(lastRun.pass_rate * 100) : null;
+  const openCount = project.open_findings_count ?? 0;
+
   return (
     <Link
       to={`/projects/${project.id}`}
@@ -128,15 +138,63 @@ function ProjectRow({ project }: { project: ProjectListItem }) {
           {project.repo_url}
         </div>
       </div>
-      {/* Pending the list-enrichment endpoint (stack / last-run / findings / status). */}
-      <PendingCell />
-      <PendingCell />
-      <PendingCell />
-      <PendingCell />
+
+      <div>
+        {project.stack ? (
+          <span className="rounded-[5px] border border-border bg-status-neutral-bg px-[7px] py-0.5 font-mono text-[11px] font-medium text-status-neutral-fg">
+            {project.stack}
+          </span>
+        ) : (
+          <span className="text-sm text-marker">—</span>
+        )}
+      </div>
+
+      <div>
+        {lastRun ? (
+          <>
+            <span
+              className={cn(
+                "text-[13px] font-semibold tabular-nums",
+                pct === null ? "text-muted-foreground" : passTone(pct).text,
+              )}
+            >
+              {pct === null ? "—" : `${pct}%`}
+            </span>
+            <div className="mt-0.5 text-[12px] text-status-neutral-solid">
+              {relativeTime(lastRun.finished_at ?? lastRun.created_at)}
+            </div>
+          </>
+        ) : (
+          <span className="text-sm text-marker">No runs yet</span>
+        )}
+      </div>
+
+      <div>
+        <span
+          className={cn(
+            "text-sm font-semibold tabular-nums",
+            openCount > 0 ? "text-foreground" : "text-marker",
+          )}
+        >
+          {openCount}
+        </span>
+      </div>
+
+      <div>
+        <span
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium",
+            status.bg,
+            status.text,
+          )}
+        >
+          <span
+            className={cn("h-[6px] w-[6px] rounded-full", status.dot)}
+            aria-hidden="true"
+          />
+          {status.label}
+        </span>
+      </div>
     </Link>
   );
-}
-
-function PendingCell() {
-  return <span className="text-sm text-marker">—</span>;
 }

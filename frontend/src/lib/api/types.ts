@@ -214,6 +214,16 @@ export interface OpenFindingsResponse {
 
 // --- list endpoints ---------------------------------------------------------
 
+/** A project's most-recent run, compactly (for the projects list). */
+export interface LastRunSummary {
+  run_id: string;
+  mode: string;
+  status: string;
+  pass_rate: number | null;
+  finished_at: string | null; // null while running / never finished
+  created_at: string;
+}
+
 export interface ProjectListItem {
   id: string;
   name: string;
@@ -221,6 +231,13 @@ export interface ProjectListItem {
   repo_url: string;
   app_url: string | null;
   created_at: string;
+  // Widened read-time summary (ADR-0045). Optional so an older/partial payload
+  // still type-checks and degrades to the honest never-run treatment.
+  stack?: string | null;
+  /** Overall: never_run | errored | action_needed | passing. */
+  status?: string;
+  open_findings_count?: number;
+  last_run?: LastRunSummary | null;
 }
 
 export interface ProjectListResponse {

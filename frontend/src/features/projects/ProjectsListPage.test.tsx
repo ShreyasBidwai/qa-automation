@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api/client", () => ({ projectApi: { list: vi.fn() } }));
@@ -40,6 +40,45 @@ describe("ProjectsListPage", () => {
     expect(await screen.findByText("Alpha")).toBeInTheDocument();
     expect(screen.getByText("Beta")).toBeInTheDocument();
     expect(projectApi.list).toHaveBeenCalledWith({ limit: 20, offset: 0 });
+  });
+
+  it("renders the enriched summary columns and the honest never-run treatment", async () => {
+    vi.mocked(projectApi.list).mockResolvedValue(
+      page(
+        [
+          project({
+            id: "a",
+            name: "Acme Billing API",
+            stack: "Laravel",
+            status: "action_needed",
+            open_findings_count: 12,
+            last_run: {
+              run_id: "run1",
+              mode: "B",
+              status: "failed",
+              pass_rate: 0.78,
+              finished_at: "2026-06-22T11:00:00Z",
+              created_at: "2026-06-22T11:00:00Z",
+            },
+          }),
+          project({ id: "b", name: "Fresh Project" }), // no runs → never_run defaults
+        ],
+        2,
+      ),
+    );
+
+    render(<ProjectsListPage />);
+
+    const rowA = (await screen.findByText("Acme Billing API")).closest("a")!;
+    expect(within(rowA).getByText("Laravel")).toBeInTheDocument();
+    expect(within(rowA).getByText("78%")).toBeInTheDocument();
+    expect(within(rowA).getByText("12")).toBeInTheDocument();
+    expect(within(rowA).getByText("Action needed")).toBeInTheDocument();
+
+    // A project with no runs is honest, not fabricated.
+    const rowB = screen.getByText("Fresh Project").closest("a")!;
+    expect(within(rowB).getByText("No runs yet")).toBeInTheDocument();
+    expect(within(rowB).getByText("Never run")).toBeInTheDocument();
   });
 
   it("renders the empty state when there are no projects", async () => {
