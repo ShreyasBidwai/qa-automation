@@ -9,6 +9,7 @@ import { SignInPage } from "@/features/auth/SignInPage";
 import { SignUpPage } from "@/features/auth/SignUpPage";
 import { AccountPage } from "@/features/account/AccountPage";
 import { FindingsInboxPage } from "@/features/findings/FindingsInboxPage";
+import { SingleFindingPage } from "@/features/findings/SingleFindingPage";
 import { HelpCenterPage } from "@/features/help/HelpCenterPage";
 import { PlaceholderPage } from "@/features/placeholders/PlaceholderPage";
 import { CreateProjectPage } from "@/features/projects/CreateProjectPage";
@@ -66,6 +67,10 @@ function renderRoute(pathname: string): ReactElement {
 
   if (segments[0] === "findings" && segments.length === 1) {
     return <FindingsInboxPage />;
+  }
+
+  if (segments[0] === "findings" && segments.length === 2) {
+    return <SingleFindingPage findingId={segments[1]} />;
   }
 
   if (segments[0] === "account" && segments.length === 1) {

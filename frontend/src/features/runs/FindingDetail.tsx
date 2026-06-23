@@ -1,6 +1,7 @@
-import { X } from "lucide-react";
+import { ArrowUpRight, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
+import { Link } from "@/components/Link";
 import { Button } from "@/components/ui/button";
 import { TrustMark } from "@/components/ui/TrustMark";
 import { runApi } from "@/lib/api/client";
@@ -70,6 +71,17 @@ export function FindingDetail({
             explains {finding.explains_count}{" "}
             {finding.explains_count === 1 ? "test" : "tests"}
           </p>
+          {/* Open the same finding as a full-screen, structured bug report. The run
+           *  travels along so the dedicated view resolves it exactly. */}
+          <Link
+            to={`/findings/${finding.id}${
+              finding.run_id ? `?run=${finding.run_id}` : ""
+            }`}
+            className="mt-2.5 inline-flex items-center gap-1 text-[12.5px] font-medium text-accent hover:underline"
+          >
+            Open full view
+            <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </Link>
         </div>
         {onClose ? (
           <div className="flex shrink-0 items-center gap-2">
