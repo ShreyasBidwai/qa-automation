@@ -16,6 +16,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.types import AIProvider
+from app.db_state.run_phase import DbStateRunPhase, EngineTargetConnector
 from app.embeddings.types import EmbeddingProvider
 from app.execution.types import ExecutionRunner, TargetEnv
 from app.impact.selector import ChangeSet
@@ -84,6 +85,14 @@ class OrchestratorRunExecutor:
             target_env=self._target_env,
             resolver=resolver,
             generator=generator,
+            # DB-state phase (B11, ADR-0044): tier-gated per project (off → no-op),
+            # gate-enforced for writes. Asserts against the run's target DB by URL;
+            # off projects (the default) never reach the connector.
+            db_state=DbStateRunPhase(
+                session,
+                resolver=resolver,
+                connector=EngineTargetConnector(self._target_env.execution_db.url),
+            ),
         )
         report = await orchestrator.run(
             project_id=project_id,
