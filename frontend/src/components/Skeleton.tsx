@@ -1,5 +1,7 @@
 import { cn } from "@/lib/utils";
 
+import { LoadingFact } from "./LoadingFact";
+
 /**
  * A loading placeholder block. Calm, not a spinner (design brief: "calm skeletons
  * or a quiet indicator, never a jarring spinner"). The shimmer is disabled under
@@ -33,9 +35,10 @@ export function SkeletonRows({ rows = 6, label }: { rows?: number; label?: strin
           </div>
         ))}
       </div>
-      {label ? (
-        <p className="mt-4 text-center text-xs text-muted-foreground">{label}</p>
-      ) : null}
+      <div className="mt-4 flex flex-col items-center gap-1.5">
+        {label ? <p className="text-xs text-muted-foreground">{label}</p> : null}
+        <LoadingFact />
+      </div>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
+import { LoadingFact } from "@/components/LoadingFact";
 import { StatePanel } from "@/components/StatePanel";
 import { Button } from "@/components/ui/button";
 import type { Finding } from "@/lib/api/types";
@@ -457,7 +458,10 @@ function LoadingState() {
           />
         ))}
       </div>
-      <p className="text-sm text-muted-foreground">Loading run…</p>
+      <div className="flex flex-col items-center gap-1.5 pt-1">
+        <p className="text-sm text-muted-foreground">Loading run…</p>
+        <LoadingFact />
+      </div>
     </div>
   );
 }
