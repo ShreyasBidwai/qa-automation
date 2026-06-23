@@ -56,4 +56,5 @@ def build_finding_response(
         history=FindingHistory.model_validate(detail.history),
         evidence_ref=finding.evidence_ref,
         triage=triage_info(triage),
+        created_at=finding.created_at,
     )

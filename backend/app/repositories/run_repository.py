@@ -5,8 +5,9 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, update
 
+from app.models.project import Project
 from app.models.run import Run
 
 from .base import ProjectScopedRepository
@@ -14,6 +15,28 @@ from .base import ProjectScopedRepository
 
 class RunRepository(ProjectScopedRepository[Run]):
     model = Run
+
+    async def next_run_number(self, project_id: uuid.UUID) -> int:
+        """Atomically claim the next friendly run number for ``project_id`` (ADR-0048).
+
+        ``UPDATE ... RETURNING`` increments the project's counter under a row lock, so
+        two concurrent run creations always get distinct numbers (the
+        ``(project_id, run_number)`` unique index is the backstop). The increment is
+        part of the run's transaction — a run that rolls back frees its number, so
+        failures leave no gap. Raises if the project does not exist.
+        """
+        stmt = (
+            update(Project)
+            .where(Project.id == project_id)
+            .values(run_counter=Project.run_counter + 1)
+            .returning(Project.run_counter)
+        )
+        number = await self.session.scalar(stmt)
+        if number is None:
+            raise ValueError(
+                f"project {project_id} not found for run-number assignment"
+            )
+        return int(number)
 
     async def latest_run_per_project(
         self, project_ids: Sequence[uuid.UUID]

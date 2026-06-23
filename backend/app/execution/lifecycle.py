@@ -55,9 +55,13 @@ class RunLifecycle:
         run_repo = RunRepository(session)
         result_repo = ResultRepository(session)
 
+        # Claim the friendly per-project run number atomically (ADR-0048) before the
+        # run row is created, so every run carries a stable "#N".
+        run_number = await run_repo.next_run_number(project_id)
         run = await run_repo.add(
             Run(
                 project_id=project_id,
+                run_number=run_number,
                 trigger=trigger,
                 mode=mode,
                 commit_sha=commit_sha,

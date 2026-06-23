@@ -19,6 +19,7 @@ from app.models.job import Job
 from app.models.user import User
 from app.reporting import FindingDetailReader, rank_findings
 from app.reporting.heal_reconciliation import superseded_finding_ids
+from app.reporting.open_findings import OpenFindingsReader
 from app.reporting.project_summary import pass_rate
 from app.repositories.finding_repository import FindingRepository
 from app.repositories.finding_triage_repository import FindingTriageRepository
@@ -39,6 +40,7 @@ from .schemas import (
     RunListResponse,
     RunResponse,
     RunStatusResponse,
+    SeverityBreakdown,
     TriagePatch,
 )
 
@@ -112,16 +114,22 @@ async def list_project_runs(
     await authorize_project(session, project_id, current_user, Permission.VIEW)
     run_repo = RunRepository(session)
     runs = await run_repo.list_for_project(project_id, limit=limit, offset=offset)
+    run_ids = [run.id for run in runs]
     counts = await ResultRepository(session).outcome_counts_for_runs(
-        project_id, [run.id for run in runs]
+        project_id, run_ids
     )
+    # Per-run open-findings severity breakdown — one batched, reused query (ADR-0048).
+    severity = await OpenFindingsReader(session).severity_counts_by_run(run_ids)
     items = [
         RunListItem(
             id=run.id,
+            run_number=run.run_number,
             mode=run.mode.value,
             status=run.status,
             created_at=run.created_at,
+            finished_at=run.finished_at,
             pass_rate=pass_rate(counts.get(run.id)),
+            severity_breakdown=SeverityBreakdown(**severity.get(run.id, {})),
         )
         for run in runs
     ]
@@ -145,11 +153,21 @@ async def get_run(
         user=current_user,
         permission=Permission.VIEW,
     )
+    # The run row carries the friendly number + timestamps (null until it exists —
+    # a queued job or a mode-c authoring run produces no run). ADR-0048.
+    run = (
+        await RunRepository(session).get(job.project_id, job.run_id)
+        if job.run_id is not None
+        else None
+    )
     return RunStatusResponse(
         run_id=job.id,
         mode=job.mode or "",
         status=job.status.value,
         summary=job.summary,
+        run_number=run.run_number if run is not None else None,
+        created_at=run.created_at if run is not None else None,
+        finished_at=run.finished_at if run is not None else None,
     )
 
 
