@@ -18,6 +18,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.incidents import IncidentRecorder, phase_for_job_kind, phase_of
 from app.models.enums import JobKind
 from app.services.job_queue import ClaimedJob, JobQueue
 
@@ -37,11 +38,15 @@ class JobWorker:
         *,
         worker_id: str = "worker",
         backoff_base_seconds: float = 2.0,
+        incident_recorder: IncidentRecorder | None = None,
     ) -> None:
         self._sm = sessionmaker
         self._handlers = handlers
         self._worker_id = worker_id
         self._backoff = backoff_base_seconds
+        # The universal capture seam: every autonomous failure surfaces here. Records
+        # in a fresh session (best-effort) so it survives the job's own rollback.
+        self._recorder = incident_recorder or IncidentRecorder(sessionmaker)
 
     async def process_job(self, job_id: uuid.UUID) -> bool:
         """Process one specific job (the API dispatch hint). False if not claimable."""
@@ -89,6 +94,15 @@ class JobWorker:
                 run_id, summary = await handler(session, claimed)
                 await session.commit()
         except Exception as exc:  # task boundary: record + retry, never die silently
+            # Capture a structured incident BEFORE finalizing — best-effort, so a
+            # recording failure can't change the existing fail/retry behaviour. The
+            # phase is the one tagged inward (e.g. provider) or the job kind's.
+            await self._recorder.record(
+                exc,
+                phase=phase_of(exc, default=phase_for_job_kind(claimed.kind)),
+                project_id=claimed.project_id,
+                component=f"job:{claimed.kind.value}",
+            )
             await self._finalize_failure(claimed, type(exc).__name__)
             logger.error(
                 "jobs.failed",

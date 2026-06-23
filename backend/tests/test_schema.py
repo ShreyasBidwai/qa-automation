@@ -29,6 +29,7 @@ EXPECTED_TABLES = {
     "document_chunks",
     "spec_divergences",
     "test_heals",
+    "incidents",
 }
 EXPECTED_ENUMS = {
     "test_type",
@@ -58,7 +59,7 @@ async def test_migration_at_head(db_session: AsyncSession) -> None:
     revision = (
         await db_session.execute(text("SELECT version_num FROM alembic_version"))
     ).scalar_one()
-    assert revision == "0025_db_state_tier"
+    assert revision == "0026_incidents"
 
 
 async def test_projects_has_app_url_and_soft_delete_columns(

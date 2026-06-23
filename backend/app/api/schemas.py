@@ -260,6 +260,36 @@ class JobListResponse(BaseModel):
     total: int
 
 
+# --- internal incidents (dev-suite slice 1, ADR-0047) -----------------------
+
+
+class IncidentListItem(BaseModel):
+    """One captured internal failure (operator diagnostic; no traceback here)."""
+
+    id: uuid.UUID
+    created_at: datetime
+    phase: str
+    component: str | None = None
+    project_id: uuid.UUID | None = None
+    run_id: uuid.UUID | None = None
+    exception_type: str
+    message: str
+    fingerprint: str  # the same failure groups under one fingerprint
+
+
+class IncidentListResponse(BaseModel):
+    items: list[IncidentListItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class IncidentDetailResponse(IncidentListItem):
+    """The full incident, including the captured traceback."""
+
+    traceback: str | None = None
+
+
 class IngestResponse(BaseModel):
     job_id: uuid.UUID
     status: str
