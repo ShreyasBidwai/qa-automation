@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.factory import build_ai_provider
 from app.core.config import Settings
 from app.embeddings.factory import build_embedding_provider
+from app.incidents import capturing_ai_provider, capturing_embedding_provider
 from app.models.enums import (
     AuthoredBy,
     FindingLayer,
@@ -199,12 +200,15 @@ def build_run_executor(settings: Settings) -> RunExecutor:
             target_env=build_target_env(settings),
             # Session-scoped: built per run from the job's session.
             resolver_factory=CrossLayerResolver,
+            # The generator is where provider calls actually happen during a run;
+            # wrap them so a provider failure is tagged + captured as `provider`
+            # (ADR-0047). The executor's own _ai/_embed stay the raw composed types.
             target_generator_factory=lambda session: OrchestratorTargetGenerator(
                 session,
-                ai_provider=ai_provider,
+                ai_provider=capturing_ai_provider(ai_provider),
                 budget_tokens=budget,
                 factories_available=factories,
-                embedding_provider=embedding_provider,
+                embedding_provider=capturing_embedding_provider(embedding_provider),
             ),
             ai_provider=ai_provider,
             embedding_provider=embedding_provider,
@@ -228,7 +232,9 @@ def build_ingestor(settings: Settings) -> Ingestor:
 
         return LaravelIngestorAdapter(
             repo_path=settings.target_repo_path,
-            embedding_provider=build_embedding_provider(settings),
+            embedding_provider=capturing_embedding_provider(
+                build_embedding_provider(settings)
+            ),
         )
     raise ApiConfigError(
         f"unknown ingestor_mode {settings.ingestor_mode!r} "

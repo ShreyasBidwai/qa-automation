@@ -11,6 +11,7 @@ from .document_chunk import DocumentChunk
 from .finding import Finding
 from .finding_result import FindingResult
 from .finding_triage import FindingTriage
+from .incident import Incident
 from .job import Job
 from .model_edge import ModelEdge
 from .model_node import ModelNode
@@ -54,4 +55,5 @@ __all__ = [
     "DocumentChunk",
     "SpecDivergence",
     "TestHeal",
+    "Incident",
 ]
