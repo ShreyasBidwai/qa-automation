@@ -2,11 +2,9 @@ import { AlertTriangle } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { Link } from "@/components/Link";
-import { PageHeader } from "@/components/PageHeader";
 import { Skeleton } from "@/components/Skeleton";
 import { StatePanel } from "@/components/StatePanel";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { projectApi } from "@/lib/api/client";
@@ -14,41 +12,48 @@ import { navigate } from "@/lib/router";
 
 import { useProject } from "./useProject";
 
-/** Edit a project's settings (#3b), with a quiet danger zone to delete it. */
+/** Project settings (#3b): a PATCH-backed edit form + a confirmed delete. */
 export function EditProjectPage({ projectId }: { projectId: string }) {
   const { project, loading, error } = useProject(projectId);
 
   return (
-    <>
-      <PageHeader
-        eyebrow={
-          <Link to={`/projects/${projectId}`}>{project?.name ?? "Project"}</Link>
-        }
-        title="Edit project"
-      />
-      <main className="flex-1 px-6 py-8">
-        {loading ? (
-          <Skeleton className="h-80 max-w-xl rounded-xl" />
-        ) : error || !project ? (
-          <StatePanel
-            icon={AlertTriangle}
-            tone="danger"
-            title="Couldn't load this project"
-            description="It may have been removed, or the service is briefly unavailable."
-            actions={
-              <Button asChild>
-                <Link to="/projects">Back to projects</Link>
-              </Button>
-            }
-          />
-        ) : (
-          <div className="max-w-xl space-y-6">
-            <EditForm key={project.id} projectId={projectId} project={project} />
-            <DangerZone projectId={projectId} name={project.name} />
-          </div>
-        )}
-      </main>
-    </>
+    <div className="mx-auto max-w-[640px] px-7 py-10">
+      <Link
+        to={`/projects/${projectId}`}
+        className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
+      >
+        ← {project?.name ?? "Project"}
+      </Link>
+      <div className="mb-7 mt-3">
+        <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-foreground">
+          Project settings
+        </h1>
+        {project ? (
+          <p className="mt-1.5 text-[13px] text-muted-foreground">{project.name}</p>
+        ) : null}
+      </div>
+
+      {loading ? (
+        <Skeleton className="h-80 rounded-xl" />
+      ) : error || !project ? (
+        <StatePanel
+          icon={AlertTriangle}
+          tone="danger"
+          title="Couldn't load this project"
+          description="It may have been removed, or the service is briefly unavailable."
+          actions={
+            <Button asChild>
+              <Link to="/projects">Back to projects</Link>
+            </Button>
+          }
+        />
+      ) : (
+        <div className="space-y-7">
+          <EditForm key={project.id} projectId={projectId} project={project} />
+          <DangerZone projectId={projectId} name={project.name} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -96,63 +101,58 @@ function EditForm({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Settings</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={onSubmit} noValidate className="space-y-5">
-          <Field id="name" label="Project name" value={name} onChange={setName} />
-          <Field
-            id="repo_url"
-            label="Repository URL"
-            value={repoUrl}
-            onChange={setRepoUrl}
-            mono
-          />
-          <Field
-            id="app_url"
-            label="App URL"
-            hint="The running app to test against. Optional."
-            value={appUrl}
-            onChange={setAppUrl}
-            mono
-          />
-          <Field
-            id="stack"
-            label="Stack"
-            hint="Auto-detected from the repo. Override if needed."
-            value={stack}
-            onChange={setStack}
-            placeholder="Laravel"
-          />
+    <form onSubmit={onSubmit} noValidate>
+      <div className="space-y-5 rounded-xl border border-border bg-surface p-6 shadow-card">
+        <Field id="name" label="Project name" value={name} onChange={setName} />
+        <Field
+          id="repo_url"
+          label="Repository URL"
+          value={repoUrl}
+          onChange={setRepoUrl}
+          mono
+        />
+        <Field
+          id="app_url"
+          label="App URL"
+          hint="The running app to test against. Optional."
+          value={appUrl}
+          onChange={setAppUrl}
+          mono
+        />
+        <Field
+          id="stack"
+          label="Stack"
+          hint="Auto-detected from the repo. Override if needed."
+          value={stack}
+          onChange={setStack}
+          placeholder="Laravel"
+        />
 
-          {error ? (
-            <p role="alert" className="text-sm text-status-fail-fg">
-              {error}
-            </p>
-          ) : null}
-          {saved ? (
-            <p role="status" className="text-sm text-status-pass-fg">
-              Changes saved.
-            </p>
-          ) : null}
+        {error ? (
+          <p role="alert" className="text-sm text-status-fail-fg">
+            {error}
+          </p>
+        ) : null}
+        {saved ? (
+          <p role="status" className="text-sm text-status-pass-fg">
+            Changes saved.
+          </p>
+        ) : null}
+      </div>
 
-          <div className="flex items-center gap-3 pt-1">
-            <Button type="submit" disabled={saving}>
-              {saving ? "Saving…" : "Save changes"}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => navigate(`/projects/${projectId}`)}
-            >
-              Cancel
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+      <div className="mt-5 flex items-center justify-end gap-2.5">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => navigate(`/projects/${projectId}`)}
+        >
+          Cancel
+        </Button>
+        <Button type="submit" disabled={saving}>
+          {saving ? "Saving…" : "Save changes"}
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -174,55 +174,57 @@ function DangerZone({ projectId, name }: { projectId: string; name: string }) {
   }
 
   return (
-    <Card className="border-status-fail-solid/40">
-      <CardHeader>
-        <CardTitle className="text-status-fail-fg">Danger zone</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-sm text-muted-foreground">
-          Delete <span className="font-medium text-foreground">{name}</span>. Its runs
-          and findings are hidden from Polaris; this can&rsquo;t be undone here.
-        </p>
+    <div className="rounded-xl border border-status-fail-border bg-status-fail-bg px-[22px] py-5">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="min-w-0">
+          <h3 className="text-[13px] font-semibold text-status-fail-fg">
+            Delete project
+          </h3>
+          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+            Removes <span className="font-medium text-foreground">{name}</span>, its
+            runs, and all findings. This cannot be undone.
+          </p>
+        </div>
         {confirming ? (
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-none flex-wrap items-center gap-2.5">
             <span className="text-sm font-medium text-foreground">
               Delete this project?
             </span>
             <Button
               type="button"
               variant="outline"
-              className="border-status-fail-solid text-status-fail-fg hover:bg-status-fail-bg"
-              disabled={deleting}
-              onClick={remove}
-            >
-              {deleting ? "Deleting…" : "Yes, delete"}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
               disabled={deleting}
               onClick={() => setConfirming(false)}
             >
               Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              className="border-status-fail-solid bg-status-fail-solid hover:bg-status-fail-fg"
+              disabled={deleting}
+              onClick={remove}
+            >
+              {deleting ? "Deleting…" : "Yes, delete"}
             </Button>
           </div>
         ) : (
           <Button
             type="button"
             variant="outline"
-            className="border-status-fail-solid text-status-fail-fg hover:bg-status-fail-bg"
+            className="flex-none border-status-fail-border text-status-fail-fg hover:bg-status-fail-bg"
             onClick={() => setConfirming(true)}
           >
             Delete project
           </Button>
         )}
-        {error ? (
-          <p role="alert" className="text-sm text-status-fail-fg">
-            {error}
-          </p>
-        ) : null}
-      </CardContent>
-    </Card>
+      </div>
+      {error ? (
+        <p role="alert" className="mt-3 text-sm text-status-fail-fg">
+          {error}
+        </p>
+      ) : null}
+    </div>
   );
 }
 

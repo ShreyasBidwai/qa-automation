@@ -11,7 +11,7 @@ interface FieldErrors {
   repoUrl?: string;
 }
 
-/** Register a project: repo source + running app + auth config reference. */
+/** Register a project: repo source + running app + auth config reference (#3). */
 export function CreateProjectForm() {
   const [name, setName] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
@@ -55,63 +55,66 @@ export function CreateProjectForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate className="max-w-xl space-y-5">
-      <Field
-        id="name"
-        label="Project name"
-        value={name}
-        onChange={setName}
-        placeholder="Checkout service"
-        error={errors.name}
-      />
-      <Field
-        id="repo_url"
-        label="Repository URL"
-        value={repoUrl}
-        onChange={setRepoUrl}
-        placeholder="https://github.com/acme/checkout.git"
-        error={errors.repoUrl}
-        mono
-      />
-      <Field
-        id="app_url"
-        label="App URL"
-        hint="The running app to test against. Optional."
-        value={appUrl}
-        onChange={setAppUrl}
-        placeholder="https://staging.acme.com"
-        mono
-      />
-      <Field
-        id="stack"
-        label="Stack"
-        hint="Auto-detected from the repo. Override if needed. Optional."
-        value={stack}
-        onChange={setStack}
-        placeholder="Laravel"
-      />
-      <Field
-        id="auth_config_ref"
-        label="Auth config reference"
-        hint="A reference to stored credentials — never a secret. Optional."
-        value={authConfigRef}
-        onChange={setAuthConfigRef}
-        placeholder="vault://acme/checkout/test-user"
-        mono
-      />
+    <form onSubmit={onSubmit} noValidate>
+      <div className="space-y-5 rounded-xl border border-border bg-surface p-6 shadow-card">
+        <Field
+          id="name"
+          label="Project name"
+          value={name}
+          onChange={setName}
+          placeholder="Acme Billing API"
+          error={errors.name}
+        />
+        <Field
+          id="repo_url"
+          label="Repository URL"
+          hint="A Git URL or a local path Polaris can read."
+          value={repoUrl}
+          onChange={setRepoUrl}
+          placeholder="https://github.com/acme/billing.git"
+          error={errors.repoUrl}
+          mono
+        />
+        <Field
+          id="app_url"
+          label="App URL"
+          hint="The running app to test against. Optional."
+          value={appUrl}
+          onChange={setAppUrl}
+          placeholder="https://staging.acme.test"
+          mono
+        />
+        <Field
+          id="stack"
+          label="Stack"
+          hint="Auto-detected from the repo. Override if needed. Optional."
+          value={stack}
+          onChange={setStack}
+          placeholder="Laravel"
+        />
+        <Field
+          id="auth_config_ref"
+          label="Auth config reference"
+          hint="A reference to stored credentials — never a secret. Optional."
+          value={authConfigRef}
+          onChange={setAuthConfigRef}
+          placeholder="vault://acme/checkout/test-user"
+          mono
+        />
 
-      {submitError ? (
-        <p role="alert" className="text-sm text-status-fail-fg">
-          {submitError}
-        </p>
-      ) : null}
+        {submitError ? (
+          <p role="alert" className="text-sm text-status-fail-fg">
+            {submitError}
+          </p>
+        ) : null}
+      </div>
 
-      <div className="flex items-center gap-3 pt-1">
+      <div className="mt-5 flex items-center justify-end gap-2.5">
+        <Button type="button" variant="outline" onClick={() => navigate("/projects")}>
+          Cancel
+        </Button>
         <Button type="submit" disabled={submitting}>
           {submitting ? "Registering…" : "Register project"}
-        </Button>
-        <Button type="button" variant="ghost" onClick={() => navigate("/projects")}>
-          Cancel
         </Button>
       </div>
     </form>
