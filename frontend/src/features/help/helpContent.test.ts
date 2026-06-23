@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { HELP_SECTIONS } from "./helpContent";
 
 describe("HELP_SECTIONS", () => {
-  it("covers all 14 documented sections", () => {
-    expect(HELP_SECTIONS).toHaveLength(14);
+  it("covers all 15 documented sections", () => {
+    expect(HELP_SECTIONS).toHaveLength(15);
   });
 
   it("has unique, non-empty ids and titles", () => {

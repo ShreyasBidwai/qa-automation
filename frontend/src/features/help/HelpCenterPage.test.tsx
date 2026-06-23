@@ -38,7 +38,7 @@ describe("HelpCenterPage", () => {
 
     expect(nav.getByRole("button", { name: /Trust marks/ })).toBeInTheDocument();
     expect(nav.queryByRole("button", { name: /Findings/ })).not.toBeInTheDocument();
-    expect(screen.getByText("1 of 14 sections")).toBeInTheDocument();
+    expect(screen.getByText("1 of 15 sections")).toBeInTheDocument();
   });
 
   it("shows a helpful empty state when nothing matches", () => {

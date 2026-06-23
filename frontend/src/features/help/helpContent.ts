@@ -578,6 +578,65 @@ export const HELP_SECTIONS: HelpSection[] = [
     ],
   },
   {
+    id: "db-state-testing",
+    title: "Database-state testing",
+    summary:
+      "Let Polaris check your data layer directly — and the tier that controls how far it can go.",
+    keywords: [
+      "db-state",
+      "database state",
+      "data layer",
+      "tier",
+      "off",
+      "read only",
+      "read_only",
+      "full",
+      "write",
+      "select",
+      "sql",
+      "production",
+      "safety",
+    ],
+    body: [
+      {
+        kind: "text",
+        text: "Most checks watch your app from the outside — a page, an endpoint, a response. Database-state testing goes one level deeper: it asserts directly on the rows in your target’s database, so Polaris can confirm what actually got written, not just what the app reported. You turn it on per project, in Project settings, and choose how far it may go.",
+      },
+      {
+        kind: "definitions",
+        items: [
+          {
+            term: "Off",
+            definition:
+              "No database-state testing. This is the default — runs never touch the database directly.",
+          },
+          {
+            term: "Read-only",
+            definition:
+              "Polaris may read the database to make assertions (SELECT only). It never writes, so it is safe against any target.",
+          },
+          {
+            term: "Full (write-capable)",
+            definition:
+              "Polaris may also write to the database as part of a test — for example, to set up a row and check what happens. Powerful, but safe only against a throwaway environment.",
+          },
+        ],
+      },
+      {
+        kind: "text",
+        text: "Safety first: Full writes to the target database. Point it only at a disposable, non-production environment — never your real production data. Polaris also refuses write-tests against a target it recognises as production, but the first line of defence is you: keep Full aimed at staging or a scratch database.",
+      },
+      {
+        kind: "text",
+        text: "Anyone on the team can see the tier; changing it needs permission to manage the project, so owners, admins, and members can, and viewers can’t. Changing the tier only records your choice — it never writes anything by itself.",
+      },
+      {
+        kind: "example",
+        text: "Testing checkout against a staging copy you can wipe? Full lets Polaris insert an order and confirm the row landed correctly. Running against anything you can’t afford to change? Keep it on Read-only or Off.",
+      },
+    ],
+  },
+  {
     id: "team",
     title: "Your team",
     summary: "Invite people, and what each role can do.",

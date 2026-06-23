@@ -2,7 +2,13 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api/client", () => ({
-  projectApi: { get: vi.fn(), update: vi.fn(), remove: vi.fn() },
+  projectApi: {
+    get: vi.fn(),
+    update: vi.fn(),
+    remove: vi.fn(),
+    getDbStateTier: vi.fn(),
+    setDbStateTier: vi.fn(),
+  },
 }));
 vi.mock("@/lib/router", () => ({ navigate: vi.fn() }));
 
@@ -33,6 +39,12 @@ describe("EditProjectPage", () => {
       ok: true,
       status: 200,
       data: PROJECT,
+    });
+    vi.mocked(projectApi.getDbStateTier).mockReset();
+    vi.mocked(projectApi.getDbStateTier).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { project_id: "p1", tier: "off" },
     });
   });
 

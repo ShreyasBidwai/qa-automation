@@ -4,6 +4,8 @@ import type {
   AuthTokenResponse,
   AuthUser,
   ChangePasswordBody,
+  DbStateTierResponse,
+  DbStateTierUpdateBody,
   FieldError,
   Finding,
   FindingsResponse,
@@ -156,6 +158,14 @@ function postJson<T>(path: string, body: unknown): Promise<ApiResult<T>> {
   });
 }
 
+function putJson<T>(path: string, body: unknown): Promise<ApiResult<T>> {
+  return request<T>(path, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 function patchJson<T>(path: string, body: unknown): Promise<ApiResult<T>> {
   return request<T>(path, {
     method: "PATCH",
@@ -241,6 +251,12 @@ export const projectApi = {
   /** POST /projects/{id}/ingest — kick off Brain build (background job). */
   ingest: (id: string) =>
     postJson<IngestResponse>(`${API_BASE}/projects/${id}/ingest`, {}),
+  /** GET /projects/{id}/db-state-tier — the DB-state testing tier (needs VIEW). */
+  getDbStateTier: (id: string) =>
+    getJson<DbStateTierResponse>(`${API_BASE}/projects/${id}/db-state-tier`),
+  /** PUT /projects/{id}/db-state-tier — set the tier (MANAGE_PROJECT; bad value → 422). */
+  setDbStateTier: (id: string, body: DbStateTierUpdateBody) =>
+    putJson<DbStateTierResponse>(`${API_BASE}/projects/${id}/db-state-tier`, body),
 };
 
 export const findingApi = {

@@ -139,6 +139,25 @@ export interface ProjectUpdateBody {
   stack?: string | null;
 }
 
+/**
+ * Per-project DB-state testing tier (B10, ADR-0043). Gates whether a run may make
+ * cross-layer assertions directly against the target database:
+ *  - `off`       — no DB-state testing (default).
+ *  - `read_only` — DB-state assertions that only read (SELECT); never writes.
+ *  - `full`      — write-capable DB-state testing (safe only against a disposable,
+ *                  non-production target; the backend also refuses prod at run time).
+ */
+export type DbStateTier = "off" | "read_only" | "full";
+
+export interface DbStateTierResponse {
+  project_id: string;
+  tier: DbStateTier;
+}
+
+export interface DbStateTierUpdateBody {
+  tier: DbStateTier;
+}
+
 // --- jobs / ingest ----------------------------------------------------------
 
 export type JobStatusValue = "pending" | "running" | "succeeded" | "failed";
