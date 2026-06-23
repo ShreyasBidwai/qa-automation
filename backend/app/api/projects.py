@@ -25,6 +25,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.permissions import Permission
 from app.models.enums import JobKind
 from app.models.project import Project
+from app.reporting.project_summary import (
+    STATUS_NEVER_RUN,
+    ProjectSummary,
+    ProjectSummaryReader,
+)
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.project_repository import ProjectRepository
 from app.services.job_queue import JobQueue
@@ -37,6 +42,7 @@ from .schemas import (
     DbStateTierUpdate,
     IngestResponse,
     JobStatusResponse,
+    LastRunSummary,
     ProjectCreate,
     ProjectListItem,
     ProjectListResponse,
@@ -102,8 +108,21 @@ async def create_project(
     return _project_response(project)
 
 
-def _project_list_item(project: Project) -> ProjectListItem:
+def _project_list_item(
+    project: Project, summary: ProjectSummary | None
+) -> ProjectListItem:
     settings = project.settings
+    last_run: LastRunSummary | None = None
+    if summary is not None and summary.last_run is not None:
+        run = summary.last_run
+        last_run = LastRunSummary(
+            run_id=run.id,
+            mode=run.mode.value,
+            status=run.status,
+            pass_rate=summary.pass_rate,
+            finished_at=run.finished_at,
+            created_at=run.created_at,
+        )
     return ProjectListItem(
         id=project.id,
         name=project.name,
@@ -111,6 +130,10 @@ def _project_list_item(project: Project) -> ProjectListItem:
         repo_url=str(settings.get("repo_url", "")),
         app_url=project.app_url,
         created_at=project.created_at,
+        stack=settings.get("stack"),
+        status=summary.status if summary is not None else STATUS_NEVER_RUN,
+        open_findings_count=(summary.open_findings_count if summary is not None else 0),
+        last_run=last_run,
     )
 
 
@@ -124,8 +147,16 @@ async def list_projects(
     org_ids = await OrganizationRepository(session).member_org_ids(current_user.id)
     repo = ProjectRepository(session)
     projects = await repo.list(limit=limit, offset=offset, org_ids=org_ids)
+    # Batched per-project summary (last-run + pass-rate + open-findings + status) —
+    # a fixed number of grouped queries for the whole page, no N+1 (ADR-0045).
+    summaries = await ProjectSummaryReader(session).summaries_for(
+        [project.id for project in projects]
+    )
     return ProjectListResponse(
-        items=[_project_list_item(project) for project in projects],
+        items=[
+            _project_list_item(project, summaries.get(project.id))
+            for project in projects
+        ],
         total=await repo.count(org_ids=org_ids),
         limit=limit,
         offset=offset,

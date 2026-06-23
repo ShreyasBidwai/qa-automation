@@ -427,6 +427,17 @@ class BulkTriageResponse(BaseModel):
 # --- list endpoints ---------------------------------------------------------
 
 
+class LastRunSummary(BaseModel):
+    """A project's most-recent run, compactly (for the projects list)."""
+
+    run_id: uuid.UUID
+    mode: str
+    status: str
+    pass_rate: float | None = None  # passed / total over the run's results
+    finished_at: datetime | None = None  # null while running / never finished
+    created_at: datetime  # when the run was created (for relative-time display)
+
+
 class ProjectListItem(BaseModel):
     id: uuid.UUID
     name: str
@@ -434,6 +445,12 @@ class ProjectListItem(BaseModel):
     repo_url: str
     app_url: str | None
     created_at: datetime
+    # Widened, read-time summary fields (B-follow-up, ADR-0045). Additive: existing
+    # list consumers ignore unknown fields; defaults cover a project with no runs.
+    stack: str | None = None
+    status: str = "never_run"  # overall: never_run / errored / action_needed / passing
+    open_findings_count: int = 0  # the inbox's "currently open" count for this project
+    last_run: LastRunSummary | None = None
 
 
 class ProjectListResponse(BaseModel):

@@ -16,7 +16,8 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy import text
 
-from app.models.enums import Outcome, RunMode
+from app.models.enums import FindingLayer, OracleSource, Outcome, RunMode
+from app.models.finding import Finding
 from tests.factories import make_project, make_result, make_run, make_test_case
 
 _BASE = datetime(2026, 1, 1, tzinfo=UTC)
@@ -81,6 +82,36 @@ async def _seed_run(
         return run_id
 
 
+async def _seed_open_finding(
+    app: FastAPI, project_id: uuid.UUID, run_id: uuid.UUID, *, key: str
+) -> None:
+    async with app.state.sessionmaker() as session:
+        case = make_test_case(project_id)
+        session.add(case)
+        await session.flush()
+        result = make_result(project_id, run_id, case.id, outcome=Outcome.FAIL)
+        session.add(result)
+        await session.flush()
+        session.add(
+            Finding(
+                project_id=project_id,
+                run_id=run_id,
+                result_id=result.id,
+                root_cause_key=key,
+                explains_count=1,
+                title=f"finding {key}",
+                layer=FindingLayer.API,
+                oracle_source=OracleSource.RULE_DERIVED,
+                confidence_mixed=False,
+                expected={},
+                location={},
+                severity="major",
+                status="new",
+            )
+        )
+        await session.commit()
+
+
 # --- projects list ----------------------------------------------------------
 
 
@@ -129,6 +160,62 @@ async def test_list_projects_pagination_and_bounds(
     assert (await client.get("/api/v1/projects?limit=0")).status_code == 422
     assert (await client.get("/api/v1/projects?limit=101")).status_code == 422
     assert (await client.get("/api/v1/projects?offset=-1")).status_code == 422
+
+
+async def test_list_projects_carries_enriched_summary_fields(
+    authed_client: tuple[AsyncClient, FastAPI],
+) -> None:
+    client, app = authed_client
+    await _clear_projects(app)
+    org_id = await _personal_org_id(client)
+
+    # Project WITH a run (failed, 2/3 pass) + an open finding.
+    async with app.state.sessionmaker() as session:
+        active = make_project(
+            name="Active",
+            org_id=org_id,
+            created_at=_BASE + timedelta(hours=2),
+            settings={"repo_url": "https://git/active.git", "stack": "laravel"},
+        )
+        session.add(active)
+        await session.flush()
+        active_id = active.id
+        await session.commit()
+    run_id = await _seed_run(
+        app,
+        active_id,
+        hour=5,
+        status="failed",
+        outcomes=(Outcome.PASS, Outcome.PASS),
+    )
+    # The finding contributes the run's one FAIL result → 2 pass / 3 total = 0.6667.
+    await _seed_open_finding(app, active_id, run_id, key="BUG#fail")
+
+    # Project with NO runs (degrades to defaults).
+    await _seed_project(app, name="Fresh", hour=1, org_id=org_id)
+
+    items = {
+        item["name"]: item
+        for item in (await client.get("/api/v1/projects")).json()["items"]
+    }
+
+    active_item = items["Active"]
+    assert active_item["stack"] == "laravel"
+    assert active_item["status"] == "action_needed"  # has open findings
+    assert active_item["open_findings_count"] == 1
+    assert active_item["last_run"]["run_id"] == str(run_id)
+    assert active_item["last_run"]["status"] == "failed"
+    assert active_item["last_run"]["mode"] == "B"
+    assert active_item["last_run"]["pass_rate"] == 0.6667
+    # Existing fields remain (additive contract).
+    assert active_item["repo_url"] == "https://git/active.git"
+    assert "created_at" in active_item
+
+    fresh_item = items["Fresh"]
+    assert fresh_item["last_run"] is None
+    assert fresh_item["status"] == "never_run"
+    assert fresh_item["open_findings_count"] == 0
+    assert fresh_item["stack"] is None
 
 
 # --- runs list --------------------------------------------------------------
