@@ -24,7 +24,7 @@ from app.generation.authored import (
     AuthoredEndpoint,
     DbSetup,
     is_template_renderable,
-    render_pest_template,
+    render_phpunit_template,
 )
 from app.generation.generator import TestGenerator
 from app.models.enums import (
@@ -288,7 +288,8 @@ async def test_simple_case_renders_via_template_without_calling_ai(
 
     code = script.code
     assert code.startswith("<?php")
-    assert "test('missing_name'" in code
+    assert "class " in code and "extends TestCase" in code  # PHPUnit class shape
+    assert "public function test_missing_name(): void" in code
     assert "$this->postJson('/api/users', [" in code
     assert "'age' => 30," in code  # payload rendered deterministically (sorted)
     assert "$response->assertStatus(422);" in code
@@ -370,7 +371,7 @@ def test_template_renders_varied_payload_types_deterministically() -> None:
         },
         expected_shape={"json_structure": ["id", "active"]},
     )
-    code = render_pest_template(spec)
+    code = render_phpunit_template(spec)
     assert code.startswith("<?php")
     assert "$this->postJson('/api/things', [" in code
     assert "'active' => true," in code
@@ -395,7 +396,7 @@ def test_template_renders_authenticated_get_with_default_shape() -> None:
         expected_shape={},
     )
     assert is_template_renderable(spec) is True
-    code = render_pest_template(spec)
+    code = render_phpunit_template(spec)
     assert "$this->actingAs(\\App\\Models\\User::query()->firstOrFail());" in code
     assert "$response = $this->getJson('/api/things');" in code  # no body argument
-    assert "expect($response->json())->toBeArray();" in code  # default shape assertion
+    assert "$this->assertIsArray($response->json());" in code  # default shape assertion

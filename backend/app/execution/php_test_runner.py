@@ -17,6 +17,7 @@ executes against a non-test DB (dual_db guard).
 
 from __future__ import annotations
 
+import re
 import shutil
 from pathlib import Path
 
@@ -55,6 +56,24 @@ def detect_test_binary(app_path: str) -> str:
     )
 
 
+def _test_identifier(script: PestScript) -> str:
+    """The file stem to write a script under (== its PHP test class name).
+
+    PHPUnit, when handed a file directly, requires the declared class to MATCH the
+    file basename (``Foo.php`` ⇒ ``class Foo``) — so we name the file after the class
+    the generator emitted. Pest is lenient (it just includes the file), so this is
+    safe for both. A script that declares no class (a hand-written Pest closure
+    script) falls back to a sanitized version of its slug.
+    """
+    match = re.search(r"\bclass\s+(\w+)", script.code)
+    if match:
+        return match.group(1)
+    ident = re.sub(r"\W+", "_", script.name).strip("_") or "GeneratedTest"
+    if ident[0].isdigit():
+        ident = f"t_{ident}"
+    return ident
+
+
 def _aggregate(outcomes: list[Outcome]) -> Outcome:
     if Outcome.ERROR in outcomes:
         return Outcome.ERROR
@@ -74,21 +93,29 @@ def map_results(
     A script that produced no testcase (e.g. the runner crashed before running it)
     becomes an ERROR result — every input script gets exactly one result row.
 
-    Runner-agnostic: Pest writes ``file="<relpath>.php::<test name>"`` while PHPUnit
-    writes ``file="<path>.php"`` (no suffix); splitting on ``::`` and taking the file
-    stem yields the script's unique name for both.
+    Runner-agnostic: a script is identified by its test CLASS name (the file
+    basename we wrote). A ``<testcase>`` is matched to it by EITHER the file stem
+    (PHPUnit emits ``file="<Class>.php"``) OR the class short-name — Pest mangles the
+    ``file`` attribute and reports a dotted ``classname`` (``Tests.Feature.<Class>``),
+    so we also key on the last FQCN segment. Both runners map back to the script.
     """
-    by_stem: dict[str, list[JUnitCase]] = {}
+    by_key: dict[str, list[JUnitCase]] = {}
     for case in cases:
+        keys: set[str] = set()
         if case.file:
-            stem = Path(case.file.split("::", 1)[0]).stem
-        else:
-            stem = case.classname or case.name
-        by_stem.setdefault(stem, []).append(case)
+            keys.add(Path(case.file.split("::", 1)[0]).stem)
+        if case.classname:
+            # PHPUnit separates the FQCN with "\\"; Pest's JUnit uses "." — take the
+            # last segment (the class short-name) for either.
+            keys.add(re.split(r"[\\.]", case.classname)[-1])
+        if not keys:
+            keys.add(case.name)
+        for key in keys:
+            by_key.setdefault(key, []).append(case)
 
     results: list[ExecutionResult] = []
     for script in scripts:
-        matched = by_stem.get(script.name, [])
+        matched = by_key.get(_test_identifier(script), [])
         if not matched:
             results.append(
                 ExecutionResult(
@@ -151,10 +178,12 @@ class PhpTestRunner:
 
         gen_dir = app.joinpath(*_GENERATED)
         gen_dir.mkdir(parents=True, exist_ok=True)
-        # Pass explicit file paths (a bare directory yields "No tests found").
+        # Pass explicit file paths (a bare directory yields "No tests found"). Each
+        # file is named after the test CLASS it declares — PHPUnit requires
+        # class-name == file-basename when a file is run directly (Pest is lenient).
         rel_paths: list[str] = []
         for script in scripts:
-            rel = Path(*_GENERATED) / f"{script.name}.php"
+            rel = Path(*_GENERATED) / f"{_test_identifier(script)}.php"
             (app / rel).write_text(script.code, encoding="utf-8")
             rel_paths.append(str(rel))
 

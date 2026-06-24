@@ -41,8 +41,9 @@ class ProseWrappingStubAIProvider:
     trailing "Key decisions" table — which the clean ``StubAIProvider`` never did,
     so the prose-wrapping gap slipped the hermetic suite. This provider reproduces
     that shape so the suite proves the extractor recovers a directly-runnable
-    script. ``uses_factory=True`` additionally calls ``Model::factory()`` to exercise
-    the missing-factory fallback.
+    script. It emits a PHPUnit-style Laravel feature-test CLASS (the dialect both
+    PHPUnit and Pest run). ``uses_factory=True`` additionally calls
+    ``Model::factory()`` to exercise the missing-factory fallback.
     """
 
     def __init__(self, *, uses_factory: bool = False) -> None:
@@ -53,23 +54,30 @@ class ProseWrappingStubAIProvider:
             f"{prompt}\x00{context.render()}".encode()
         ).hexdigest()[:12]
         setup = (
-            "    \\App\\Models\\Country::factory()->create(['id' => 1]);\n"
+            "        \\App\\Models\\Country::factory()->create(['id' => 1]);\n"
             if self._uses_factory
             else ""
         )
         return (
-            "Here is the Pest feature test for this endpoint. I chose `postJson` so "
-            "Laravel returns the JSON validation envelope.\n\n"
+            "Here is the PHPUnit feature test for this endpoint. I chose `postJson` "
+            "so Laravel returns the JSON validation envelope.\n\n"
             "```php\n"
             "<?php\n\n"
+            "namespace Tests\\Feature;\n\n"
+            "use Tests\\TestCase;\n"
             "use Illuminate\\Foundation\\Testing\\RefreshDatabase;\n\n"
-            "uses(RefreshDatabase::class);\n\n"
-            f"it('case {fingerprint}', function () {{\n"
+            f"class Case{fingerprint}Test extends TestCase\n"
+            "{\n"
+            "    use RefreshDatabase;\n\n"
+            f"    public function test_case_{fingerprint}(): void\n"
+            "    {\n"
             f"{setup}"
-            "    $response = $this->postJson('api/users', ['email' => 'a@b.test']);\n"
-            "    $response->assertStatus(422);\n"
-            "    $response->assertJsonValidationErrors(['name']);\n"
-            "});\n"
+            "        $response = $this->postJson('api/users', "
+            "['email' => 'a@b.test']);\n"
+            "        $response->assertStatus(422);\n"
+            "        $response->assertJsonValidationErrors(['name']);\n"
+            "    }\n"
+            "}\n"
             "```\n\n"
             "**Key decisions:**\n\n"
             "| Decision | Reason |\n"

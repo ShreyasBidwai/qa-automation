@@ -56,9 +56,24 @@ _PHPUNIT_JUNIT = """<?xml version="1.0" encoding="UTF-8"?>
         class="Tests\\Feature\\_generated\\CheckoutTest"
         classname="Tests.Feature._generated.CheckoutTest"
         file="/app/tests/Feature/_generated/checkout.php" line="12" time="0.05">
-        <failure type="PHPUnit\\Framework\\ExpectationFailedException">Failed asserting that 201 matches expected 422.</failure>
+        <failure>Failed asserting that 201 matches expected 422.</failure>
       </testcase>
     </testsuite>
+  </testsuite>
+</testsuites>
+"""
+
+# Pest's JUnit for a PHPUnit-style CLASS file: it MANGLES the `file` attribute and
+# reports a DOTTED `classname` (not the backslash FQCN PHPUnit uses). The file we
+# wrote is named after the class (Happy_abcdef1234Test.php), so mapping must key on
+# the class short-name, taking the last segment of either separator.
+_PEST_CLASS_JUNIT = """<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="Feature" tests="1" failures="0">
+    <testcase name="Happy"
+      file="Happy_abcdef1234 (Tests\\Feature\\Happy_abcdef1234)::Happy"
+      class="Tests\\Feature\\Happy_abcdef1234Test"
+      classname="Tests.Feature.Happy_abcdef1234Test" assertions="2" time="0.11"/>
   </testsuite>
 </testsuites>
 """
@@ -196,3 +211,44 @@ def test_phpunit_junit_parses_to_the_execution_result_shape(tmp_path: Path) -> N
     assert result.test_case_id == script.test_case_id
     assert result.outcome is Outcome.FAIL
     assert result.evidence_ref == "/ev/junit.xml"
+
+
+def test_pest_class_junit_maps_back_by_class_short_name() -> None:
+    # A generated PHPUnit class run UNDER PEST: the script declares the class, so it
+    # is identified by that class name; Pest's mangled file + dotted classname must
+    # still map back to it (regression for the cross-runner result mapping).
+    code = (
+        "<?php\nnamespace Tests\\Feature;\nuse Tests\\TestCase;\n"
+        "class Happy_abcdef1234Test extends TestCase\n{\n"
+        "    public function test_happy(): void { $this->assertTrue(true); }\n}"
+    )
+    script = PestScript(uuid.uuid4(), uuid.uuid4(), "gen-9018a6646f35", code)
+    results = map_results(
+        [script], parse_junit(_PEST_CLASS_JUNIT), evidence_ref="/ev/junit.xml"
+    )
+    assert len(results) == 1
+    assert results[0].name == "gen-9018a6646f35"
+    assert results[0].outcome is Outcome.PASS  # mapped despite Pest's mangled `file`
+
+
+def test_run_names_the_file_after_the_declared_class(tmp_path: Path) -> None:
+    # PHPUnit requires class-name == file-basename for a file run directly, so the
+    # runner writes each script under <ClassName>.php (not its hyphenated slug).
+    app = tmp_path / "app"
+    _touch(app, "vendor/bin/phpunit")
+    calls: list[list[str]] = []
+    code = (
+        "<?php\nnamespace Tests\\Feature;\nuse Tests\\TestCase;\n"
+        "class Happy_abcdef1234Test extends TestCase\n{\n"
+        "    public function test_happy(): void {}\n}"
+    )
+    runner = PhpTestRunner(process=_junit_writing_process(_PEST_CLASS_JUNIT, calls))
+    # The script slug is hyphenated (a valid filename but an INVALID class name).
+    script = PestScript(uuid.uuid4(), uuid.uuid4(), "gen-abcdef1234", code)
+
+    results = runner.run([script], _env(app, tmp_path / "ev"))
+
+    written = app / "tests" / "Feature" / "_generated" / "Happy_abcdef1234Test.php"
+    assert written.exists()  # named after the class, not the hyphenated slug
+    assert str(written.relative_to(app)) in calls[0]  # that path was passed to phpunit
+    assert results[0].outcome is Outcome.PASS
