@@ -6,9 +6,9 @@ network, no live Gitea). Credential/read-only/failure paths use a spy runner.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
+import shutil
 import subprocess
 import tempfile
 from collections.abc import Sequence
@@ -32,6 +32,7 @@ from tests.factories import make_project
 
 _HTTPS_URL = "https://gitea.example.com/org/repo.git"
 _TOKEN = "s3cr3t-ro-token"
+_FIXTURE = str(Path(__file__).parent / "fixtures" / "laravel-app")
 
 
 # --- local git fixture (real git, no network) -------------------------------
@@ -182,54 +183,32 @@ def test_checkout_runs_only_read_only_git_subcommands() -> None:
 
 
 # --- end-to-end: ingest_from_git tags the Brain with the real SHA -----------
-_ROUTES = json.dumps(
-    [
-        {
-            "method": "POST",
-            "uri": "users",
-            "name": "users.store",
-            "action": "App\\Http\\Controllers\\UserController@store",
-            "middleware": ["web", "auth"],
-        }
-    ]
-)
-_GRAPH = json.dumps(
-    {
-        "models": [
-            {
-                "class": "App\\Models\\User",
-                "table": "users",
-                "fillable": ["name"],
-                "relationships": [],
-            }
-        ],
-        "migrations": [{"table": "users", "columns": ["id", "name"]}],
-        "actions": [
-            {
-                "controller": "App\\Http\\Controllers\\UserController",
-                "action": "store",
-                "model_refs": ["App\\Models\\User"],
-                "validation": {"source": "form_request", "fields": ["name"]},
-            }
-        ],
-    }
-)
-
-
-def _ingester_runner(
+def _no_ingest_subprocess(
     argv: Sequence[str], cwd: str | None, timeout: float
 ) -> CommandResult:
-    args = list(argv)
-    if "route:list" in args:
-        return CommandResult(0, _ROUTES, "")
-    if any("extract_graph" in a for a in args):
-        return CommandResult(0, _GRAPH, "")
-    raise AssertionError(f"unexpected ingester command: {args}")
+    """Fail if ingestion shells out — proves the Brain is built from source only."""
+    raise AssertionError(f"ingestion shelled out — must read source only: {list(argv)}")
+
+
+@pytest.fixture
+def laravel_git_origin(tmp_path: Path) -> SimpleNamespace:
+    """A real git repo whose tree IS the Laravel fixture, so a checkout yields source
+    the STATIC ingester can read (no app boot)."""
+    origin = tmp_path / "laravel-origin"
+    shutil.copytree(_FIXTURE, origin)
+    path = str(origin)
+    _git(path, "init", "-q", "-b", "main")
+    _git(path, "config", "user.email", "test@example.com")
+    _git(path, "config", "user.name", "Test")
+    _git(path, "add", "-A")
+    _git(path, "commit", "-q", "-m", "laravel app")
+    head = _git(path, "rev-parse", "HEAD")
+    return SimpleNamespace(url=f"file://{path}", head=head)
 
 
 async def test_ingest_from_git_populates_brain_with_real_sha(
     db_session: AsyncSession,
-    git_origin: SimpleNamespace,
+    laravel_git_origin: SimpleNamespace,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     created: list[str] = []
@@ -249,20 +228,20 @@ async def test_ingest_from_git_populates_brain_with_real_sha(
     result = await ingest_from_git(
         session=db_session,
         project_id=project.id,
-        repo_url=git_origin.url,
+        repo_url=laravel_git_origin.url,
         ref="main",
         provider=GitCliProvider(),  # real git against the local fixture
         ingester=LaravelIngester(
-            runner=_ingester_runner,
+            runner=_no_ingest_subprocess,  # static-only; raises if it shells out
             embedding_provider=StubEmbeddingProvider(EMBEDDING_DIM),
         ),
     )
 
     # Brain nodes are tagged with the REAL checked-out commit SHA.
-    assert result.source_sha == git_origin.head
+    assert result.source_sha == laravel_git_origin.head
     nodes = await NodeRepository(db_session).list(project.id)
     assert nodes
-    assert all(n.source_sha == git_origin.head for n in nodes)
+    assert all(n.source_sha == laravel_git_origin.head for n in nodes)
 
     # The temp clone was cleaned up by ingest_from_git (no leak).
     assert created and not os.path.exists(created[0])

@@ -7,9 +7,9 @@ real — only the embedding provider is stubbed.
 
 from __future__ import annotations
 
-import json
 import uuid
 from collections.abc import Sequence
+from pathlib import Path
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,62 +25,17 @@ from app.models.model_node import EMBEDDING_DIM
 from app.repositories.node_repository import NodeRepository
 from tests.factories import make_project
 
-_ROUTES = json.dumps(
-    [
-        {
-            "method": "POST",
-            "uri": "users",
-            "name": "users.store",
-            "action": "App\\Http\\Controllers\\UserController@store",
-            "middleware": ["web", "auth"],
-        }
-    ]
-)
-
-_GRAPH = json.dumps(
-    {
-        "models": [
-            {
-                "class": "App\\Models\\User",
-                "table": "users",
-                "fillable": ["name", "email"],
-                "relationships": [],
-            },
-            {
-                "class": "App\\Models\\Country",
-                "table": "countries",
-                "fillable": ["name"],
-                "relationships": [],
-            },
-        ],
-        "migrations": [
-            {"table": "users", "columns": ["id", "name", "email"]},
-            {"table": "countries", "columns": ["id", "name"]},
-        ],
-        "actions": [
-            {
-                "controller": "App\\Http\\Controllers\\UserController",
-                "action": "store",
-                "model_refs": ["App\\Models\\User"],
-                "validation": {"source": "form_request", "fields": ["name", "email"]},
-            }
-        ],
-    }
-)
+# Ingestion is STATIC (ADR-0055): the brain is built from the real Laravel fixture's
+# source. A CommandRunner that RAISES proves no app/subprocess boot; source_sha
+# bypasses the (optional) git HEAD call.
+_FIXTURE = str(Path(__file__).parent / "fixtures" / "laravel-app")
+_SHA = "a" * 40
 
 
-def _runner(sha: str = "a" * 40):
-    def runner(argv: Sequence[str], cwd: str | None, timeout: float) -> CommandResult:
-        args = list(argv)
-        if "rev-parse" in args:
-            return CommandResult(0, f"{sha}\n", "")
-        if "route:list" in args:
-            return CommandResult(0, _ROUTES, "")
-        if any("extract_graph" in a for a in args):
-            return CommandResult(0, _GRAPH, "")
-        raise AssertionError(f"unexpected command in test: {args}")
-
-    return runner
+def _no_subprocess(
+    argv: Sequence[str], cwd: str | None, timeout: float
+) -> CommandResult:
+    raise AssertionError(f"ingestion shelled out — must read source only: {list(argv)}")
 
 
 async def _project(session: AsyncSession) -> uuid.UUID:
@@ -126,9 +81,11 @@ async def test_ingestion_embeds_every_node_with_correct_dimension(
 ) -> None:
     pid = await _project(db_session)
     ingester = LaravelIngester(
-        runner=_runner(), embedding_provider=StubEmbeddingProvider(EMBEDDING_DIM)
+        runner=_no_subprocess, embedding_provider=StubEmbeddingProvider(EMBEDDING_DIM)
     )
-    await ingester.ingest(session=db_session, project_id=pid, repo_path="/repo")
+    await ingester.ingest(
+        session=db_session, project_id=pid, repo_path=_FIXTURE, source_sha=_SHA
+    )
 
     nodes = NodeRepository(db_session)
     all_nodes = await nodes.list(pid)
@@ -145,8 +102,8 @@ async def test_search_returns_semantically_ranked_project_scoped_nodes(
     project_a = await _project(db_session)
     project_b = await _project(db_session)
 
-    await LaravelIngester(runner=_runner(), embedding_provider=stub).ingest(
-        session=db_session, project_id=project_a, repo_path="/repo"
+    await LaravelIngester(runner=_no_subprocess, embedding_provider=stub).ingest(
+        session=db_session, project_id=project_a, repo_path=_FIXTURE, source_sha=_SHA
     )
 
     nodes = NodeRepository(db_session)
@@ -169,7 +126,9 @@ async def test_search_returns_semantically_ranked_project_scoped_nodes(
 async def test_ingest_rejects_dimension_mismatch(db_session: AsyncSession) -> None:
     pid = await _project(db_session)
     wrong_dim = LaravelIngester(
-        runner=_runner(), embedding_provider=StubEmbeddingProvider(dimension=128)
+        runner=_no_subprocess, embedding_provider=StubEmbeddingProvider(dimension=128)
     )
     with pytest.raises(EmbeddingDimMismatch):
-        await wrong_dim.ingest(session=db_session, project_id=pid, repo_path="/repo")
+        await wrong_dim.ingest(
+            session=db_session, project_id=pid, repo_path=_FIXTURE, source_sha=_SHA
+        )

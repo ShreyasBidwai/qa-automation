@@ -13,26 +13,25 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import asdict, dataclass
-from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.embeddings.document import build_node_document, content_sha
 from app.embeddings.errors import EmbeddingDimMismatch
 from app.embeddings.types import EmbeddingProvider
-from app.ingestion.commands import CommandRunner, check_output, run_subprocess
+from app.ingestion.commands import CommandRunner, run_subprocess
 from app.models.enums import EdgeKind, NodeKind
 from app.models.model_edge import ModelEdge
 from app.models.model_node import EMBEDDING_DIM, ModelNode
 from app.repositories.edge_repository import EdgeRepository
 from app.repositories.node_repository import NodeRepository
 
-from .graph import ActionMeta, extract_graph
+from .graph import ActionMeta
 from .route_list import RouteFacts, all_route_facts, roles_from_middleware
+from .static_graph import parse_graph
+from .static_routes import parse_routes
 
 logger = logging.getLogger("app.ingestion.laravel")
-
-_GRAPH_HELPER = str(Path(__file__).parent / "php" / "extract_graph.php")
 
 # Confidence: high for statically certain links (ORM backing, declared
 # relationships); medium for inferred ones (a controller statically naming a
@@ -68,32 +67,82 @@ class LaravelIngester:
         git_path: str = "git",
         route_timeout: float = 60.0,
         php_timeout: float = 60.0,
-        graph_helper: str = _GRAPH_HELPER,
         embedding_provider: EmbeddingProvider | None = None,
+        enrich_with_artisan: bool = False,
     ) -> None:
         self._runner = runner
         self._php = php_path
         self._git = git_path
         self._route_timeout = route_timeout
         self._php_timeout = php_timeout
-        self._graph_helper = graph_helper
         self._embedding = embedding_provider
+        # OPTIONAL, OFF BY DEFAULT, FULLY FAIL-SAFE route enrichment (ADR-0055): only
+        # when the target happens to boot, merge artisan-discovered (dynamic/package)
+        # routes into the static set. Ingestion NEVER depends on it.
+        self._enrich_with_artisan = enrich_with_artisan
 
     def _head_sha(self, repo_path: str) -> str:
-        result = self._runner(
-            [self._git, "-C", repo_path, "rev-parse", "HEAD"],
-            None,
-            self._route_timeout,
-        )
-        return check_output(result, what="git rev-parse HEAD").strip()
+        """The repo's HEAD commit — best-effort. Ingestion needs only the SOURCE, so a
+        missing git / non-repo path falls back to a static marker rather than failing
+        (ADR-0055)."""
+        try:
+            result = self._runner(
+                [self._git, "-C", repo_path, "rev-parse", "HEAD"],
+                None,
+                self._route_timeout,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+        except Exception:  # noqa: BLE001 — git is optional; never abort ingestion
+            pass
+        logger.info("ingestion.laravel.head_sha_unavailable", extra={"repo": repo_path})
+        return "static-ingest"
 
     def _route_facts(self, repo_path: str) -> list[RouteFacts]:
-        result = self._runner(
-            [self._php, "artisan", "route:list", "--json"],
-            repo_path,
-            self._route_timeout,
-        )
-        return all_route_facts(check_output(result, what="artisan route:list"))
+        """Routes from STATIC source parsing (the guaranteed baseline, no app boot).
+
+        Optionally merges artisan route:list when ``enrich_with_artisan`` AND the app
+        happens to boot — fully fail-safe: any error and the static results stand.
+        """
+        parsed = parse_routes(repo_path)
+        if parsed.unresolved:
+            logger.info(
+                "ingestion.laravel.routes_unresolved",
+                extra={
+                    "count": len(parsed.unresolved),
+                    "samples": parsed.unresolved[:5],
+                },
+            )
+        facts = parsed.facts
+        if self._enrich_with_artisan:
+            facts = self._merge_artisan_routes(repo_path, facts)
+        return facts
+
+    def _merge_artisan_routes(
+        self, repo_path: str, static_facts: list[RouteFacts]
+    ) -> list[RouteFacts]:
+        """Best-effort: add artisan-only routes (dynamic/package-registered) to the
+        static set, de-duplicated. ANY failure → the static results stand."""
+        try:
+            result = self._runner(
+                [self._php, "artisan", "route:list", "--json"],
+                repo_path,
+                self._route_timeout,
+            )
+            if result.returncode != 0:
+                return static_facts
+            artisan_facts = all_route_facts(result.stdout)
+        except Exception:  # noqa: BLE001 — enrichment can never break ingestion
+            logger.info("ingestion.laravel.artisan_enrichment_skipped")
+            return static_facts
+        seen = {(f.method, f.uri) for f in static_facts}
+        merged = list(static_facts)
+        for fact in artisan_facts:
+            key = (fact.method, fact.uri)
+            if key not in seen:
+                seen.add(key)
+                merged.append(fact)
+        return merged
 
     async def ingest(
         self,
@@ -108,13 +157,9 @@ class LaravelIngester:
         if source_sha is None:
             source_sha = self._head_sha(repo_path)
         facts = self._route_facts(repo_path)
-        graph = extract_graph(
-            repo_path=repo_path,
-            runner=self._runner,
-            php_path=self._php,
-            helper_script=self._graph_helper,
-            timeout=self._php_timeout,
-        )
+        # Models / migrations / controllers from STATIC source parsing — no app boot,
+        # no vendor/autoload, no DB, no config (ADR-0055).
+        graph = parse_graph(repo_path)
 
         nodes = NodeRepository(session)
         edges = EdgeRepository(session)

@@ -1,8 +1,10 @@
-"""LaravelIngester (T2.2) — whole-repo ingestion into the Brain, offline.
+"""LaravelIngester (T2.2 / ADR-0055) — whole-repo ingestion into the Brain, STATIC.
 
-Injects a fake CommandRunner returning canned git/route:list/extract_graph
-output (no live PHP) and asserts the produced nodes/edges, attributes,
-confidence, source_sha, idempotent re-ingest, and tenancy.
+Ingestion reads the source repo only — it NEVER boots the target app (no
+``artisan``, no PHP, no ``vendor/``, no DB, no config). These tests run the ingester
+against the real Laravel fixture with a CommandRunner that RAISES if anything tries
+to shell out, proving the static path never executes the app, and assert the produced
+nodes/edges, attributes, confidence, source_sha, idempotent re-ingest, and tenancy.
 """
 
 from __future__ import annotations
@@ -10,6 +12,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Sequence
+from pathlib import Path
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,106 +25,15 @@ from app.repositories.edge_repository import EdgeRepository
 from app.repositories.node_repository import NodeRepository
 from tests.factories import make_project
 
-_ROUTES = json.dumps(
-    [
-        {
-            "method": "POST",
-            "uri": "users",
-            "name": "users.store",
-            "action": "App\\Http\\Controllers\\UserController@store",
-            "middleware": ["web", "auth"],
-        },
-        {
-            "method": "GET|HEAD",
-            "uri": "up",
-            "name": None,
-            "action": "Closure",
-            "middleware": ["web"],
-        },
-        {
-            "method": "GET|HEAD",
-            "uri": "admin/reports",
-            "name": "admin.reports",
-            "action": "App\\Http\\Controllers\\AdminController@index",
-            "middleware": ["web", "auth", "role:admin"],
-        },
-    ]
-)
-
-_GRAPH = json.dumps(
-    {
-        "models": [
-            {
-                "class": "App\\Models\\User",
-                "table": "users",
-                "fillable": ["name", "email", "age", "country_id", "newsletter"],
-                "relationships": [
-                    {
-                        "name": "country",
-                        "kind": "belongsTo",
-                        "related": "App\\Models\\Country",
-                    }
-                ],
-            },
-            {
-                "class": "App\\Models\\Country",
-                "table": "countries",
-                "fillable": ["name"],
-                "relationships": [
-                    {
-                        "name": "users",
-                        "kind": "hasMany",
-                        "related": "App\\Models\\User",
-                    }
-                ],
-            },
-        ],
-        "migrations": [
-            {
-                "table": "countries",
-                "columns": ["id", "name", "created_at", "updated_at"],
-            },
-            {
-                "table": "users",
-                "columns": [
-                    "id",
-                    "name",
-                    "email",
-                    "age",
-                    "country_id",
-                    "newsletter",
-                    "created_at",
-                    "updated_at",
-                ],
-            },
-        ],
-        "actions": [
-            {
-                "controller": "App\\Http\\Controllers\\UserController",
-                "action": "store",
-                "model_refs": ["App\\Models\\User"],
-                "validation": {
-                    "source": "form_request",
-                    "fields": ["name", "email", "age", "country_id", "newsletter"],
-                },
-            }
-        ],
-    }
-)
+_FIXTURE = str(Path(__file__).parent / "fixtures" / "laravel-app")
+_SHA = "a" * 40
 
 
-def _runner(sha: str):
-    def runner(argv: Sequence[str], cwd: str | None, timeout: float) -> CommandResult:
-        args = list(argv)
-        if "rev-parse" in args:
-            return CommandResult(0, f"{sha}\n", "")
-        if "route:list" in args:
-            return CommandResult(0, _ROUTES, "")
-        if any("extract_graph" in a for a in args):
-            return CommandResult(0, _GRAPH, "")
-        raise AssertionError(f"unexpected command in test: {args}")
-
-    return runner
+def _no_subprocess(
+    argv: Sequence[str], cwd: str | None, timeout: float
+) -> CommandResult:
+    """Fail the test if ingestion ever shells out (proves no app boot)."""
+    raise AssertionError(f"ingestion shelled out — must read source only: {list(argv)}")
 
 
 async def _project(session: AsyncSession) -> uuid.UUID:
@@ -140,28 +52,100 @@ def test_roles_from_middleware_parses_and_dedupes() -> None:
     ]
 
 
-async def test_ingest_populates_brain_with_nodes_edges_and_sha(
+# --- routes are static-only by default; artisan is optional, fail-safe enrichment
+
+
+def test_routes_are_static_only_by_default() -> None:
+    # The default path never shells out: the raising runner would fire on any call.
+    facts = LaravelIngester(runner=_no_subprocess)._route_facts(_FIXTURE)
+    assert {(f.method, f.uri) for f in facts} == {("POST", "users")}
+
+
+def test_artisan_enrichment_merges_dynamic_routes_when_enabled() -> None:
+    # With enrichment ON and the app booting, artisan-only (dynamic/package) routes
+    # are merged into the static baseline, de-duplicated by (method, uri).
+    artisan = json.dumps(
+        [
+            {  # duplicate of the static route — must NOT be added twice
+                "method": "POST",
+                "uri": "users",
+                "name": "users.store",
+                "action": "App\\Http\\Controllers\\UserController@store",
+                "middleware": ["web", "auth"],
+            },
+            {  # a package route only artisan knows about
+                "method": "GET",
+                "uri": "_debugbar/health",
+                "name": "debugbar.health",
+                "action": "Barryvdh\\Debugbar\\Controllers\\HealthController@index",
+                "middleware": ["web"],
+            },
+        ]
+    )
+
+    def runner(argv: Sequence[str], cwd: str | None, timeout: float) -> CommandResult:
+        assert "route:list" in list(argv)  # only the artisan call is expected
+        return CommandResult(0, artisan, "")
+
+    facts = LaravelIngester(runner=runner, enrich_with_artisan=True)._route_facts(
+        _FIXTURE
+    )
+    keys = [(f.method, f.uri) for f in facts]
+    assert ("POST", "users") in keys  # static baseline kept
+    assert ("GET", "_debugbar/health") in keys  # dynamic route merged in
+    assert keys.count(("POST", "users")) == 1  # de-duplicated, not doubled
+
+
+def test_artisan_enrichment_is_failsafe_when_the_app_will_not_boot() -> None:
+    # If the optional artisan call fails (app can't boot — no DB / config / vendor),
+    # enrichment is silently skipped and the static baseline stands. Ingestion is
+    # NEVER blocked by a failed boot.
+    def boom(argv: Sequence[str], cwd: str | None, timeout: float) -> CommandResult:
+        raise RuntimeError("app failed to boot — database unreachable")
+
+    facts = LaravelIngester(runner=boom, enrich_with_artisan=True)._route_facts(
+        _FIXTURE
+    )
+    assert {(f.method, f.uri) for f in facts} == {("POST", "users")}  # static only
+
+
+def test_head_sha_is_best_effort_and_never_aborts_ingestion() -> None:
+    # git present → use the real HEAD.
+    def git_ok(argv: Sequence[str], cwd: str | None, timeout: float) -> CommandResult:
+        return CommandResult(0, "c" * 40 + "\n", "")
+
+    assert LaravelIngester(runner=git_ok)._head_sha("/repo") == "c" * 40
+
+    # git missing / not a repo → fall back to a static marker, never raise.
+    def no_git(argv: Sequence[str], cwd: str | None, timeout: float) -> CommandResult:
+        raise FileNotFoundError("git: command not found")
+
+    assert LaravelIngester(runner=no_git)._head_sha("/repo") == "static-ingest"
+
+
+async def test_ingest_builds_brain_from_static_source_without_booting(
     db_session: AsyncSession,
 ) -> None:
     pid = await _project(db_session)
-    sha = "a" * 40
-    ingester = LaravelIngester(runner=_runner(sha))
+    # The raising runner proves no subprocess (app boot) happens; source_sha bypasses
+    # the optional git call so the whole ingest is pure static source reading.
+    ingester = LaravelIngester(runner=_no_subprocess)
 
     result = await ingester.ingest(
-        session=db_session, project_id=pid, repo_path="/repo"
+        session=db_session, project_id=pid, repo_path=_FIXTURE, source_sha=_SHA
     )
 
-    assert result.source_sha == sha
-    assert result.nodes == {"endpoint": 3, "model": 2, "table": 2, "role": 1}
+    assert result.source_sha == _SHA
+    assert result.nodes == {"endpoint": 1, "model": 2, "table": 2, "role": 0}
     assert result.edges == 7
 
     nodes = NodeRepository(db_session)
     edges = EdgeRepository(db_session)
-    assert await nodes.count(pid) == 8
+    assert await nodes.count(pid) == 5
 
     user = await nodes.get_by_key(pid, NodeKind.MODEL, "App\\Models\\User")
     assert user is not None
-    assert user.source_sha == sha
+    assert user.source_sha == _SHA
     assert user.attributes["table"] == "users"
     assert user.attributes["fillable"][0] == "name"
     assert user.attributes["relationships"][0] == {
@@ -179,9 +163,14 @@ async def test_ingest_populates_brain_with_nodes_edges_and_sha(
     assert endpoint.attributes["auth_required"] is True
     assert endpoint.attributes["action"].endswith("UserController@store")
     assert endpoint.attributes["validation"]["source"] == "form_request"
-    assert endpoint.source_sha == sha
-
-    assert await nodes.get_by_key(pid, NodeKind.ROLE, "admin") is not None
+    assert endpoint.attributes["validation"]["fields"] == [
+        "name",
+        "email",
+        "age",
+        "country_id",
+        "newsletter",
+    ]
+    assert endpoint.source_sha == _SHA
 
     country = await nodes.get_by_key(pid, NodeKind.MODEL, "App\\Models\\Country")
     assert country is not None
@@ -226,20 +215,19 @@ async def test_reingest_is_idempotent_and_updates_sha_in_place(
     nodes = NodeRepository(db_session)
     edges = EdgeRepository(db_session)
 
-    await LaravelIngester(runner=_runner("a" * 40)).ingest(
-        session=db_session, project_id=pid, repo_path="/repo"
+    await LaravelIngester(runner=_no_subprocess).ingest(
+        session=db_session, project_id=pid, repo_path=_FIXTURE, source_sha=_SHA
     )
-    nodes_after_first = await nodes.count(pid)
-    edges_after_first = len(await edges.list(pid))
+    assert await nodes.count(pid) == 5
+    assert len(await edges.list(pid)) == 7
 
-    # Re-ingest the same repo at a new HEAD → updates in place, no duplicates.
     new_sha = "b" * 40
-    result = await LaravelIngester(runner=_runner(new_sha)).ingest(
-        session=db_session, project_id=pid, repo_path="/repo"
+    result = await LaravelIngester(runner=_no_subprocess).ingest(
+        session=db_session, project_id=pid, repo_path=_FIXTURE, source_sha=new_sha
     )
 
-    assert await nodes.count(pid) == nodes_after_first == 8
-    assert len(await edges.list(pid)) == edges_after_first == 7
+    assert await nodes.count(pid) == 5  # updated in place, no duplicates
+    assert len(await edges.list(pid)) == 7
     assert result.source_sha == new_sha
     user = await nodes.get_by_key(pid, NodeKind.MODEL, "App\\Models\\User")
     assert user is not None and user.source_sha == new_sha
@@ -249,12 +237,12 @@ async def test_ingest_is_project_scoped(db_session: AsyncSession) -> None:
     project_a = await _project(db_session)
     project_b = await _project(db_session)
 
-    await LaravelIngester(runner=_runner("a" * 40)).ingest(
-        session=db_session, project_id=project_a, repo_path="/repo"
+    await LaravelIngester(runner=_no_subprocess).ingest(
+        session=db_session, project_id=project_a, repo_path=_FIXTURE, source_sha=_SHA
     )
 
     nodes = NodeRepository(db_session)
     edges = EdgeRepository(db_session)
-    assert await nodes.count(project_a) == 8
+    assert await nodes.count(project_a) == 5
     assert await nodes.count(project_b) == 0
     assert len(await edges.list(project_b)) == 0
