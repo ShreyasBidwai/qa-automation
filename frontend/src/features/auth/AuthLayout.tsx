@@ -74,26 +74,27 @@ function BrandPanel() {
     <aside className="m-4 hidden flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-background px-14 py-10 shadow-card min-[900px]:flex">
       <Wordmark className="text-[40px] tracking-[-0.025em]" />
 
-      {/* The content block is anchored to the bottom of the height between the
-       *  pinned wordmark and footer, on a consistent rhythm (heading→para 12px;
-       *  para→card and card→legend 24px). */}
-      <div className="mb-12 flex max-w-[440px] flex-1 flex-col justify-end gap-6">
-        <div>
-          <h2 className="text-[30px] font-semibold leading-[1.2] tracking-[-0.025em] text-foreground">
-            Tests you can trust.
-          </h2>
-          <p className="mt-3 max-w-[400px] text-[14.5px] leading-[1.6] text-muted-foreground">
-            Polaris reads your codebase, generates and runs tests, and reports ranked
-            findings — each with a mark telling you how much to believe it.
-          </p>
+      {/* Bottom row: the content sits bottom-left, the "Autonomous QA" mark
+       *  bottom-right, both anchored to the same bottom line (items-end). */}
+      <div className="flex flex-1 items-end justify-between gap-6">
+        <div className="flex max-w-[440px] flex-col gap-6">
+          <div>
+            <h2 className="text-[30px] font-semibold leading-[1.2] tracking-[-0.025em] text-foreground">
+              Tests you can trust.
+            </h2>
+            <p className="mt-3 max-w-[400px] text-[14.5px] leading-[1.6] text-muted-foreground">
+              Polaris reads your codebase, generates and runs tests, and reports
+              ranked findings each with a mark telling you how much to believe it.
+            </p>
+          </div>
+
+          <FindingPreview />
+          <TrustLegend />
         </div>
 
-        <FindingPreview />
-        <TrustLegend />
-      </div>
-
-      <div className="text-xs text-status-neutral-solid">
-        Autonomous QA · © 2026 Polaris
+        <div className="shrink-0 text-xs text-status-neutral-solid">
+          Autonomous QA · © 2026 Polaris
+        </div>
       </div>
     </aside>
   );

@@ -9,10 +9,11 @@
 
 COMPOSE := docker compose --project-directory . -f infra/docker-compose.yml
 COMPOSE_APP := docker compose --project-directory . -f infra/docker-compose.app.yml
+COMPOSE_REAL := docker compose --project-directory . -f infra/docker-compose.app.yml -f infra/docker-compose.real.yml
 COMPOSE_TEST := docker compose --project-directory . -f infra/docker-compose.yml -f infra/docker-compose.test.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help up down dev-up dev-down build lint test test-runners test-e2e-runner test-embeddings audit migrate seed-demo artifacts-dir
+.PHONY: help up down up-real down-real dev-up dev-down build lint test test-runners test-e2e-runner test-embeddings audit migrate seed-demo artifacts-dir
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -29,6 +30,12 @@ up: ## Run Polaris: packaged stack (Postgres + backend + single-origin web) — 
 
 down: ## Stop Polaris and remove containers (the db volume persists)
 	$(COMPOSE_APP) down
+
+up-real: ## REAL execution stack (ADDITIVE): runner carries PHP/Pest + Node/Playwright + bind-mounted claude; needs root .env secrets (docs/running-real.md)
+	$(COMPOSE_REAL) up -d --build --wait
+
+down-real: ## Stop the real-execution stack (db volume persists)
+	$(COMPOSE_REAL) down
 
 dev-up: ## Dev stack (Vite hot-reload frontend on :5173) — for working on the UI, not packaging
 	$(COMPOSE) up -d --build --wait

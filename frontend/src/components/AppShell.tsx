@@ -1,4 +1,4 @@
-import { Search, User } from "lucide-react";
+import { LogOut, Search, User } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Link } from "@/components/Link";
@@ -57,6 +57,22 @@ function NavItem({ entry, muted }: { entry: NavEntry; muted?: boolean }) {
   );
 }
 
+/** A simple sign-out action styled like the muted account-cluster items. Clears the
+ * session via the auth context; App's guard then redirects to /login. */
+function SignOutButton() {
+  const { signOut } = useAuth();
+  return (
+    <button
+      type="button"
+      onClick={() => void signOut()}
+      className="flex items-center gap-2.5 rounded-[7px] px-2.5 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-background hover:text-foreground"
+    >
+      <LogOut className="h-[14px] w-[14px] shrink-0" aria-hidden="true" />
+      Sign out
+    </button>
+  );
+}
+
 /**
  * The persistent app shell (Polaris Account.dc.html / Run Dashboard.dc.html): a
  * 232px white sidebar — wordmark · Projects/Findings/Runs · a bottom
@@ -84,6 +100,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           {SECONDARY.map((entry) => (
             <NavItem key={entry.to} entry={entry} muted />
           ))}
+          <SignOutButton />
         </nav>
       </aside>
 
