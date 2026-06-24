@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from app.execution.pest_runner import PestRunner
+from app.execution.php_test_runner import PhpTestRunner
 from app.execution.types import DbHandle, DbRole, PestScript, TargetEnv
 from app.models.enums import Outcome
 
@@ -125,7 +125,7 @@ def target_env() -> Iterator[TargetEnv]:
 
 
 def test_pest_runner_produces_correct_outcomes(target_env: TargetEnv) -> None:
-    runner = PestRunner()
+    runner = PhpTestRunner()
     scripts = _scripts()
     try:
         results = runner.run(scripts, target_env)
@@ -141,7 +141,7 @@ def test_pest_runner_produces_correct_outcomes(target_env: TargetEnv) -> None:
 
 
 def test_teardown_removes_generated_scripts(target_env: TargetEnv) -> None:
-    runner = PestRunner()
+    runner = PhpTestRunner()
     runner.run(_scripts(), target_env)
     assert _GENERATED.exists()
     runner.teardown(target_env)

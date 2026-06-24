@@ -29,7 +29,7 @@ from app.api.real_execution import (
 )
 from app.core.config import Settings
 from app.embeddings.stub import StubEmbeddingProvider
-from app.execution.pest_runner import PestRunner
+from app.execution.php_test_runner import PhpTestRunner
 from app.execution.types import ExecutionResult, PestScript, TargetEnv
 from app.models.enums import NodeKind, Outcome, RunMode
 from app.modes.selection import SelectionStrategyKind
@@ -95,7 +95,7 @@ def test_pest_runner_needs_no_base_url() -> None:
     cfg = ResolvedTargetConfig(
         repo_path="/r", app_path="/r", base_url=None, framework="pest"
     )
-    assert isinstance(build_runner_for(cfg), PestRunner)
+    assert isinstance(build_runner_for(cfg), PhpTestRunner)
 
 
 def test_browser_run_without_base_url_fails_clearly() -> None:
@@ -131,7 +131,7 @@ async def test_provider_resolves_runner_and_env_from_the_project(
     runner, target_env = await ProjectTargetProvider(settings).resolve(
         db_session, project.id
     )
-    assert isinstance(runner, PestRunner)  # stack=laravel → pest
+    assert isinstance(runner, PhpTestRunner)  # stack=laravel → pest
     assert target_env.base_url == "https://proj.example"
     assert target_env.app_path == "/proj/repo"
 
