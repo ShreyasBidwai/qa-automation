@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from app.execution.pest_runner import PestRunner
+from app.execution.php_test_runner import PhpTestRunner
 from app.execution.types import DbHandle, DbRole, PestScript, TargetEnv
 from app.models.enums import Outcome
 
@@ -89,7 +89,7 @@ def _env(app_path: str, evidence_dir: str) -> TargetEnv:
 
 def _run_guard(app_path: str, name: str, code: str) -> Outcome:
     """Run a single guard test against the app at app_path; clean up after."""
-    runner = PestRunner()
+    runner = PhpTestRunner()
     evidence = tempfile.mkdtemp(prefix="gate-evidence-")
     env = _env(app_path, evidence)
     script = PestScript(uuid.uuid4(), uuid.uuid4(), name, code)

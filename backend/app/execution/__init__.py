@@ -1,10 +1,11 @@
 """Test execution layer (Architecture §9, TRD §5/§8).
 
-The first ExecutionRunner is the PestRunner: it runs generated Pest scripts
+The first ExecutionRunner is the PhpTestRunner: it runs generated PHP test scripts
 against a bootable Laravel target + a writable, ephemeral test DB inside the
-``runners/laravel`` image, and returns framework-agnostic results that the run
-lifecycle persists. Dual-DB safety (never write to a read-only/real DB) and
-no-leak teardown are enforced here; triage is deferred to Sprint 7.
+``runners/laravel`` image, detecting whichever test binary the target ships (Pest
+or PHPUnit), and returns framework-agnostic results that the run lifecycle
+persists. Dual-DB safety (never write to a read-only/real DB) and no-leak teardown
+are enforced here; triage is deferred to Sprint 7.
 """
 
 from __future__ import annotations
@@ -21,7 +22,12 @@ from .errors import (
 )
 from .junit import JUnitCase, parse_junit
 from .lifecycle import RunLifecycle
-from .pest_runner import PestRunner, map_results
+from .php_test_runner import (
+    PestRunner,
+    PhpTestRunner,
+    detect_test_binary,
+    map_results,
+)
 from .playwright_report import PlaywrightCase, parse_playwright_json
 from .playwright_runner import PlaywrightRunner
 from .types import (
@@ -44,6 +50,7 @@ __all__ = [
     "MissingTargetUrlError",
     "PestRunner",
     "PestScript",
+    "PhpTestRunner",
     "PlaywrightCase",
     "PlaywrightReportError",
     "PlaywrightRunner",
@@ -52,6 +59,7 @@ __all__ = [
     "RunnerProcessError",
     "RunnerTimeout",
     "TargetEnv",
+    "detect_test_binary",
     "ensure_safe_target",
     "map_results",
     "parse_junit",

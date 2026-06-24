@@ -9,7 +9,7 @@ import pytest
 
 from app.execution.dual_db import ensure_safe_target, subprocess_db_env
 from app.execution.errors import ReadOnlyTargetError
-from app.execution.pest_runner import PestRunner
+from app.execution.php_test_runner import PhpTestRunner
 from app.execution.process import ProcessResult
 from app.execution.types import DbHandle, DbRole, PestScript, TargetEnv
 
@@ -70,7 +70,7 @@ def test_runner_guards_before_spawning_any_process() -> None:
         calls.append(argv)
         return ProcessResult(0, "", "")
 
-    runner = PestRunner(process=spy)
+    runner = PhpTestRunner(process=spy)
     script = PestScript(uuid.uuid4(), uuid.uuid4(), "x", "<?php")
     with pytest.raises(ReadOnlyTargetError):
         runner.run([script], _env(_REAL_DB))

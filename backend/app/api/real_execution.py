@@ -35,7 +35,7 @@ from app.ai.types import AIProvider
 from app.core.config import Settings
 from app.documents.grounding import SpecGroundingService
 from app.embeddings.types import EmbeddingProvider
-from app.execution.pest_runner import PestRunner
+from app.execution.php_test_runner import PhpTestRunner
 from app.execution.playwright_runner import PlaywrightRunner
 from app.execution.types import DbHandle, DbRole, ExecutionRunner, PestScript, TargetEnv
 from app.generation.e2e_generator import E2EGenerator
@@ -249,7 +249,7 @@ class LaravelIngestorAdapter:
 def build_runner_for(cfg: ResolvedTargetConfig) -> ExecutionRunner:
     """The execution runner for a project's resolved framework (ADR-0054)."""
     if cfg.framework == "pest":
-        return PestRunner()
+        return PhpTestRunner()
     if cfg.framework == "playwright":
         if not cfg.base_url:
             # A browser run needs the running app; fail clearly at run start.

@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 
 from app.execution.junit import JUnitCase
-from app.execution.pest_runner import map_results
+from app.execution.php_test_runner import map_results
 from app.execution.types import PestScript
 from app.models.enums import Outcome
 
