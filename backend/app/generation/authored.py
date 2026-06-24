@@ -1,4 +1,4 @@
-"""Mode A — human-authored case specs + deterministic-first Pest rendering.
+"""Mode A — human-authored case specs + deterministic-first PHPUnit rendering.
 
 A human authors a test case from scratch (no AI plan). This module is the
 generation half of Mode A:
@@ -8,12 +8,16 @@ generation half of Mode A:
   oracle). ``CaseAuthoringService`` turns it into a versioned ``TestCase``.
 - **Deterministic-first scripting.** A structurally simple case (single endpoint,
   concrete method/URI/payload/expected-status + a structural shape, no DB setup)
-  renders to Pest from a pure template — *no AI call*. Only cases that genuinely
-  need app-specific knowledge (DB rows to set up, path params, unusual methods)
-  fall back to the existing T1.4 AI render. This is deterministic-first: AI only
-  where it is actually needed (Architecture §5/§6, TRD §5).
+  renders to a PHPUnit feature-test CLASS from a pure template — *no AI call*. Only
+  cases that genuinely need app-specific knowledge (DB rows to set up, path params,
+  unusual methods) fall back to the existing T1.4 AI render. This is
+  deterministic-first: AI only where it is actually needed (Architecture §5/§6,
+  TRD §5).
 
-Nothing here writes to the database; persistence is the service's job.
+The emitted class (``class …Test extends TestCase``) runs natively under BOTH
+PHPUnit and Pest (Pest executes PHPUnit classes), so the executor uses whatever
+test binary the target ships. Nothing here writes to the database; persistence is
+the service's job.
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ from app.ingestion.models import EndpointSpec
 from app.models.enums import OracleSource, TestLayer, TestType
 
 from .case_key import compute_case_key
+from .extract import phpunit_method_name, unique_class_name
 from .plan import DbDependency, ExpectedOutcome, PlannedCase
 from .render import render_script
 
@@ -94,7 +99,7 @@ class AuthoredCaseSpec:
 
 
 def is_template_renderable(spec: AuthoredCaseSpec) -> bool:
-    """True when the case is simple enough for the deterministic Pest template.
+    """True when the case is simple enough for the deterministic PHPUnit template.
 
     Simple ⇒ no DB setup, a known HTTP method, a URI with every path placeholder
     resolved, and no GET body. Anything else needs app-specific knowledge and is
@@ -115,14 +120,14 @@ def is_template_renderable(spec: AuthoredCaseSpec) -> bool:
 def render_authored_script(
     provider: AIProvider, spec: AuthoredCaseSpec, budget_tokens: int
 ) -> tuple[str, bool]:
-    """Render the Pest script for an authored case.
+    """Render the PHPUnit script for an authored case.
 
     Returns ``(code, deterministic)``: a template render (``True``, no AI call)
     for a simple case, otherwise the T1.4 AI render (``False``). The AI provider
     is touched *only* on the fallback path.
     """
     if is_template_renderable(spec):
-        return render_pest_template(spec), True
+        return render_phpunit_template(spec), True
     endpoint, planned = _to_endpoint_and_plan(spec)
     return render_script(provider, endpoint, planned, budget_tokens), False
 
@@ -141,19 +146,37 @@ def compute_authored_case_key(spec: AuthoredCaseSpec) -> str | None:
     return compute_case_key(endpoint, planned)
 
 
-# --- deterministic Pest template ---------------------------------------------
+# --- deterministic PHPUnit template ------------------------------------------
 
 
-def render_pest_template(spec: AuthoredCaseSpec) -> str:
-    """Assemble a Pest feature test purely from the spec — no AI.
+def render_phpunit_template(spec: AuthoredCaseSpec) -> str:
+    """Assemble a PHPUnit feature-test class purely from the spec — no AI.
 
-    Precondition: ``is_template_renderable(spec)`` (the caller guarantees it).
+    Precondition: ``is_template_renderable(spec)`` (the caller guarantees it). The
+    class name is deterministic + globally unique (so authored + generated files
+    never collide in one runner invocation) and runs under both PHPUnit and Pest.
     """
     method = spec.endpoint.method.upper()
     helper = _JSON_HELPERS[method]
     uri = _resolve_uri(spec)
     assert uri is not None  # guaranteed by is_template_renderable
     php_uri = uri if uri.startswith("/") else f"/{uri}"
+    class_name = unique_class_name(
+        spec.name, f"{spec.endpoint.method} {spec.endpoint.uri} {spec.name}"
+    )
+
+    body: list[str] = []
+    if spec.authenticated:
+        body.append(
+            "        $this->actingAs(\\App\\Models\\User::query()->firstOrFail());"
+        )
+    if method != "GET" and spec.payload:
+        payload = _php_payload(spec.payload)
+        body.append(f"        $response = $this->{helper}('{php_uri}', {payload});")
+    else:
+        body.append(f"        $response = $this->{helper}('{php_uri}');")
+    body.append(f"        $response->assertStatus({spec.expected_status});")
+    body.extend(_shape_asserts(spec.expected_shape))
 
     lines = [
         "<?php",
@@ -161,20 +184,18 @@ def render_pest_template(spec: AuthoredCaseSpec) -> str:
         f"// Authored test case: {spec.name}",
         f"// oracle_source: {spec.oracle_source.value}",
         "",
-        f"test('{_escape_single(spec.name)}', function () {{",
+        "namespace Tests\\Feature;",
+        "",
+        "use Tests\\TestCase;",
+        "",
+        f"class {class_name} extends TestCase",
+        "{",
+        f"    public function {phpunit_method_name(spec.name)}(): void",
+        "    {",
+        *body,
+        "    }",
+        "}",
     ]
-    if spec.authenticated:
-        lines.append(
-            "    $this->actingAs(\\App\\Models\\User::query()->firstOrFail());"
-        )
-    if method != "GET" and spec.payload:
-        body = _php_payload(spec.payload)
-        lines.append(f"    $response = $this->{helper}('{php_uri}', {body});")
-    else:
-        lines.append(f"    $response = $this->{helper}('{php_uri}');")
-    lines.append(f"    $response->assertStatus({spec.expected_status});")
-    lines.extend(_shape_asserts(spec.expected_shape))
-    lines.append("});")
     return "\n".join(lines) + "\n"
 
 
@@ -183,10 +204,10 @@ def _shape_asserts(shape: dict[str, Any]) -> list[str]:
     errors = shape.get("validation_errors")
     structure = shape.get("json_structure")
     if errors:
-        return [f"    $response->assertJsonValidationErrors({_php_list(errors)});"]
+        return [f"        $response->assertJsonValidationErrors({_php_list(errors)});"]
     if structure:
-        return [f"    $response->assertJsonStructure({_php_list(structure)});"]
-    return ["    expect($response->json())->toBeArray();"]
+        return [f"        $response->assertJsonStructure({_php_list(structure)});"]
+    return ["        $this->assertIsArray($response->json());"]
 
 
 def _resolve_uri(spec: AuthoredCaseSpec) -> str | None:
