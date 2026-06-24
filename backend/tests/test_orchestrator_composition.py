@@ -21,13 +21,12 @@ from app.api.execution import OrchestratorRunExecutor
 from app.api.real_execution import (
     LaravelIngestorAdapter,
     OrchestratorTargetGenerator,
+    ProjectTargetProvider,
     endpoint_spec_from_node,
 )
 from app.brain.cross_layer import CrossLayerResolver
 from app.core.config import Settings
 from app.embeddings.stub import StubEmbeddingProvider
-from app.execution.pest_runner import PestRunner
-from app.execution.types import TargetEnv
 from app.generation.e2e_generator import E2EGenerator
 from app.generation.generator import TestGenerator
 from app.models.enums import NodeKind
@@ -53,10 +52,9 @@ def test_orchestrator_executor_is_fully_wired(db_session: AsyncSession) -> None:
     executor = build_run_executor(_orchestrator_settings())
     assert isinstance(executor, OrchestratorRunExecutor)
 
-    # Real per-stack runner + target env (from settings).
-    assert isinstance(executor._runner, PestRunner)
-    assert isinstance(executor._target_env, TargetEnv)
-    assert executor._target_env.app_path == "/work/tests/fixtures/laravel-app"
+    # Target config is resolved PER-PROJECT at run time (ADR-0054): the provider is
+    # wired (the runner + TargetEnv come from the Project, not composition env).
+    assert isinstance(executor._target_provider, ProjectTargetProvider)
 
     # Real AI/embedding providers composed (stub here; claude_cli in the smoke).
     assert isinstance(executor._ai, StubAIProvider)
@@ -78,7 +76,9 @@ def test_orchestrator_executor_is_fully_wired(db_session: AsyncSession) -> None:
 def test_laravel_ingestor_is_wired() -> None:
     ingestor = build_ingestor(_orchestrator_settings())
     assert isinstance(ingestor, LaravelIngestorAdapter)
-    assert ingestor._repo_path == "/work/tests/fixtures/laravel-app"
+    # The repo is resolved from the Project at ingest time (ADR-0054); the adapter
+    # just holds settings (for the deprecated env fallback), not a fixed repo path.
+    assert isinstance(ingestor._settings, Settings)
 
 
 def test_endpoint_spec_is_rebuilt_from_a_brain_node() -> None:

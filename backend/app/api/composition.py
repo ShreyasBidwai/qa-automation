@@ -250,20 +250,19 @@ def build_run_executor(settings: Settings) -> RunExecutor:
         from app.ingestion.laravel.factories import target_has_factories
 
         from .execution import OrchestratorRunExecutor
-        from .real_execution import (
-            OrchestratorTargetGenerator,
-            build_runner,
-            build_target_env,
-        )
+        from .real_execution import OrchestratorTargetGenerator, ProjectTargetProvider
 
         ai_provider = build_ai_provider(settings)
         embedding_provider = build_embedding_provider(settings)
         budget = settings.ai_max_budget_tokens
-        # Whether generated tests may use model factories (ADR-0037).
+        # Whether generated tests may use model factories (ADR-0037). Derived from the
+        # repo; still env-sourced (a generation heuristic with a runtime fallback) —
+        # the core target config moved to the Project (ADR-0054), this lags it.
         factories = target_has_factories(settings.target_repo_path)
         return OrchestratorRunExecutor(
-            runner=build_runner(settings),
-            target_env=build_target_env(settings),
+            # Per-project target config (runner + where/what to test): read from the
+            # Project at run time, not instance env (ADR-0054).
+            target_provider=ProjectTargetProvider(settings),
             # Session-scoped: built per run from the job's session.
             resolver_factory=CrossLayerResolver,
             # The generator is where provider calls actually happen during a run;
@@ -297,7 +296,8 @@ def build_ingestor(settings: Settings) -> Ingestor:
         from .real_execution import LaravelIngestorAdapter
 
         return LaravelIngestorAdapter(
-            repo_path=settings.target_repo_path,
+            # Reads the repo from the Project at ingest time (ADR-0054), not env.
+            settings=settings,
             embedding_provider=capturing_embedding_provider(
                 build_embedding_provider(settings)
             ),
