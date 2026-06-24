@@ -13,9 +13,10 @@ AI-backed target generator. This module supplies the real wiring so
   - ``endpoint_spec_from_node`` — rebuild the ``EndpointSpec`` the backend
     generator needs from the Brain endpoint node's captured attributes.
   - ``LaravelIngestorAdapter`` — the real Laravel ingestor behind the ``Ingestor``
-    port (reads a checked-out repo path; builds the Brain).
-  - ``build_runner`` / ``build_target_env`` — the per-stack runner + the target
-    environment from settings.
+    port (reads the repo from the Project; builds the Brain).
+  - ``ProjectTargetProvider`` / ``build_runner_for`` / ``build_target_env_for`` — the
+    per-PROJECT runner + target environment, resolved from the Project record at run
+    time (ADR-0054), with env as a deprecated fallback.
 
 The AI/embedding providers are composed from the factories, so the generator is
 "AI-backed" structurally; which provider it holds (stub vs claude_cli) is config —
@@ -51,8 +52,10 @@ from app.models.enums import NodeKind
 from app.models.model_node import ModelNode
 from app.modes.selection import Target
 from app.repositories.node_repository import NodeRepository
+from app.repositories.project_repository import ProjectRepository
 
 from .errors import ApiConfigError
+from .project_target import ResolvedTargetConfig, resolve_target_config
 
 
 class TargetGenerationError(Exception):
@@ -205,26 +208,32 @@ class OrchestratorTargetGenerator:
 class LaravelIngestorAdapter:
     """Real Laravel ingestion behind the ``Ingestor`` port (ingest → Brain).
 
-    Reads a checked-out repo path (``target_repo_path``) and builds the Brain via
-    ``LaravelIngester``. (Per-project git checkout from the project's repo_url is the
-    next step; for the bridge + smoke the repo is a configured local path.)
+    Reads the repo location FROM THE PROJECT (ADR-0054) — ``repo_url`` on the project,
+    with ``TARGET_REPO_PATH`` only as a deprecated env fallback — and builds the Brain
+    via ``LaravelIngester``. (Per-project git checkout from a git URL is the next step;
+    today the resolved repo is a local path.)
     """
 
     def __init__(
-        self, *, repo_path: str, embedding_provider: EmbeddingProvider
+        self, *, settings: Settings, embedding_provider: EmbeddingProvider
     ) -> None:
-        self._repo_path = repo_path
+        self._settings = settings
         self._ingester = LaravelIngester(embedding_provider=embedding_provider)
 
     async def ingest(
         self, *, session: AsyncSession, project_id: uuid.UUID
     ) -> dict[str, Any]:
-        if not self._repo_path:
+        project = await ProjectRepository(session).get(project_id)
+        if project is None:
+            raise ApiConfigError(f"project {project_id} not found for ingestion")
+        cfg = resolve_target_config(project, self._settings)
+        if not cfg.repo_path:
             raise ApiConfigError(
-                "ingestor_mode=laravel requires TARGET_REPO_PATH (the Laravel repo)"
+                "project has no repo configured — set repo_url on the project "
+                "(ingestor_mode=laravel needs the Laravel source)"
             )
         result = await self._ingester.ingest(
-            session=session, project_id=project_id, repo_path=self._repo_path
+            session=session, project_id=project_id, repo_path=cfg.repo_path
         )
         return {
             "mode": "laravel",
@@ -234,26 +243,55 @@ class LaravelIngestorAdapter:
         }
 
 
-# --- per-stack runner + target environment from settings ---------------------
+# --- per-project runner + target environment (resolved from the Project) ------
 
 
-def build_runner(settings: Settings) -> ExecutionRunner:
-    if settings.runner_framework == "pest":
+def build_runner_for(cfg: ResolvedTargetConfig) -> ExecutionRunner:
+    """The execution runner for a project's resolved framework (ADR-0054)."""
+    if cfg.framework == "pest":
         return PestRunner()
-    if settings.runner_framework == "playwright":
-        return PlaywrightRunner(node_project_dir=settings.target_app_path or ".")
+    if cfg.framework == "playwright":
+        if not cfg.base_url:
+            # A browser run needs the running app; fail clearly at run start.
+            raise ApiConfigError(
+                "project has no target base URL configured — set app_url on the "
+                "project (a browser run needs the running app)"
+            )
+        return PlaywrightRunner(node_project_dir=cfg.app_path or ".")
     raise ApiConfigError(
-        f"unknown runner_framework {settings.runner_framework!r} "
-        "(expected 'pest' or 'playwright')"
+        f"unknown framework {cfg.framework!r} (expected 'pest' or 'playwright')"
     )
 
 
-def build_target_env(settings: Settings) -> TargetEnv:
+def build_target_env_for(cfg: ResolvedTargetConfig, settings: Settings) -> TargetEnv:
+    """A run's TargetEnv: app-level fields from the PROJECT (ADR-0054); the disposable
+    execution DB + evidence dir stay infra (env)."""
     return TargetEnv(
-        app_path=settings.target_app_path,
+        app_path=cfg.app_path,
         execution_db=DbHandle(
             settings.execution_db_url, DbRole.WRITABLE_TEST, ephemeral=True
         ),
         evidence_dir=settings.evidence_dir,
-        base_url=settings.target_base_url,
+        base_url=cfg.base_url,
     )
+
+
+class ProjectTargetProvider:
+    """Resolves a run's (runner, TargetEnv) PER PROJECT (ADR-0054).
+
+    The executor calls this with the run's session + project so a run reads its target
+    config from the Project record, not from instance env. Project wins; env is a
+    deprecated fallback (logged in ``resolve_target_config``).
+    """
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+
+    async def resolve(
+        self, session: AsyncSession, project_id: uuid.UUID
+    ) -> tuple[ExecutionRunner, TargetEnv]:
+        project = await ProjectRepository(session).get(project_id)
+        if project is None:
+            raise ApiConfigError(f"project {project_id} not found for target config")
+        cfg = resolve_target_config(project, self._settings)
+        return build_runner_for(cfg), build_target_env_for(cfg, self._settings)

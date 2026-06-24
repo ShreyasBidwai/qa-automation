@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,21 +35,34 @@ from .errors import ApiConfigError
 from .ports import RunExecution, RunRequest
 
 
+class TargetProvider(Protocol):
+    """Resolves a run's (runner, TargetEnv) per project (ADR-0054). The production
+    impl reads the Project record; tests inject a fixed one."""
+
+    async def resolve(
+        self, session: AsyncSession, project_id: uuid.UUID
+    ) -> tuple[ExecutionRunner, TargetEnv]: ...
+
+
 class OrchestratorRunExecutor:
     """The production RunExecutor: dispatches to Mode B / Mode C orchestrators."""
 
     def __init__(
         self,
         *,
-        runner: ExecutionRunner,
-        target_env: TargetEnv,
+        runner: ExecutionRunner | None = None,
+        target_env: TargetEnv | None = None,
+        target_provider: TargetProvider | None = None,
         resolver_factory: Callable[[AsyncSession], BrainResolver],
         target_generator_factory: Callable[[AsyncSession], TargetGenerator],
         ai_provider: AIProvider | None = None,
         embedding_provider: EmbeddingProvider | None = None,
     ) -> None:
+        # Either a per-project ``target_provider`` (production — reads target config
+        # from the Project, ADR-0054) OR a fixed runner+target_env (tests/stub).
         self._runner = runner
         self._target_env = target_env
+        self._target_provider = target_provider
         # Resolver + generator are SESSION-scoped (the resolver wraps a session, the
         # generator persists through it), so they're built per-execute from the
         # job's session — not held as singletons (the prior B5 gap).
@@ -57,6 +70,19 @@ class OrchestratorRunExecutor:
         self._generator_factory = target_generator_factory
         self._ai = ai_provider
         self._embed = embedding_provider
+
+    async def _resolve_target(
+        self, session: AsyncSession, project_id: uuid.UUID
+    ) -> tuple[ExecutionRunner, TargetEnv]:
+        """The run's runner + TargetEnv — resolved PER PROJECT when a provider is
+        wired (ADR-0054), else the fixed pair (tests/stub)."""
+        if self._target_provider is not None:
+            return await self._target_provider.resolve(session, project_id)
+        if self._runner is not None and self._target_env is not None:
+            return self._runner, self._target_env
+        raise ApiConfigError(
+            "run executor needs a target_provider or a runner + target_env"
+        )
 
     async def execute(
         self,
@@ -84,6 +110,9 @@ class OrchestratorRunExecutor:
             if target_login is not None
             else CredentialMode.POLARIS_CREATES.value
         )
+        # Target config (runner + where/what to test) comes FROM THE PROJECT when a
+        # provider is wired (ADR-0054), not from instance env.
+        runner, target_env = await self._resolve_target(session, project_id)
         resolver = self._resolver_factory(session)
         generator = self._generator_factory(session)
         strategy = build_selection_strategy(
@@ -94,8 +123,8 @@ class OrchestratorRunExecutor:
         )
         orchestrator = ModeBOrchestrator(
             session=session,
-            runner=self._runner,
-            target_env=self._target_env,
+            runner=runner,
+            target_env=target_env,
             resolver=resolver,
             generator=generator,
             # DB-state phase (B11, ADR-0044): tier-gated per project (off → no-op),
@@ -104,7 +133,7 @@ class OrchestratorRunExecutor:
             db_state=DbStateRunPhase(
                 session,
                 resolver=resolver,
-                connector=EngineTargetConnector(self._target_env.execution_db.url),
+                connector=EngineTargetConnector(target_env.execution_db.url),
             ),
         )
         report = await orchestrator.run(
