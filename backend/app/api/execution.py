@@ -16,11 +16,12 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.types import AIProvider
+from app.credentials import resolve_target_login
 from app.db_state.run_phase import DbStateRunPhase, EngineTargetConnector
 from app.embeddings.types import EmbeddingProvider
 from app.execution.types import ExecutionRunner, TargetEnv
 from app.impact.selector import ChangeSet
-from app.models.enums import RunMode
+from app.models.enums import CredentialMode, RunMode
 from app.modes.mode_b import (
     BrainResolver,
     ModeBBounds,
@@ -71,6 +72,18 @@ class OrchestratorRunExecutor:
     async def _run_mode_b(
         self, session: AsyncSession, project_id: uuid.UUID, request: RunRequest
     ) -> RunExecution:
+        # Target-account selection (ADR-0053): a specific-account project authenticates
+        # as the user-provided account; otherwise Polaris provisions its own (existing
+        # behaviour). ``resolve_target_login`` is the ONLY place the secret is
+        # decrypted (in memory); the secret is never put in the summary, logs, or
+        # events — only the chosen mode is. (Actual target-auth is stubbed: T4.2a is
+        # not yet wired into runs; a real run hands the login to the AuthStrategy.)
+        target_login = await resolve_target_login(session, project_id)
+        auth_mode = (
+            CredentialMode.SPECIFIC_ACCOUNT.value
+            if target_login is not None
+            else CredentialMode.POLARIS_CREATES.value
+        )
         resolver = self._resolver_factory(session)
         generator = self._generator_factory(session)
         strategy = build_selection_strategy(
@@ -108,6 +121,8 @@ class OrchestratorRunExecutor:
             "cases_reused": report.cases_reused,
             "status": report.status,
             "findings": len(report.ranked_findings),
+            # The account-provisioning decision (never the secret) — ADR-0053.
+            "auth_mode": auth_mode,
         }
         return RunExecution(run_id=report.run_id, summary=summary)
 

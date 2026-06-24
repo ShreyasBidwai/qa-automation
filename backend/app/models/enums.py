@@ -208,6 +208,18 @@ class AuthVariant(str, enum.Enum):
     MANUAL = "manual"
 
 
+class CredentialMode(str, enum.Enum):
+    """How a project's runs obtain a target-app account (ADR-0053).
+
+    ``specific_account`` = test a real, user-provided account (its encrypted secret
+    is stored); ``polaris_creates`` = Polaris provisions its own account (no secret).
+    Persisted as a validated string (no pg enum).
+    """
+
+    SPECIFIC_ACCOUNT = "specific_account"
+    POLARIS_CREATES = "polaris_creates"
+
+
 class AuthChallenge(str, enum.Enum):
     """The login challenge a target presented, recorded in the challenge log.
 

@@ -134,6 +134,13 @@ class Settings(BaseSettings):
     git_token_username: str = "oauth2"
     git_clone_timeout_seconds: float = 120.0
 
+    # --- Target-account credentials encryption (ADR-0053) ---
+    # A urlsafe-base64 32-byte Fernet key used to encrypt target-app account secrets
+    # at rest. Comes from the environment / secret store — NEVER hardcoded or in the
+    # repo. Absent ⇒ the credentials write path refuses (no plaintext is ever stored)
+    # and is itself a secret (never logged). Generate: Fernet.generate_key().
+    target_credentials_key: str | None = None
+
     # --- Brain resolver (T2.4) — hybrid vector + lexical NL→node resolution ---
     # Blended score = vector_weight * cosine_sim + lexical_weight * lexical.
     resolver_vector_weight: float = 0.6

@@ -26,6 +26,7 @@ from .result import Result
 from .run import Run
 from .run_event import RunEvent
 from .spec_divergence import SpecDivergence
+from .target_credentials import TargetCredentials
 from .test_case import TestCase
 from .test_heal import TestHeal
 from .test_script import TestScript
@@ -60,4 +61,5 @@ __all__ = [
     "Incident",
     "AiUsage",
     "RunEvent",
+    "TargetCredentials",
 ]

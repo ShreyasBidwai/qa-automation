@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, BaseModel, Field, model_validator
+from pydantic import AfterValidator, BaseModel, Field, SecretStr, model_validator
 
 from app.core.password_policy import validate_password
 
@@ -671,6 +671,39 @@ class SpecDivergenceResponse(BaseModel):
 class SpecDivergenceListResponse(BaseModel):
     items: list[SpecDivergenceResponse]
     total: int
+
+
+# --- target-account credentials (ADR-0053) ----------------------------------
+
+CredentialModeLiteral = Literal["specific_account", "polaris_creates"]
+
+
+class CredentialUpsert(BaseModel):
+    """Set/replace a project's target credentials. The secret is WRITE-ONLY — it is
+    encrypted at rest and never returned. ``SecretStr`` keeps the plaintext out of
+    logs/reprs even if the request body is dumped."""
+
+    mode: CredentialModeLiteral
+    identifier: str | None = Field(default=None, max_length=512)
+    secret: SecretStr | None = Field(default=None)
+
+    @model_validator(mode="after")
+    def _require_for_specific_account(self) -> CredentialUpsert:
+        if self.mode == "specific_account":
+            if not (self.identifier and self.identifier.strip()):
+                raise ValueError("identifier is required for a specific account")
+            if self.secret is None or not self.secret.get_secret_value().strip():
+                raise ValueError("secret is required for a specific account")
+        return self
+
+
+class CredentialStatusResponse(BaseModel):
+    """The safe view of a project's credentials — NEVER the secret. ``has_credentials``
+    is true iff an encrypted account secret is stored (ADR-0053)."""
+
+    mode: str
+    identifier: str | None = None
+    has_credentials: bool = False
 
 
 # --- self-healing (B8, ADR-0040) --------------------------------------------

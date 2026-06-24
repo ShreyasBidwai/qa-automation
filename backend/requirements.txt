@@ -18,3 +18,7 @@ pgvector==0.3.6
 # Password hashing (B2 auth): argon2id — memory-hard, modern, no bcrypt 72-byte
 # truncation (ADR-0030). Ships manylinux wheels (cffi); installs in the slim image.
 argon2-cffi==23.1.0
+# Symmetric encryption for target-account secrets at rest (Fernet = AES-128-CBC +
+# HMAC-SHA256, authenticated). Key comes from config/secret env, never the repo
+# (ADR-0053). Ships manylinux wheels.
+cryptography==43.0.3
