@@ -9,10 +9,12 @@ vi.mock("@/lib/api/client", () => ({
     getDbStateTier: vi.fn(),
     setDbStateTier: vi.fn(),
   },
+  documentApi: { list: vi.fn(), upload: vi.fn(), remove: vi.fn() },
+  credentialApi: { get: vi.fn(), put: vi.fn(), remove: vi.fn() },
 }));
 vi.mock("@/lib/router", () => ({ navigate: vi.fn() }));
 
-import { projectApi } from "@/lib/api/client";
+import { credentialApi, documentApi, projectApi } from "@/lib/api/client";
 import { navigate } from "@/lib/router";
 import type { Project } from "@/lib/api/types";
 
@@ -45,6 +47,17 @@ describe("EditProjectPage", () => {
       ok: true,
       status: 200,
       data: { project_id: "p1", tier: "off" },
+    });
+    // The new credential + document cards fetch on mount — give them quiet defaults.
+    vi.mocked(documentApi.list).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { items: [], total: 0 },
+    });
+    vi.mocked(credentialApi.get).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { mode: "polaris_creates", identifier: null, has_credentials: false },
     });
   });
 

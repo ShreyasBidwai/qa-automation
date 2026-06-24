@@ -1,16 +1,31 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/api/client", () => ({ projectApi: { create: vi.fn() } }));
+vi.mock("@/lib/api/client", () => ({
+  projectApi: { create: vi.fn() },
+  documentApi: { list: vi.fn(), upload: vi.fn(), remove: vi.fn() },
+  credentialApi: { get: vi.fn(), put: vi.fn(), remove: vi.fn() },
+}));
 vi.mock("@/lib/router", () => ({ navigate: vi.fn() }));
 
-import { projectApi } from "@/lib/api/client";
+import { credentialApi, documentApi, projectApi } from "@/lib/api/client";
 
 import { CreateProjectForm } from "./CreateProjectForm";
 
 describe("CreateProjectForm", () => {
   beforeEach(() => {
     vi.mocked(projectApi.create).mockReset();
+    // The post-registration setup step mounts the credential + document cards.
+    vi.mocked(documentApi.list).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { items: [], total: 0 },
+    });
+    vi.mocked(credentialApi.get).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { mode: "polaris_creates", identifier: null, has_credentials: false },
+    });
   });
 
   it("validates required fields and does not submit when empty", () => {

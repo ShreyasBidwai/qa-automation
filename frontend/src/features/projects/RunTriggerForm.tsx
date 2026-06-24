@@ -3,7 +3,7 @@ import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { runApi } from "@/lib/api/client";
-import type { RunCreateBody, SelectionStrategy } from "@/lib/api/types";
+import type { RunCreateBody, RunLayer, SelectionStrategy } from "@/lib/api/types";
 import { navigate } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
@@ -15,12 +15,25 @@ const EXAMPLES = [
   "password reset link expires",
 ];
 
+// The selectable layer scope (ADR-0052), in a stable order for a deterministic body.
+const LAYERS: { key: RunLayer; label: string; description: string }[] = [
+  { key: "ui", label: "UI", description: "page / browser journeys" },
+  { key: "api", label: "API", description: "endpoint contracts" },
+  { key: "db", label: "DB", description: "database-state checks" },
+];
+
 /** Start a run (#4): describe it (Mode C) or run autonomously (Mode B). */
 export function RunTriggerForm({ projectId }: { projectId: string }) {
   const [mode, setMode] = useState<Mode>("describe");
   const [prompt, setPrompt] = useState("");
   const [strategy, setStrategy] = useState<SelectionStrategy>("full_sweep");
   const [changeset, setChangeset] = useState("");
+  // Layer scope (Mode B). Default = all on = the full set = current behaviour.
+  const [layers, setLayers] = useState<Record<RunLayer, boolean>>({
+    ui: true,
+    api: true,
+    db: true,
+  });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -32,6 +45,20 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
       }
       return { mode: "mode_c", prompt: prompt.trim() };
     }
+
+    // At least one layer must be selected; turning all off blocks the run.
+    const selectedLayers = LAYERS.map((layer) => layer.key).filter(
+      (key) => layers[key],
+    );
+    if (selectedLayers.length === 0) {
+      setError("Select at least one layer to test");
+      return null;
+    }
+    // Omit the field when every layer is on — that equals the full set, so the
+    // request body is identical to the existing full-scope behaviour.
+    const layerScope: { layers?: RunLayer[] } =
+      selectedLayers.length === LAYERS.length ? {} : { layers: selectedLayers };
+
     if (strategy === "change_impact") {
       const paths = changeset
         .split("\n")
@@ -41,9 +68,9 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
         setError("List at least one changed file for change-impact selection.");
         return null;
       }
-      return { mode: "mode_b", strategy, changeset: paths };
+      return { mode: "mode_b", strategy, changeset: paths, ...layerScope };
     }
-    return { mode: "mode_b", strategy };
+    return { mode: "mode_b", strategy, ...layerScope };
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -146,6 +173,28 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
               <p className="text-xs text-muted-foreground">One path per line.</p>
             </div>
           ) : null}
+
+          <fieldset className="space-y-2 pt-1">
+            <legend className="mb-1 text-sm font-medium text-foreground">
+              Layers to test
+            </legend>
+            <p className="mb-2 text-xs text-muted-foreground">
+              Which layers this run exercises. All on = test everything.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {LAYERS.map((layer) => (
+                <LayerToggle
+                  key={layer.key}
+                  label={layer.label}
+                  description={layer.description}
+                  checked={layers[layer.key]}
+                  onChange={(checked) =>
+                    setLayers((current) => ({ ...current, [layer.key]: checked }))
+                  }
+                />
+              ))}
+            </div>
+          </fieldset>
         </fieldset>
       )}
 
@@ -196,6 +245,38 @@ function ModeCard({
       </div>
       <p className="mt-1 text-xs text-muted-foreground">{description}</p>
     </button>
+  );
+}
+
+function LayerToggle({
+  label,
+  description,
+  checked,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex cursor-pointer items-start gap-2.5 rounded-lg border p-3",
+        checked ? "border-accent bg-accent-subtle" : "border-border bg-surface",
+      )}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-0.5 h-4 w-4 shrink-0 text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      />
+      <span className="min-w-0">
+        <span className="block text-sm font-medium text-foreground">{label}</span>
+        <span className="block text-xs text-muted-foreground">{description}</span>
+      </span>
+    </label>
   );
 }
 

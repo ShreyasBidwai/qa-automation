@@ -6,6 +6,9 @@ import { Label } from "@/components/ui/label";
 import { projectApi } from "@/lib/api/client";
 import { navigate } from "@/lib/router";
 
+import { ProjectCredentialsCard } from "./ProjectCredentialsCard";
+import { ProjectDocumentsCard } from "./ProjectDocumentsCard";
+
 interface FieldErrors {
   name?: string;
   repoUrl?: string;
@@ -21,6 +24,9 @@ export function CreateProjectForm() {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // After register we stay on a setup step so docs/credentials can be attached now,
+  // while we have the new project id — rather than bouncing straight to the project.
+  const [created, setCreated] = useState<{ id: string; name: string } | null>(null);
 
   function validate(): FieldErrors {
     const next: FieldErrors = {};
@@ -47,11 +53,37 @@ export function CreateProjectForm() {
     setSubmitting(false);
 
     if (result.ok && result.data) {
-      // The new project shows up in the list via GET /projects — no local stash.
-      navigate(`/projects/${result.data.id}`);
+      // Move to the setup step (attach docs / configure the account) with the new id.
+      setCreated({ id: result.data.id, name: result.data.name });
       return;
     }
     setSubmitError(result.error ?? "Could not register the project.");
+  }
+
+  if (created) {
+    return (
+      <div>
+        <div className="rounded-xl border border-border bg-surface p-6 shadow-card">
+          <h2 className="text-[15px] font-semibold text-foreground">
+            Project registered
+          </h2>
+          <p className="mt-1 text-[13px] text-muted-foreground">
+            <span className="font-medium text-foreground">{created.name}</span> is set
+            up. Attach documents and configure the target account now, or skip — you can
+            do both later in project settings.
+          </p>
+        </div>
+        <div className="mt-5 space-y-7">
+          <ProjectCredentialsCard projectId={created.id} />
+          <ProjectDocumentsCard projectId={created.id} />
+        </div>
+        <div className="mt-5 flex items-center justify-end">
+          <Button type="button" onClick={() => navigate(`/projects/${created.id}`)}>
+            Go to project
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (

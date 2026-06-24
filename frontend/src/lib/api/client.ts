@@ -4,8 +4,11 @@ import type {
   AuthTokenResponse,
   AuthUser,
   ChangePasswordBody,
+  CredentialStatus,
+  CredentialUpsertBody,
   DbStateTierResponse,
   DbStateTierUpdateBody,
+  DocumentListResponse,
   FieldError,
   Finding,
   FindingsResponse,
@@ -22,6 +25,7 @@ import type {
   PageParams,
   Project,
   ProjectCreateBody,
+  ProjectDocument,
   ProjectListResponse,
   ProfileUpdateBody,
   ProjectUpdateBody,
@@ -66,6 +70,8 @@ interface ProblemJson {
 // Exported so the SSE fetch-stream consumer (run events) builds the same base.
 export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 const REQUEST_TIMEOUT_MS = 8000;
+// File upload chunks + embeds server-side, so it needs longer than a JSON call.
+const UPLOAD_TIMEOUT_MS = 30000;
 
 /** An honest, voiced "too many attempts" message that respects Retry-After. */
 function rateLimitMessage(retryAfter: number): string {
@@ -91,9 +97,13 @@ function problemMessage(data: unknown, status: number): string {
   return problem.detail ?? problem.title ?? `Request failed (${status})`;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
+): Promise<ApiResult<T>> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   const token = getToken();
   try {
     const response = await fetch(path, {
@@ -179,6 +189,12 @@ function patchJson<T>(path: string, body: unknown): Promise<ApiResult<T>> {
 /** DELETE — a 204 (no body) resolves to `ok:true, data:null`. */
 function del(path: string): Promise<ApiResult<null>> {
   return request<null>(path, { method: "DELETE" });
+}
+
+/** Multipart POST (file upload). No Content-Type — the browser sets the multipart
+ *  boundary; the bearer token + error normalization come from `request`. */
+function postFormData<T>(path: string, body: FormData): Promise<ApiResult<T>> {
+  return request<T>(path, { method: "POST", body }, UPLOAD_TIMEOUT_MS);
 }
 
 export const authApi = {
@@ -302,4 +318,43 @@ export const runApi = {
 export const jobApi = {
   /** GET /jobs/{id} — poll a background job (e.g. ingest). */
   get: (jobId: string) => getJson<JobStatus>(`${API_BASE}/jobs/${jobId}`),
+};
+
+/** Project documents (ADR-0052): attach by upload / list / remove. Upload + delete
+ *  are MANAGE_PROJECT (the server 403s otherwise); listing needs VIEW. */
+export const documentApi = {
+  /** GET /projects/{id}/documents. */
+  list: (projectId: string) =>
+    getJson<DocumentListResponse>(`${API_BASE}/projects/${projectId}/documents`),
+  /** POST /projects/{id}/documents/upload — multipart (file + doc_kind, optional title). */
+  upload: (
+    projectId: string,
+    file: File,
+    opts?: { docKind?: string; title?: string },
+  ) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("doc_kind", opts?.docKind ?? "requirements");
+    if (opts?.title) form.append("title", opts.title);
+    return postFormData<ProjectDocument>(
+      `${API_BASE}/projects/${projectId}/documents/upload`,
+      form,
+    );
+  },
+  /** DELETE /projects/{id}/documents/{documentId}. */
+  remove: (projectId: string, documentId: string) =>
+    del(`${API_BASE}/projects/${projectId}/documents/${documentId}`),
+};
+
+/** Target-account credentials (ADR-0053), all MANAGE_PROJECT. The secret is
+ *  write-only — GET never returns it (only mode/identifier/has_credentials). */
+export const credentialApi = {
+  /** GET /projects/{id}/credentials — the safe status (never the secret). */
+  get: (projectId: string) =>
+    getJson<CredentialStatus>(`${API_BASE}/projects/${projectId}/credentials`),
+  /** PUT /projects/{id}/credentials — set/replace; returns the safe status. */
+  put: (projectId: string, body: CredentialUpsertBody) =>
+    putJson<CredentialStatus>(`${API_BASE}/projects/${projectId}/credentials`, body),
+  /** DELETE /projects/{id}/credentials — clear stored credentials. */
+  remove: (projectId: string) => del(`${API_BASE}/projects/${projectId}/credentials`),
 };

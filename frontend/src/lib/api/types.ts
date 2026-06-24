@@ -179,11 +179,17 @@ export interface JobStatus {
 
 export type SelectionStrategy = "full_sweep" | "change_impact";
 
+/** Which layers a run exercises (ADR-0052). Values match the FindingLayer vocab. */
+export type RunLayer = "ui" | "api" | "db";
+
 export interface ModeBRunBody {
   mode: "mode_b";
   strategy: SelectionStrategy;
   changeset?: string[];
   max_targets?: number;
+  /** Layer scope (ADR-0052): which of ui/api/db to test. Omitted = the full set
+   *  (existing behaviour unchanged); must be non-empty when present. */
+  layers?: RunLayer[];
 }
 
 export interface ModeCRunBody {
@@ -225,6 +231,49 @@ export interface RunProgressEvent {
 export interface RunEventsResponse {
   run_id: string;
   events: RunProgressEvent[];
+}
+
+// --- project documents (ADR-0052) -------------------------------------------
+
+/** Accepted document kinds (kept in sync with the backend DocumentKind literal). */
+export type DocumentKind =
+  | "requirements"
+  | "api_contract"
+  | "user_flow"
+  | "acceptance_criteria"
+  | "other";
+
+export interface ProjectDocument {
+  id: string;
+  title: string;
+  doc_kind: string;
+  chunk_count: number;
+  created_at: string;
+}
+
+export interface DocumentListResponse {
+  items: ProjectDocument[];
+  total: number;
+}
+
+// --- target-account credentials (ADR-0053) ----------------------------------
+
+/** How a project's runs obtain a target-app account. */
+export type CredentialMode = "specific_account" | "polaris_creates";
+
+/** The SAFE credential view — the secret is write-only and NEVER returned. */
+export interface CredentialStatus {
+  mode: string;
+  identifier: string | null;
+  has_credentials: boolean;
+}
+
+/** PUT body. `secret` is write-only; required (with `identifier`) for a specific
+ *  account, omitted for polaris_creates (which clears any stored secret). */
+export interface CredentialUpsertBody {
+  mode: CredentialMode;
+  identifier?: string | null;
+  secret?: string | null;
 }
 
 // --- findings ---------------------------------------------------------------

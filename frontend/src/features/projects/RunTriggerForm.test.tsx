@@ -78,4 +78,32 @@ describe("RunTriggerForm", () => {
       }),
     );
   });
+
+  it("sends only the selected layers when some are turned off", async () => {
+    render(<RunTriggerForm projectId="p1" />);
+    fireEvent.click(screen.getByRole("radio", { name: /Autonomous/ }));
+    // Default is all on (= omit the field); turning DB off sends the explicit subset.
+    fireEvent.click(screen.getByRole("checkbox", { name: /DB/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Start run" }));
+
+    await waitFor(() =>
+      expect(runApi.create).toHaveBeenCalledWith("p1", {
+        mode: "mode_b",
+        strategy: "full_sweep",
+        layers: ["ui", "api"],
+      }),
+    );
+  });
+
+  it("blocks the run with a clear message when every layer is turned off", () => {
+    render(<RunTriggerForm projectId="p1" />);
+    fireEvent.click(screen.getByRole("radio", { name: /Autonomous/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /UI/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /API/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /DB/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Start run" }));
+
+    expect(screen.getByText("Select at least one layer to test")).toBeInTheDocument();
+    expect(runApi.create).not.toHaveBeenCalled();
+  });
 });
