@@ -12,7 +12,7 @@ COMPOSE_APP := docker compose --project-directory . -f infra/docker-compose.app.
 COMPOSE_TEST := docker compose --project-directory . -f infra/docker-compose.yml -f infra/docker-compose.test.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help up down dev-up dev-down build lint test test-runners test-e2e-runner test-embeddings audit migrate artifacts-dir
+.PHONY: help up down dev-up dev-down build lint test test-runners test-e2e-runner test-embeddings audit migrate seed-demo artifacts-dir
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -94,3 +94,6 @@ audit: artifacts-dir ## Scan shipped dependencies for known vulnerabilities (pip
 
 migrate: ## Apply database migrations (forward-only) — one-shot; the packaged backend also auto-migrates on start
 	$(COMPOSE_APP) run --rm backend alembic upgrade head
+
+seed-demo: ## Load the isolated demo dataset for a UI walkthrough (idempotent) — NEVER for AAHOA; a clean DB is `make up` alone
+	$(COMPOSE_APP) run --rm backend python -m app.seed
