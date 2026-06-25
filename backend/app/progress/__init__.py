@@ -23,6 +23,7 @@ from .emitter import (
     STATUS_STARTED,
     STATUSES,
     RunProgressEmitter,
+    current_run_id,
     emit,
     install_emitter,
     is_terminal,
@@ -31,6 +32,7 @@ from .emitter import (
 
 __all__ = [
     "RunProgressEmitter",
+    "current_run_id",
     "emit",
     "install_emitter",
     "reset_emitter",

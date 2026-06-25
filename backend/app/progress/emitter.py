@@ -125,6 +125,17 @@ def reset_emitter(token: Token[RunProgressEmitter | None]) -> None:
     _current.reset(token)
 
 
+def current_run_id() -> uuid.UUID | None:
+    """The active run's id — the RUN job id — when a progress emitter is installed.
+
+    Lets the run lifecycle PIN the ``runs`` row id to the user-facing run handle
+    (the job id every ``/runs/{id}`` route resolves) without threading it through
+    every call. ``None`` off the run path (tests, ingest) → the row gets its own id.
+    """
+    emitter = _current.get()
+    return emitter._run_id if emitter is not None else None
+
+
 async def emit(
     *,
     phase: str,

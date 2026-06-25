@@ -33,6 +33,9 @@ STATUS_RUNNING = "running"
 STATUS_PASSED = "passed"
 STATUS_FAILED = "failed"  # ran to completion, but at least one test did not pass
 STATUS_ERRORED = "errored"  # infra/runner failure — the run could not complete
+STATUS_INTERRUPTED = "interrupted"  # crashed mid-run (e.g. DB outage) — reconciled
+#   from a stale "running" by the worker (run-durability); the partial run + the
+#   cases committed so far survive, rather than rolling back to nothing.
 
 
 def _now() -> datetime:
@@ -61,25 +64,32 @@ class RunLifecycle:
     def __init__(self, *, runner: ExecutionRunner) -> None:
         self._runner = runner
 
-    async def execute(
+    async def start(
         self,
         *,
         session: AsyncSession,
         project_id: uuid.UUID,
-        scripts: list[PestScript],
-        target_env: TargetEnv,
         trigger: RunTrigger,
         mode: RunMode,
         commit_sha: str | None = None,
     ) -> Run:
-        run_repo = RunRepository(session)
-        result_repo = ResultRepository(session)
+        """Create and COMMIT the run row (status=running) BEFORE any generation.
 
+        Run-durability: the row is durable from t=0, so a crash mid-run leaves a
+        real, reconcilable run (marked interrupted by the worker) instead of rolling
+        back to nothing. Its id is PINNED to the active run handle (the RUN job id,
+        via the installed progress emitter) when there is one, so the runs row and
+        the user-facing ``/runs/{id}`` are the same identity; off the run path
+        (tests / no emitter) the row gets its own id.
+        """
+        run_repo = RunRepository(session)
         # Claim the friendly per-project run number atomically (ADR-0048) before the
         # run row is created, so every run carries a stable "#N".
         run_number = await run_repo.next_run_number(project_id)
+        pinned = progress.current_run_id()
         run = await run_repo.add(
             Run(
+                **({"id": pinned} if pinned is not None else {}),
                 project_id=project_id,
                 run_number=run_number,
                 trigger=trigger,
@@ -89,6 +99,22 @@ class RunLifecycle:
                 started_at=_now(),
             )
         )
+        await session.commit()  # durable from t=0 (survives a later mid-run crash)
+        return run
+
+    async def run_scripts(
+        self,
+        *,
+        session: AsyncSession,
+        run: Run,
+        scripts: list[PestScript],
+        target_env: TargetEnv,
+    ) -> Run:
+        """Execute the scripts against an already-persisted run, persist results,
+        finalize the status, and tear down. Commits the results + terminal status so
+        they are durable (a DB-level failure here leaves the row 'running' for the
+        worker's reconcile sweep)."""
+        result_repo = ResultRepository(session)
 
         status = STATUS_ERRORED
         try:
@@ -105,7 +131,7 @@ class RunLifecycle:
             for er in exec_results:
                 await result_repo.add(
                     Result(
-                        project_id=project_id,
+                        project_id=run.project_id,
                         run_id=run.id,
                         test_case_id=er.test_case_id,
                         outcome=er.outcome,
@@ -144,9 +170,45 @@ class RunLifecycle:
                 logger.warning(
                     "execution.teardown_failed", extra={"run_id": str(run.id)}
                 )
+            # Persist the terminal status + results durably, even on failure
+            # (best-effort: a DB-level failure leaves the row 'running' for the
+            # reconcile sweep, and must never mask the primary error).
+            try:
+                await session.commit()
+            except Exception:  # noqa: BLE001 — never mask the original failure
+                logger.warning(
+                    "execution.finalize_commit_failed",
+                    extra={"run_id": str(run.id)},
+                )
 
         logger.info(
             "execution.completed",
             extra={"run_id": str(run.id), "status": status, "count": len(scripts)},
         )
         return run
+
+    async def execute(
+        self,
+        *,
+        session: AsyncSession,
+        project_id: uuid.UUID,
+        scripts: list[PestScript],
+        target_env: TargetEnv,
+        trigger: RunTrigger,
+        mode: RunMode,
+        commit_sha: str | None = None,
+    ) -> Run:
+        """Create the run row then execute its scripts — ``start`` + ``run_scripts``
+        in one call. The Mode B path calls the two halves separately (so it can
+        generate, committing per case, between them); this wrapper keeps the
+        single-shot path (Mode A/C, tests) intact."""
+        run = await self.start(
+            session=session,
+            project_id=project_id,
+            trigger=trigger,
+            mode=mode,
+            commit_sha=commit_sha,
+        )
+        return await self.run_scripts(
+            session=session, run=run, scripts=scripts, target_env=target_env
+        )

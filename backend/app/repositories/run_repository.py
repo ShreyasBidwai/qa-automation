@@ -12,9 +12,46 @@ from app.models.run import Run
 
 from .base import ProjectScopedRepository
 
+# Run-status string vocabulary (the column is a free string owned by
+# app.execution.lifecycle). Duplicated here as literals — NOT imported — because
+# lifecycle imports this repo, so importing it back would be circular.
+_STATUS_RUNNING = "running"
+_STATUS_INTERRUPTED = "interrupted"
+
 
 class RunRepository(ProjectScopedRepository[Run]):
     model = Run
+
+    async def mark_interrupted(self, run_id: uuid.UUID) -> bool:
+        """Compare-and-set a stale ``running`` run to ``interrupted`` (run-durability).
+
+        Only flips a run STILL in ``running`` — it never clobbers a run that
+        legitimately reached a terminal status (passed/failed/errored). Returns True
+        iff it reconciled a row. The partial run + the cases committed before the
+        crash survive; this just marks the orphaned row honestly.
+        """
+        stmt = (
+            update(Run)
+            .where(Run.id == run_id, Run.status == _STATUS_RUNNING)
+            .values(status=_STATUS_INTERRUPTED, finished_at=func.now())
+            .returning(Run.id)
+        )
+        return (await self.session.scalar(stmt)) is not None
+
+    async def interrupt_stale_running(self) -> list[uuid.UUID]:
+        """Reconcile EVERY run still ``running`` to ``interrupted`` — the worker's
+        startup sweep. A run left ``running`` when the worker (re)starts is orphaned
+        by a crashed process (no live run is in flight at startup). Returns the ids
+        reconciled. Compare-and-set on ``running`` so a concurrent legitimate finish
+        is never clobbered.
+        """
+        stmt = (
+            update(Run)
+            .where(Run.status == _STATUS_RUNNING)
+            .values(status=_STATUS_INTERRUPTED, finished_at=func.now())
+            .returning(Run.id)
+        )
+        return list((await self.session.scalars(stmt)).all())
 
     async def next_run_number(self, project_id: uuid.UUID) -> int:
         """Atomically claim the next friendly run number for ``project_id`` (ADR-0048).

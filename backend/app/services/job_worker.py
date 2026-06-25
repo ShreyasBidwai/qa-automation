@@ -27,6 +27,7 @@ from app.progress import (
     install_emitter,
     reset_emitter,
 )
+from app.repositories.run_repository import RunRepository
 from app.services.job_queue import ClaimedJob, JobQueue
 
 logger = logging.getLogger("app.jobs.worker")
@@ -82,6 +83,10 @@ class JobWorker:
         stop_event: asyncio.Event | None = None,
     ) -> None:
         """Poll until stopped — the durability/recovery loop (gated in lifespan)."""
+        # Run-durability: on (re)start, reconcile runs orphaned by a crashed process
+        # (left in 'running') to 'interrupted' — there is no live run in flight at
+        # startup, so any 'running' row is stale.
+        await self._reconcile_orphan_runs()
         while stop_event is None or not stop_event.is_set():
             try:
                 worked = await self.process_next()
@@ -130,6 +135,13 @@ class JobWorker:
                     project_id=claimed.project_id,
                     component=f"job:{claimed.kind.value}",
                 )
+                # Run-durability: immediately reconcile this crashed run's row (its id
+                # is the job id) to 'interrupted' in a FRESH session, so the partial
+                # run + its committed cases are honestly terminal without waiting for
+                # the next startup sweep. Best-effort; a total DB outage defers it to
+                # that sweep.
+                if claimed.kind is JobKind.RUN:
+                    await self._reconcile_run(claimed.id)
                 await self._finalize_failure(claimed, type(exc).__name__)
                 logger.error(
                     "jobs.failed",
@@ -154,3 +166,27 @@ class JobWorker:
                 claimed.id, detail=detail, backoff_base_seconds=self._backoff
             )
             await session.commit()
+
+    async def _reconcile_orphan_runs(self) -> None:
+        """Startup sweep: mark every run still ``running`` as ``interrupted`` — they
+        were orphaned by a crashed process. Best-effort: a sweep failure must never
+        stop the worker from starting."""
+        try:
+            async with self._sm() as session:
+                ids = await RunRepository(session).interrupt_stale_running()
+                await session.commit()
+            if ids:
+                logger.info("jobs.reconciled_orphan_runs", extra={"count": len(ids)})
+        except Exception:  # noqa: BLE001 — never block worker startup
+            logger.exception("jobs.reconcile_orphan_runs_failed")
+
+    async def _reconcile_run(self, run_id: uuid.UUID) -> None:
+        """Best-effort: compare-and-set this crashed run's row (id == job id) to
+        ``interrupted`` in a fresh session — survives the job's own rollback. A
+        legitimately-finished run is untouched (CAS on ``running``)."""
+        try:
+            async with self._sm() as session:
+                await RunRepository(session).mark_interrupted(run_id)
+                await session.commit()
+        except Exception:  # noqa: BLE001 — best-effort; the startup sweep is the net
+            logger.warning("jobs.run_reconcile_failed", extra={"job_id": str(run_id)})

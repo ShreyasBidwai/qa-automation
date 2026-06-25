@@ -217,17 +217,26 @@ class ModeBOrchestrator:
                 "layers": sorted(bounds.layers) if bounds.layers else None,
             },
         )
+        # Run-durability: persist the run row (status=running) BEFORE generation, so
+        # a crash mid-generation leaves a real, reconcilable run — not a rollback to
+        # nothing. ``_ensure_cases`` then commits each generated case as it lands, so
+        # a crash loses at most the in-flight target, never the whole run's work.
+        lifecycle = RunLifecycle(runner=self._runner)
+        run = await lifecycle.start(
+            session=self._session,
+            project_id=project_id,
+            trigger=_trigger_for(requested_kind),
+            mode=RunMode.B,
+        )
         ensured = await self._ensure_cases(project_id, targets, bounds)
         scripts = [e.script for e in ensured]
         generated = sum(1 for e in ensured if e.generated)
 
-        run = await RunLifecycle(runner=self._runner).execute(
+        run = await lifecycle.run_scripts(
             session=self._session,
-            project_id=project_id,
+            run=run,
             scripts=scripts,
             target_env=self._target_env,
-            trigger=_trigger_for(requested_kind),
-            mode=RunMode.B,
         )
         # Attribute + persist the AI usage buffered during generation now that the
         # run row exists (best-effort; ADR-0049).
@@ -381,6 +390,11 @@ class ModeBOrchestrator:
                 )
                 break
             ensured.extend(await self._ensure_for_target(project_id, target))
+            # Run-durability: commit each target's case+script the moment it is
+            # generated, so a crash on a later target loses only the in-flight item —
+            # the cases produced so far are durable (and a re-run reuses them via the
+            # never-clobber ``_reuse_scripts`` path). Safe under expire_on_commit=False.
+            await self._session.commit()
         return ensured
 
     async def _ensure_for_target(
