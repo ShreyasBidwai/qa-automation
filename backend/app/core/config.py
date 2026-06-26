@@ -110,6 +110,15 @@ class Settings(BaseSettings):
     ai_generate_model: str = "claude-opus-4-8"
     ai_triage_model: str = "claude-haiku-4-5"
     claude_cli_path: str = "claude"
+    # Optional: route `claude -p` through a host-side bridge (app/bridge/server.py,
+    # run via `make bridge`) instead of running the CLI in-process. The runner
+    # container can't safely use the host's interactive Claude login — a cross-uid,
+    # read-write ~/.claude bind mount corrupts/rotates the shared OAuth token, logging
+    # the host out on every up/down. With a bridge the credentials stay on the HOST;
+    # the container POSTs to this URL with the shared token. Empty = run `claude`
+    # directly in-process (single-box dev). docs/running-real.md.
+    claude_bridge_url: str | None = None
+    claude_bridge_token: str | None = None
     # Recommended per-call context budget callers pass to generate(); the
     # provider enforces whatever budget_tokens it is given.
     ai_max_budget_tokens: int = 120000

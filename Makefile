@@ -13,7 +13,7 @@ COMPOSE_REAL := docker compose --project-directory . -f infra/docker-compose.app
 COMPOSE_TEST := docker compose --project-directory . -f infra/docker-compose.yml -f infra/docker-compose.test.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help up down up-real down-real dev-up dev-down build lint test test-runners test-e2e-runner test-embeddings audit migrate seed-demo artifacts-dir
+.PHONY: help up down up-real down-real bridge dev-up dev-down build lint test test-runners test-e2e-runner test-embeddings audit migrate seed-demo artifacts-dir
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -31,11 +31,15 @@ up: ## Run Polaris: packaged stack (Postgres + backend + single-origin web) — 
 down: ## Stop Polaris and remove containers (the db volume persists)
 	$(COMPOSE_APP) down
 
-up-real: ## REAL execution stack (ADDITIVE): runner carries PHP/Pest + Node/Playwright + bind-mounted claude; needs root .env secrets (docs/running-real.md)
+up-real: ## REAL execution stack (ADDITIVE): runner carries PHP/Pest + Node/Playwright; generation routes to `make bridge` on the host; needs root .env secrets (docs/running-real.md)
 	$(COMPOSE_REAL) up -d --build --wait
 
 down-real: ## Stop the real-execution stack (db volume persists)
 	$(COMPOSE_REAL) down
+
+bridge: ## Run the host Claude bridge so the runner uses your subscription WITHOUT mounting ~/.claude (keep it running alongside up-real; docs/running-real.md)
+	@set -a; [ -f .env ] && . ./.env; set +a; \
+		python3 backend/app/bridge/server.py
 
 dev-up: ## Dev stack (Vite hot-reload frontend on :5173) — for working on the UI, not packaging
 	$(COMPOSE) up -d --build --wait

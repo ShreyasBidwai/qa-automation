@@ -31,21 +31,25 @@ services:
     environment:
       EXECUTOR_MODE: orchestrator # compose the real OrchestratorRunExecutor
       INGESTOR_MODE: laravel # real Laravel ingestion (reads the checked-out repo)
-      AI_PROVIDER_MODE: claude_cli # real generation via the bind-mounted `claude`
+      AI_PROVIDER_MODE: claude_cli # real generation, routed to the host via the bridge
       EMBEDDING_PROVIDER: local # fastembed (downloads the model on first use)
+      # Generation runs `claude -p` on the HOST via the bridge daemon (`make bridge`),
+      # so the container NEVER touches the host's ~/.claude login — no read-write,
+      # cross-uid auth mount, hence no logout churn on up-real/down-real. The token is
+      # shared with the daemon via the gitignored root .env (docs/running-real.md).
+      CLAUDE_BRIDGE_URL: ${CLAUDE_BRIDGE_URL:-http://host.docker.internal:8787}
+      CLAUDE_BRIDGE_TOKEN: ${CLAUDE_BRIDGE_TOKEN:-}
       GIT_TOKEN: ${GIT_TOKEN:-}
       TARGET_CREDENTIALS_KEY: ${TARGET_CREDENTIALS_KEY:-}
-      HOME: /app # where the bind-mounted `claude` reads its auth/config
+      HOME: /app # writable home for tool caches (fastembed, git)
+    extra_hosts:
+      # Resolve host.docker.internal to the host so the container can reach the
+      # bridge daemon running on it (Docker 20.10+ on Linux).
+      - "host.docker.internal:host-gateway"
     volumes:
-      # The host `claude` CLI on the runner's PATH (standalone ELF; no install).
-      - /home/dev84/.local/bin/claude:/usr/local/bin/claude:ro
-      # claude auth + config so `claude -p` authenticates for real generation. If
-      # `claude -p` errors trying to write its cache, change these to read-write or
-      # set ANTHROPIC_API_KEY instead (see docs/running-real.md).
-      - /home/dev84/.claude.json:/app/.claude.json:ro
-      - /home/dev84/.claude:/app/.claude:ro
       # The checked-out + composer-installed target repo. Ingest reads a LOCAL
       # checkout (clone-at-ingest is NOT yet wired), and Pest needs vendor/ present.
       # Clone it on the host, then set the project's repo_url to the in-container
       # path /targets/app (read-write: the runner writes vendor/ + generated tests).
+      # NOTE: no ~/.claude mount — credentials stay on the host behind the bridge.
       - ${TARGET_REPO_HOST_PATH:-./targets/app}:/targets/app
