@@ -82,14 +82,27 @@ FROM runtime AS real
 
 USER root
 
-# PHP 8.2 (bookworm default) + the extensions Laravel/Pest/Composer need, git (the
-# ingester runs `git -C <repo> rev-parse HEAD`), and the apt tooling for NodeSource.
-# (Mirrors runners/laravel/Dockerfile.)
+# PHP 8.2 (bookworm default) + the extensions real Laravel apps need, git (the
+# ingester runs `git -C <repo> rev-parse HEAD`), the MySQL client (real apps target
+# MySQL, not just sqlite), and the apt tooling for NodeSource. (Mirrors + extends
+# runners/laravel/Dockerfile; unversioned `php-*` resolve to php8.2-* on bookworm.)
+#   gd/imagick → image processing · redis → cache/queue · intl → localisation
+#   mysql → pdo_mysql + mysqli · (bcmath/exif/sockets/zip/mbstring/xml/sqlite3 too)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         php-cli php-mbstring php-xml php-sqlite3 php-bcmath php-curl php-zip \
+        php-gd php-redis php-intl php-mysql php-imagick \
+        default-mysql-client \
         git unzip ca-certificates curl gnupg \
     && rm -rf /var/lib/apt/lists/*
+
+# Git: the ingestor runs `git` against a bind-mounted repo owned by the HOST uid
+# (≠ the container's `app` user), and `app`'s $HOME (/app) is root-owned/read-only.
+# safe.directory=* in the SYSTEM config (/etc/gitconfig, read by every user) clears
+# the "dubious ownership" refusal with no writable $HOME needed; GIT_CONFIG_GLOBAL
+# points any global write at a writable path (avoids "~/.gitconfig: Permission denied").
+RUN git config --system --add safe.directory '*'
+ENV GIT_CONFIG_GLOBAL=/tmp/gitconfig
 
 # Composer 2.8 (pinned), from the official image (mirrors runners/laravel).
 COPY --from=composer:2.8 /usr/bin/composer /usr/bin/composer

@@ -1,51 +1,28 @@
-# Polaris — REAL-EXECUTION override (ADDITIVE; layered ON TOP of
-# docker-compose.app.yml). Brought up via `make up-real`. Does NOT touch the stub
-# `make up` path — it only re-targets the `runner` worker at the toolchain image and
-# flips the real providers on.
-#
-#   docker compose --project-directory . \
-#     -f infra/docker-compose.app.yml -f infra/docker-compose.real.yml up -d --build --wait
-#
-# Topology (B5/ADR-0036): the slim `backend` ENQUEUES runs/ingests; the `runner`
-# worker drains the durable `jobs` queue and executes them as SUBPROCESSES of its own
-# process (Pest / Playwright), so the toolchains live on the runner, not the backend.
-# Secrets (TARGET_CREDENTIALS_KEY, GIT_TOKEN) come from the gitignored root .env —
-# never committed.
+# Polaris — REAL-EXECUTION override (ADDITIVE; layered ON TOP of docker-compose.app.yml).
+# Brought up via `make up-real`. Does NOT touch the stub `make up` path.
 name: ${COMPOSE_PROJECT_NAME:-qa-automation}
-
 services:
-  # The control plane stays slim — it enqueues. It only needs the encryption key for
-  # the credentials API (PUT /credentials encrypts here); toolchains live on runner.
   backend:
     environment:
       EXECUTOR_MODE: orchestrator
       TARGET_CREDENTIALS_KEY: ${TARGET_CREDENTIALS_KEY:-}
-
-  # The execution plane: real toolchains (PHP/Pest + Node/Playwright + chromium) +
-  # real providers. Built from the Dockerfile `real` target; drains the queue.
   runner:
     build:
       context: ./backend
       dockerfile: Dockerfile
       target: real
     environment:
-      EXECUTOR_MODE: orchestrator # compose the real OrchestratorRunExecutor
-      INGESTOR_MODE: laravel # real Laravel ingestion (reads the checked-out repo)
-      AI_PROVIDER_MODE: claude_cli # real generation via the bind-mounted `claude`
-      EMBEDDING_PROVIDER: local # fastembed (downloads the model on first use)
+      EXECUTOR_MODE: orchestrator
+      INGESTOR_MODE: laravel
+      AI_PROVIDER_MODE: claude_cli
+      AI_GENERATE_MODEL: ${AI_GENERATE_MODEL:-sonnet}
+      EMBEDDING_PROVIDER: local
       GIT_TOKEN: ${GIT_TOKEN:-}
       TARGET_CREDENTIALS_KEY: ${TARGET_CREDENTIALS_KEY:-}
-      HOME: /app # where the bind-mounted `claude` reads its auth/config
+      HOME: /app
     volumes:
-      # The host `claude` CLI on the runner's PATH (standalone ELF; no install).
       - /home/dev84/.local/bin/claude:/usr/local/bin/claude:ro
-      # claude auth + config so `claude -p` authenticates for real generation. If
-      # `claude -p` errors trying to write its cache, change these to read-write or
-      # set ANTHROPIC_API_KEY instead (see docs/running-real.md).
-      - /home/dev84/.claude.json:/app/.claude.json:ro
-      - /home/dev84/.claude:/app/.claude:ro
-      # The checked-out + composer-installed target repo. Ingest reads a LOCAL
-      # checkout (clone-at-ingest is NOT yet wired), and Pest needs vendor/ present.
-      # Clone it on the host, then set the project's repo_url to the in-container
-      # path /targets/app (read-write: the runner writes vendor/ + generated tests).
+      - /home/dev84/.local/share/claude:/app/.local/share/claude:ro
+      - /home/dev84/.claude.json:/app/.claude.json:rw
+      - /home/dev84/.claude:/app/.claude:rw
       - ${TARGET_REPO_HOST_PATH:-./targets/app}:/targets/app
