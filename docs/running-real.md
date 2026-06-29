@@ -2,10 +2,13 @@
 
 `make up-real` brings up the stub stack PLUS a **runner** worker built from the
 toolchain image (`backend/Dockerfile` target `real`): PHP 8.2 + Composer, Node +
-Playwright + chromium, fastembed (local embeddings, baked in), git, and the host
-`claude` CLI bind-mounted on PATH. The slim **backend** still just enqueues; the
-runner drains the durable `jobs` queue and executes runs as subprocesses of its own
-process (ADR-0036). `make up` (stub) is untouched.
+Playwright + chromium, fastembed (local embeddings, baked in), and git. Generation
+calls `claude -p` on the **host** via a small bridge daemon (`make bridge`) — so the
+container keeps using your Claude subscription **without mounting `~/.claude`** (a
+read-write, cross-uid mount corrupts/rotates the host's OAuth token and logs you out
+on every up/down). The slim **backend** still just enqueues; the runner drains the
+durable `jobs` queue and executes runs as subprocesses of its own process (ADR-0036).
+`make up` (stub) is untouched.
 
 > NEVER target production (`https://mumbaisabha.org`). Only the QA env
 > `https://msqa.unifyams.ai/`. First run keeps DB-state tier **off** (default) — no
@@ -13,27 +16,30 @@ process (ADR-0036). `make up` (stub) is untouched.
 
 ## 1. Authenticate `claude` on the host
 
-The runner bind-mounts your host `claude` binary + auth (`~/.claude.json`,
-`~/.claude/`). Make sure `claude` works on the host first:
+The bridge runs `claude -p` as **you**, on the host — so just make sure the host
+login works (no mounting, no per-container login):
 
 ```bash
 claude --version            # 2.x
 printf 'say ok' | claude -p # should print a reply (proves you're logged in)
 ```
 
-## 2. Fill the two secrets in `.env` (gitignored — never committed)
+## 2. Fill the secrets in `.env` (gitignored — never committed)
 
 ```bash
 cp -n .env.example .env   # if you don't have one
 
-# Generate the Fernet key for target-account credentials at rest:
+# Fernet key for target-account credentials at rest:
 python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# Shared secret the runner uses to call the host bridge:
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
 In `.env` set (uncomment):
 
 ```
-TARGET_CREDENTIALS_KEY=<paste the generated key>
+CLAUDE_BRIDGE_TOKEN=<paste the token_urlsafe secret>
+TARGET_CREDENTIALS_KEY=<paste the generated Fernet key>
 GIT_TOKEN=<your Gitea read-only token>
 TARGET_REPO_HOST_PATH=./targets/app
 ```
@@ -51,14 +57,27 @@ cd targets/app && composer install --no-interaction --prefer-dist && cd -
 
 (`targets/` is gitignored.)
 
-## 4. Bring up the real stack
+## 4. Start the bridge, then bring up the real stack
+
+The bridge is a host daemon — run it in its OWN terminal and leave it running
+(it holds your Claude login on the host; the runner calls it):
 
 ```bash
-make up-real     # builds the runner image (first time ~5 min) + waits healthy
+make bridge      # terminal A — "claude-bridge listening on 0.0.0.0:8787"; keep it up
+```
+
+```bash
+make up-real     # terminal B — builds the runner image (first time ~5 min) + waits
 docker compose --project-directory . -f infra/docker-compose.app.yml \
   -f infra/docker-compose.real.yml ps          # backend/db/web healthy, runner up
 docker logs qa-automation-runner-1 | tail       # "worker: started" executor_mode=orchestrator
 ```
+
+> Verify the runner can reach the bridge:
+> `docker exec qa-automation-runner-1 sh -c 'wget -qO- http://host.docker.internal:8787/health'`
+> → `{"status": "ok"}`. If generation fails with "bridge unreachable", the bridge
+> isn't running (`make bridge`); "rejected the token" → `CLAUDE_BRIDGE_TOKEN`
+> mismatch between `.env` and the runner.
 
 The console is `http://localhost:8080`. The API is `http://localhost:8080/api/v1`.
 
@@ -111,10 +130,13 @@ echo "run=$RID"
 1. **Clone-at-ingest not wired** — you provide the checkout (step 3). When per-project
    clone lands, `GIT_TOKEN` (already plumbed to the runner) will be used + the repo
    token should move to the encrypted credentials vault (ADR-0053/0054).
-2. **`claude -p` auth in-container** — `~/.claude*` is mounted read-only. If `claude
-   -p` errors trying to write its cache, change those mounts to read-write in
-   `infra/docker-compose.real.yml`, or set `ANTHROPIC_API_KEY` on the `runner`
-   service instead.
+2. **`claude -p` runs on the host via the bridge** (`make bridge`) — the container
+   never mounts `~/.claude`, so it can't corrupt/rotate your host login. Keep the
+   bridge process running for the duration of the stack; it serializes calls (one
+   `claude` at a time) so concurrent token refreshes can't race. The endpoint spends
+   your account, so it's token-guarded — don't expose it beyond localhost. (If you'd
+   rather not run a host daemon, set `ANTHROPIC_API_KEY` on the `runner` service and
+   drop the bridge — that bills per token instead of your subscription.)
 3. **Pest's own test DB** — the run executes `vendor/bin/pest` in the checkout; the
    target app's `phpunit.xml`/`.env.testing` governs its test DB (e.g. sqlite +
    RefreshDatabase). DB-state tier `off` means Polaris does no DB provisioning — the
