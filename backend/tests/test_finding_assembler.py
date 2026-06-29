@@ -131,6 +131,44 @@ async def test_failing_result_becomes_a_finding(db_session: AsyncSession) -> Non
     assert finding.project_id == project_id
 
 
+async def test_errored_result_becomes_an_errored_finding_clearly_labeled(
+    db_session: AsyncSession,
+) -> None:
+    # An ERROR result (test could not complete — e.g. an unparseable JUnit) is still
+    # surfaced as a finding, but labeled an "errored test" (oracle-inconclusive), NOT
+    # a "failure" (an asserted defect). The diagnostic rides on the linked result.
+    project_id = await _project(db_session)
+    run_id = await _run_id(db_session, project_id)
+    target = uuid.uuid4()
+    case = await _case(
+        db_session,
+        project_id,
+        layer=TestLayer.API,
+        oracle_source=OracleSource.RULE_DERIVED,
+        target_node=target,
+        expected={"status": 422},
+    )
+    result = await _result(
+        db_session,
+        project_id,
+        run_id,
+        case.id,
+        outcome=Outcome.ERROR,
+        message="test errored — could not produce results (runner exit 255); …",
+        evidence_ref="ev/junit.xml",
+    )
+
+    findings = await FindingAssembler(
+        db_session, resolver=_FakeResolver({target: _journey(project_id)})
+    ).assemble(project_id=project_id, results=[result])
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert "errored test" in finding.title  # clearly labeled as inconclusive
+    assert "failure" not in finding.title  # NOT a real asserted defect
+    assert finding.result_id == result.id  # the diagnostic is on the linked result
+
+
 async def test_passing_result_produces_no_finding(db_session: AsyncSession) -> None:
     project_id = await _project(db_session)
     run_id = await _run_id(db_session, project_id)

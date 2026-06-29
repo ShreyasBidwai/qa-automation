@@ -17,6 +17,7 @@ executes against a non-test DB (dual_db guard).
 
 from __future__ import annotations
 
+import logging
 import re
 import shutil
 from pathlib import Path
@@ -28,6 +29,8 @@ from .errors import JUnitParseError, RunnerProcessError
 from .junit import JUnitCase, parse_junit
 from .process import Process, ProcessResult, run_process
 from .types import ExecutionResult, PestScript, TargetEnv
+
+logger = logging.getLogger("app.execution")
 
 _GENERATED = ("tests", "Feature", "_generated")
 
@@ -230,12 +233,32 @@ class PhpTestRunner:
             f"{result.stdout}\n{result.stderr}", encoding="utf-8"
         )
 
+        # Defensive result-parsing (run-resilience): a MISSING, EMPTY, or MALFORMED
+        # JUnit file means PHPUnit/Pest could not produce results for (some of) the
+        # scripts — a test errored, hung, timed out, or crashed the runner (e.g. a
+        # RefreshDatabase test against an unconfigured test DB). NEVER abort the run on
+        # that: parse whatever is there, and every script with no testcase becomes an
+        # ERROR result carrying the runner's captured output as the diagnostic. A VALID
+        # file still parses exactly as before (the happy path is unchanged).
         try:
-            cases = parse_junit(junit_path.read_text(encoding="utf-8"))
+            xml = junit_path.read_text(encoding="utf-8")
+            cases = parse_junit(xml) if xml.strip() else []
         except FileNotFoundError:
-            # The runner never wrote JUnit (e.g. fatal bootstrap error) → all ERROR.
-            cases = []
-        return map_results(scripts, cases, evidence_ref=str(junit_path))
+            cases = []  # the runner never wrote JUnit (fatal/crash) → all ERROR below
+        except JUnitParseError:
+            logger.warning(
+                "execution.junit_unparsable",
+                extra={"junit": str(junit_path), "returncode": result.returncode},
+            )
+            cases = []  # empty/malformed XML → unmatched scripts become ERROR below
+        # The runner's captured output is the diagnostic for ANY script that produced
+        # no testcase — a whole-file failure OR a partial JUnit that omitted it.
+        return map_results(
+            scripts,
+            cases,
+            evidence_ref=str(junit_path),
+            error_detail=_execution_error_detail(result),
+        )
 
     def teardown(self, target_env: TargetEnv) -> None:
         """Remove generated test files so no app state leaks (Standards §11).

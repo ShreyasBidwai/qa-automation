@@ -128,6 +128,38 @@ async def test_lifecycle_marks_failed_when_a_test_fails(
     assert {r.outcome for r in rows} == {Outcome.PASS, Outcome.FAIL}
 
 
+async def test_lifecycle_completes_as_failed_when_a_result_errored(
+    db_session: AsyncSession,
+) -> None:
+    # An ERRORED result (a test that could not complete — e.g. an unparseable JUnit)
+    # is non-passing, so the run reaches a NORMAL terminal status (FAILED) and is
+    # persisted — it does NOT errored-out. The errored result survives as evidence.
+    project = make_project()
+    db_session.add(project)
+    await db_session.flush()
+    cases = await _seed_cases(db_session, project.id, 2)
+
+    runner = _FakeRunner(
+        results=[
+            _result(cases[0].id, Outcome.PASS),
+            _result(cases[1].id, Outcome.ERROR),
+        ]
+    )
+    run = await RunLifecycle(runner=runner).execute(
+        session=db_session,
+        project_id=project.id,
+        scripts=[],
+        target_env=_ENV,
+        trigger=RunTrigger.CI,
+        mode=RunMode.A,
+    )
+
+    assert run.status == STATUS_FAILED  # completed, NOT STATUS_ERRORED
+    assert runner.teardown_called == 1
+    rows = await ResultRepository(db_session).list_for_run(project.id, run.id)
+    assert {r.outcome for r in rows} == {Outcome.PASS, Outcome.ERROR}
+
+
 async def test_lifecycle_errors_and_tears_down_on_runner_failure(
     db_session: AsyncSession,
 ) -> None:

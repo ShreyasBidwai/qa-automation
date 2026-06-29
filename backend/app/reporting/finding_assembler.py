@@ -131,11 +131,16 @@ def strongest_oracle(sources: Iterable[OracleSource]) -> OracleSource:
     return max(sources, key=lambda s: _ORACLE_STRENGTH[s])
 
 
-def _title(layer: FindingLayer, location: Mapping[str, Any], explains: int) -> str:
+def _title(
+    layer: FindingLayer, location: Mapping[str, Any], explains: int, outcome: Outcome
+) -> str:
     endpoints = location.get("endpoints") or []
     target = location.get("page") or (endpoints[0] if endpoints else "unknown target")
     suffix = f" (explains {explains} tests)" if explains > 1 else ""
-    return f"{layer.value} failure at {target}{suffix}"
+    # An ERROR is an execution/infra error ("test could not complete") — oracle-
+    # inconclusive, NOT an asserted defect; label it honestly, not as a "failure".
+    noun = "errored test" if outcome is Outcome.ERROR else "failure"
+    return f"{layer.value} {noun} at {target}{suffix}"
 
 
 @dataclass(frozen=True)
@@ -230,7 +235,12 @@ class FindingAssembler:
                 result_id=representative.result.id,
                 root_cause_key=key,
                 explains_count=len(members),
-                title=_title(layer, representative.location, len(members)),
+                title=_title(
+                    layer,
+                    representative.location,
+                    len(members),
+                    representative.result.outcome,
+                ),
                 layer=layer,
                 oracle_source=strongest_oracle(oracle_tiers),
                 confidence_mixed=len(oracle_tiers) > 1,
