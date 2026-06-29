@@ -112,12 +112,17 @@ export interface ReadyzResponse {
 
 // --- projects ---------------------------------------------------------------
 
+/** Which AI backend a project's runs use for generation. Null ⇒ the instance
+ * default. The UI never sends an API key — keys are server-side env only. */
+export type AiProvider = "claude_cli" | "gemini";
+
 export interface ProjectCreateBody {
   name: string;
   repo_url: string;
   app_url?: string | null;
   auth_config_ref?: string | null;
   stack?: string | null;
+  ai_provider?: AiProvider | null;
 }
 
 export interface Project {
@@ -128,6 +133,7 @@ export interface Project {
   app_url: string | null;
   auth_config_ref: string | null;
   stack?: string | null;
+  ai_provider?: string | null;
   created_at: string;
 }
 
@@ -137,6 +143,7 @@ export interface ProjectUpdateBody {
   repo_url?: string;
   app_url?: string | null;
   stack?: string | null;
+  ai_provider?: AiProvider | null;
 }
 
 /**

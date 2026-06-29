@@ -44,6 +44,16 @@ class TargetProvider(Protocol):
     ) -> tuple[ExecutionRunner, TargetEnv]: ...
 
 
+class AIProviderResolver(Protocol):
+    """Resolves a run's AIProvider per project (the UI provider choice). The
+    production impl reads ``project.settings['ai_provider']``; absent ⇒ this is None
+    and the executor uses its fixed ``ai_provider`` (tests/stub)."""
+
+    async def resolve(
+        self, session: AsyncSession, project_id: uuid.UUID
+    ) -> AIProvider: ...
+
+
 class OrchestratorRunExecutor:
     """The production RunExecutor: dispatches to Mode B / Mode C orchestrators."""
 
@@ -54,8 +64,9 @@ class OrchestratorRunExecutor:
         target_env: TargetEnv | None = None,
         target_provider: TargetProvider | None = None,
         resolver_factory: Callable[[AsyncSession], BrainResolver],
-        target_generator_factory: Callable[[AsyncSession], TargetGenerator],
+        target_generator_factory: Callable[[AsyncSession, AIProvider], TargetGenerator],
         ai_provider: AIProvider | None = None,
+        ai_provider_resolver: AIProviderResolver | None = None,
         embedding_provider: EmbeddingProvider | None = None,
     ) -> None:
         # Either a per-project ``target_provider`` (production — reads target config
@@ -69,7 +80,22 @@ class OrchestratorRunExecutor:
         self._resolver_factory = resolver_factory
         self._generator_factory = target_generator_factory
         self._ai = ai_provider
+        # Per-project provider choice (the UI toggle); None ⇒ use the fixed ``_ai``.
+        self._ai_resolver = ai_provider_resolver
         self._embed = embedding_provider
+
+    async def _resolve_ai_provider(
+        self, session: AsyncSession, project_id: uuid.UUID
+    ) -> AIProvider:
+        """The run's AIProvider — resolved PER PROJECT when a resolver is wired (the
+        UI provider choice), else the fixed ``ai_provider`` (tests/stub)."""
+        if self._ai_resolver is not None:
+            return await self._ai_resolver.resolve(session, project_id)
+        if self._ai is not None:
+            return self._ai
+        raise ApiConfigError(
+            "run executor needs an ai_provider_resolver or a fixed ai_provider"
+        )
 
     async def _resolve_target(
         self, session: AsyncSession, project_id: uuid.UUID
@@ -113,8 +139,10 @@ class OrchestratorRunExecutor:
         # Target config (runner + where/what to test) comes FROM THE PROJECT when a
         # provider is wired (ADR-0054), not from instance env.
         runner, target_env = await self._resolve_target(session, project_id)
+        # The AI backend is the project's choice (claude_cli | gemini), resolved here.
+        ai_provider = await self._resolve_ai_provider(session, project_id)
         resolver = self._resolver_factory(session)
-        generator = self._generator_factory(session)
+        generator = self._generator_factory(session, ai_provider)
         strategy = build_selection_strategy(
             request.strategy or SelectionStrategyKind.FULL_SWEEP,
             session=session,
@@ -158,12 +186,13 @@ class OrchestratorRunExecutor:
     async def _run_mode_c(
         self, session: AsyncSession, project_id: uuid.UUID, request: RunRequest
     ) -> RunExecution:
-        if self._ai is None or self._embed is None:
+        if self._embed is None:
             raise ApiConfigError(
-                "mode_c execution requires AI + embedding providers to be composed"
+                "mode_c execution requires an embedding provider to be composed"
             )
+        ai_provider = await self._resolve_ai_provider(session, project_id)
         orchestrator = build_mode_c_orchestrator(
-            session, ai_provider=self._ai, embedding_provider=self._embed
+            session, ai_provider=ai_provider, embedding_provider=self._embed
         )
         result = await orchestrator.propose(
             project_id=project_id, nl=request.prompt or ""

@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.factory import build_ai_provider
 from app.core.config import Settings
 from app.embeddings.factory import build_embedding_provider
-from app.incidents import capturing_ai_provider, capturing_embedding_provider
+from app.incidents import capturing_embedding_provider
 from app.models.enums import (
     AuthoredBy,
     FindingLayer,
@@ -250,7 +250,11 @@ def build_run_executor(settings: Settings) -> RunExecutor:
         from app.ingestion.laravel.factories import target_has_factories
 
         from .execution import OrchestratorRunExecutor
-        from .real_execution import OrchestratorTargetGenerator, ProjectTargetProvider
+        from .real_execution import (
+            OrchestratorTargetGenerator,
+            ProjectAIProvider,
+            ProjectTargetProvider,
+        )
 
         ai_provider = build_ai_provider(settings)
         embedding_provider = build_embedding_provider(settings)
@@ -268,14 +272,23 @@ def build_run_executor(settings: Settings) -> RunExecutor:
             # The generator is where provider calls actually happen during a run;
             # wrap them so a provider failure is tagged + captured as `provider`
             # (ADR-0047). The executor's own _ai/_embed stay the raw composed types.
-            target_generator_factory=lambda session: OrchestratorTargetGenerator(
-                session,
-                ai_provider=capturing_ai_provider(ai_provider),
-                budget_tokens=budget,
-                factories_available=factories,
-                embedding_provider=capturing_embedding_provider(embedding_provider),
+            # The provider is the PROJECT's choice (claude_cli | gemini), resolved per
+            # run by ``ProjectAIProvider`` (already capturing-wrapped) and handed to the
+            # generator here. The ``_ai`` fallback below covers the no-resolver path.
+            target_generator_factory=(
+                lambda session, provider: OrchestratorTargetGenerator(
+                    session,
+                    ai_provider=provider,
+                    budget_tokens=budget,
+                    factories_available=factories,
+                    embedding_provider=capturing_embedding_provider(embedding_provider),
+                )
             ),
+            # The raw composed provider — the no-resolver fallback only; production
+            # always goes through ``ai_provider_resolver`` (which capturing-wraps the
+            # per-project provider).
             ai_provider=ai_provider,
+            ai_provider_resolver=ProjectAIProvider(settings),
             embedding_provider=embedding_provider,
         )
     raise ApiConfigError(

@@ -68,6 +68,7 @@ def _project_response(project: Project) -> ProjectResponse:
         app_url=project.app_url,  # promoted to a column (Sprint B1)
         auth_config_ref=settings.get("auth_config_ref"),
         stack=settings.get("stack"),
+        ai_provider=settings.get("ai_provider"),
         created_at=project.created_at,
     )
 
@@ -101,6 +102,7 @@ async def create_project(
             "repo_url": body.repo_url,
             "auth_config_ref": body.auth_config_ref,
             "stack": body.stack,
+            "ai_provider": body.ai_provider,  # null ⇒ instance default at run time
         },
     )
     await ProjectRepository(session).add(project)
@@ -197,12 +199,18 @@ async def update_project(
         project.name = changes["name"]
     if "app_url" in changes:
         project.app_url = changes["app_url"]
-    if changes.get("repo_url") is not None or "stack" in changes:
+    if (
+        changes.get("repo_url") is not None
+        or "stack" in changes
+        or "ai_provider" in changes
+    ):
         settings = dict(project.settings)
         if changes.get("repo_url") is not None:
             settings["repo_url"] = changes["repo_url"]
         if "stack" in changes:
             settings["stack"] = changes["stack"]
+        if "ai_provider" in changes:  # null clears it → instance default at run time
+            settings["ai_provider"] = changes["ai_provider"]
         project.settings = settings  # reassign so JSONB change is tracked
 
     await session.flush()

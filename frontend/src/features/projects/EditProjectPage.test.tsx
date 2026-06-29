@@ -28,6 +28,7 @@ const PROJECT: Project = {
   app_url: "https://staging.acme.com",
   auth_config_ref: null,
   stack: "Laravel",
+  ai_provider: "claude_cli",
   created_at: "2026-06-01T00:00:00Z",
 };
 
@@ -84,9 +85,32 @@ describe("EditProjectPage", () => {
         repo_url: "https://github.com/acme/billing.git",
         app_url: "https://staging.acme.com",
         stack: "Laravel",
+        ai_provider: "claude_cli",
       }),
     );
     expect(await screen.findByText("Changes saved.")).toBeInTheDocument();
+  });
+
+  it("switches the AI provider and saves the new choice", async () => {
+    vi.mocked(projectApi.update).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { ...PROJECT, ai_provider: "gemini" },
+    });
+
+    render(<EditProjectPage projectId="p1" />);
+    const select = (await screen.findByLabelText("AI provider")) as HTMLSelectElement;
+    expect(select.value).toBe("claude_cli"); // pre-filled from the project
+
+    fireEvent.change(select, { target: { value: "gemini" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(projectApi.update).toHaveBeenCalledWith(
+        "p1",
+        expect.objectContaining({ ai_provider: "gemini" }),
+      ),
+    );
   });
 
   it("deletes the project after confirmation and returns to the list", async () => {

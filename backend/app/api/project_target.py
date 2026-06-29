@@ -29,6 +29,24 @@ logger = logging.getLogger("app.api.project_target")
 # stack falls back to the configured ``runner_framework`` (the env default).
 _FRAMEWORK_BY_STACK: dict[str, str] = {"laravel": "pest"}
 
+# AI provider modes a project may CHOOSE from the UI. ``stub`` is test-only and is
+# deliberately NOT selectable; an instance can still default to it via env.
+SELECTABLE_AI_PROVIDERS = frozenset({"claude_cli", "gemini"})
+
+
+def resolve_ai_provider_mode(project: Project, settings: Settings) -> str:
+    """The AI provider for a project's runs (project-first, ADR-0054).
+
+    ``project.settings['ai_provider']`` selects the backend when it is a recognised,
+    selectable mode; anything else (absent, unknown, non-string) falls back to the
+    instance default ``settings.ai_provider_mode``. A STORED value is never trusted
+    into the provider factory without this allow-list check.
+    """
+    raw = (project.settings or {}).get("ai_provider")
+    if isinstance(raw, str) and raw in SELECTABLE_AI_PROVIDERS:
+        return raw
+    return settings.ai_provider_mode
+
 
 @dataclass(frozen=True)
 class ResolvedTargetConfig:

@@ -48,6 +48,10 @@ class ProjectCreate(BaseModel):
     app_url: str | None = Field(default=None, max_length=2048)
     auth_config_ref: str | None = Field(default=None, max_length=512)
     stack: str | None = Field(default=None, max_length=64)
+    # Which AI backend this project's runs use for generation. Allow-listed at the
+    # boundary (defense in depth alongside the resolver); null ⇒ the instance default
+    # (AI_PROVIDER_MODE). The API NEVER accepts an API key — keys are env-only.
+    ai_provider: Literal["claude_cli", "gemini"] | None = None
     org_id: uuid.UUID | None = None
 
 
@@ -62,6 +66,9 @@ class ProjectUpdate(BaseModel):
     repo_url: str | None = Field(default=None, min_length=1, max_length=2048)
     app_url: str | None = Field(default=None, max_length=2048)
     stack: str | None = Field(default=None, max_length=64)
+    # Switch the project's AI backend (claude_cli | gemini); null clears it back to
+    # the instance default. Allow-listed; never a key.
+    ai_provider: Literal["claude_cli", "gemini"] | None = None
 
 
 class ProjectResponse(BaseModel):
@@ -72,6 +79,7 @@ class ProjectResponse(BaseModel):
     app_url: str | None
     auth_config_ref: str | None
     stack: str | None = None
+    ai_provider: str | None = None
     created_at: datetime
 
 

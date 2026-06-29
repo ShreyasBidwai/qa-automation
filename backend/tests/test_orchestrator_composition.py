@@ -65,7 +65,7 @@ def test_orchestrator_executor_is_fully_wired(db_session: AsyncSession) -> None:
     resolver = executor._resolver_factory(db_session)
     assert isinstance(resolver, CrossLayerResolver)
 
-    generator = executor._generator_factory(db_session)
+    generator = executor._generator_factory(db_session, executor._ai)
     assert isinstance(generator, OrchestratorTargetGenerator)
     # The generator is AI-backed: it wraps the real endpoint + page generators
     # holding the composed provider.
