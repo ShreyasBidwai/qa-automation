@@ -17,6 +17,7 @@ executes against a non-test DB (dual_db guard).
 
 from __future__ import annotations
 
+import logging
 import re
 import shutil
 from pathlib import Path
@@ -24,10 +25,12 @@ from pathlib import Path
 from app.models.enums import Outcome
 
 from .dual_db import ensure_safe_target, subprocess_db_env
-from .errors import RunnerProcessError
+from .errors import JUnitParseError, RunnerProcessError
 from .junit import JUnitCase, parse_junit
-from .process import Process, run_process
+from .process import Process, ProcessResult, run_process
 from .types import ExecutionResult, PestScript, TargetEnv
+
+logger = logging.getLogger("app.execution")
 
 _GENERATED = ("tests", "Feature", "_generated")
 
@@ -82,16 +85,41 @@ def _aggregate(outcomes: list[Outcome]) -> Outcome:
     return Outcome.PASS
 
 
+# Cap the diagnostic copied onto an errored result's message — the runner's full
+# stdout/stderr is persisted to evidence (test-stdout.log); the result carries the
+# tail (where a PHP fatal / "Expected 200, got 500" lands), not megabytes.
+_DIAGNOSTIC_TAIL = 2000
+
+
+def _execution_error_detail(result: ProcessResult) -> str:
+    """A diagnostic for a script that produced NO test result — an execution/infra
+    error ("test could not complete"), NOT a real test failure. Carries the runner's
+    exit code + the tail of its captured output so the errored finding is useful."""
+    output = result.stdout
+    if result.stderr.strip():
+        output = f"{output}\n{result.stderr}" if output else result.stderr
+    output = output.strip()
+    tail = output[-_DIAGNOSTIC_TAIL:] if output else "(no output captured)"
+    return (
+        "test errored — could not produce results "
+        f"(runner exit {result.returncode}); see captured output:\n{tail}"
+    )
+
+
 def map_results(
     scripts: list[PestScript],
     cases: list[JUnitCase],
     *,
     evidence_ref: str | None,
+    error_detail: str | None = None,
 ) -> list[ExecutionResult]:
     """Map JUnit cases back to their source scripts by test-file stem.
 
-    A script that produced no testcase (e.g. the runner crashed before running it)
-    becomes an ERROR result — every input script gets exactly one result row.
+    A script that produced no testcase (e.g. the runner crashed before running it, or
+    the JUnit file was missing/empty/malformed) becomes an ERROR result — every input
+    script gets exactly one result row. ``error_detail`` (the runner's captured
+    output) is attached as that ERROR result's message when present, so an execution
+    error carries a useful diagnostic instead of a bare placeholder.
 
     Runner-agnostic: a script is identified by its test CLASS name (the file
     basename we wrote). A ``<testcase>`` is matched to it by EITHER the file stem
@@ -124,7 +152,7 @@ def map_results(
                     name=script.name,
                     outcome=Outcome.ERROR,
                     evidence_ref=evidence_ref,
-                    message="no test result produced for script",
+                    message=error_detail or "no test result produced for script",
                 )
             )
             continue
@@ -205,12 +233,32 @@ class PhpTestRunner:
             f"{result.stdout}\n{result.stderr}", encoding="utf-8"
         )
 
+        # Defensive result-parsing (run-resilience): a MISSING, EMPTY, or MALFORMED
+        # JUnit file means PHPUnit/Pest could not produce results for (some of) the
+        # scripts — a test errored, hung, timed out, or crashed the runner (e.g. a
+        # RefreshDatabase test against an unconfigured test DB). NEVER abort the run on
+        # that: parse whatever is there, and every script with no testcase becomes an
+        # ERROR result carrying the runner's captured output as the diagnostic. A VALID
+        # file still parses exactly as before (the happy path is unchanged).
         try:
-            cases = parse_junit(junit_path.read_text(encoding="utf-8"))
+            xml = junit_path.read_text(encoding="utf-8")
+            cases = parse_junit(xml) if xml.strip() else []
         except FileNotFoundError:
-            # The runner never wrote JUnit (e.g. fatal bootstrap error) → all ERROR.
-            cases = []
-        return map_results(scripts, cases, evidence_ref=str(junit_path))
+            cases = []  # the runner never wrote JUnit (fatal/crash) → all ERROR below
+        except JUnitParseError:
+            logger.warning(
+                "execution.junit_unparsable",
+                extra={"junit": str(junit_path), "returncode": result.returncode},
+            )
+            cases = []  # empty/malformed XML → unmatched scripts become ERROR below
+        # The runner's captured output is the diagnostic for ANY script that produced
+        # no testcase — a whole-file failure OR a partial JUnit that omitted it.
+        return map_results(
+            scripts,
+            cases,
+            evidence_ref=str(junit_path),
+            error_detail=_execution_error_detail(result),
+        )
 
     def teardown(self, target_env: TargetEnv) -> None:
         """Remove generated test files so no app state leaks (Standards §11).
