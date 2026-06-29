@@ -20,6 +20,7 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.stub import StubAIProvider
 from app.api.execution import OrchestratorRunExecutor
 from app.api.ports import RunRequest
 from app.credentials import (
@@ -144,7 +145,8 @@ async def _executor() -> OrchestratorRunExecutor:
         runner=_StubRunner(),
         target_env=_ENV,
         resolver_factory=lambda _session: _FakeResolver(),
-        target_generator_factory=lambda session: _StubGenerator(session),
+        target_generator_factory=lambda session, _provider: _StubGenerator(session),
+        ai_provider=StubAIProvider(),  # fixed provider (tests/stub path)
     )
 
 
@@ -273,7 +275,11 @@ async def test_has_credentials_reflects_reality_across_lifecycle(
 
     await client.put(
         base,
-        json={"mode": "specific_account", "identifier": "a@b.test", "secret": "pw12345"},
+        json={
+            "mode": "specific_account",
+            "identifier": "a@b.test",
+            "secret": "pw12345",
+        },
     )
     assert (await client.get(base)).json()["has_credentials"] is True
 
@@ -285,7 +291,11 @@ async def test_has_credentials_reflects_reality_across_lifecycle(
     # Re-set then DELETE clears it; a second delete is 404.
     await client.put(
         base,
-        json={"mode": "specific_account", "identifier": "a@b.test", "secret": "pw12345"},
+        json={
+            "mode": "specific_account",
+            "identifier": "a@b.test",
+            "secret": "pw12345",
+        },
     )
     assert (await client.delete(base)).status_code == 204
     assert (await client.get(base)).json()["has_credentials"] is False
@@ -317,11 +327,18 @@ async def test_write_refuses_and_stores_nothing_without_a_key(
 
     resp = await client.put(
         f"/api/v1/projects/{project_id}/credentials",
-        json={"mode": "specific_account", "identifier": "a@b.test", "secret": "pw12345"},
+        json={
+            "mode": "specific_account",
+            "identifier": "a@b.test",
+            "secret": "pw12345",
+        },
     )
     assert resp.status_code == 503
     async with app.state.sessionmaker() as session:
-        assert await TargetCredentialsRepository(session).get(uuid.UUID(project_id)) is None
+        assert (
+            await TargetCredentialsRepository(session).get(uuid.UUID(project_id))
+            is None
+        )
 
 
 # --- RBAC: only MANAGE_PROJECT can set / view / clear ------------------------
@@ -362,7 +379,9 @@ async def test_credentials_endpoints_require_manage_project(
     body = {"mode": "specific_account", "identifier": "a@b.test", "secret": "pw123456"}
 
     # Owner (MANAGE_PROJECT) can set; an in-org viewer is 403; an outsider is 404.
-    assert (await client.put(base, json=body, headers=_h(owner_token))).status_code == 200
+    assert (
+        await client.put(base, json=body, headers=_h(owner_token))
+    ).status_code == 200
     assert (
         await client.put(base, json=body, headers=_h(viewer_token))
     ).status_code == 403

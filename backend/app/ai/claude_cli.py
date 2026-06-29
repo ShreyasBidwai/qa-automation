@@ -27,17 +27,14 @@ from .budget import (
     estimate_tokens,
 )
 from .errors import AIInvocationError, AITimeout, AITransientError
+from .prompts import GENERATE_INSTRUCTION
 from .retry import with_retries
 from .types import FailureEvidence, Subgraph, TriageLabel
 from .usage import PHASE_GENERATION, parse_envelope, record_usage
 
 logger = logging.getLogger("app.ai")
 
-_GENERATE_INSTRUCTION = (
-    "You are a test-generation engine for the QA Automation Platform. "
-    "Using only the grounded context below, produce the requested test artifact. "
-    "Do not invent endpoints, fields, or behavior absent from the context."
-)
+_GENERATE_INSTRUCTION = GENERATE_INSTRUCTION
 
 
 @dataclass(frozen=True)

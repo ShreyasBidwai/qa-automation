@@ -31,6 +31,7 @@ from typing import Any, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.factory import build_ai_provider
 from app.ai.types import AIProvider
 from app.core.config import Settings
 from app.documents.grounding import SpecGroundingService
@@ -40,6 +41,7 @@ from app.execution.playwright_runner import PlaywrightRunner
 from app.execution.types import DbHandle, DbRole, ExecutionRunner, PestScript, TargetEnv
 from app.generation.e2e_generator import E2EGenerator
 from app.generation.generator import TestGenerator
+from app.incidents import capturing_ai_provider
 from app.ingestion.laravel.ingester import LaravelIngester
 from app.ingestion.laravel.route_list import path_params_from_uri
 from app.ingestion.models import (
@@ -55,7 +57,11 @@ from app.repositories.node_repository import NodeRepository
 from app.repositories.project_repository import ProjectRepository
 
 from .errors import ApiConfigError
-from .project_target import ResolvedTargetConfig, resolve_target_config
+from .project_target import (
+    ResolvedTargetConfig,
+    resolve_ai_provider_mode,
+    resolve_target_config,
+)
 
 
 class TargetGenerationError(Exception):
@@ -295,3 +301,25 @@ class ProjectTargetProvider:
             raise ApiConfigError(f"project {project_id} not found for target config")
         cfg = resolve_target_config(project, self._settings)
         return build_runner_for(cfg), build_target_env_for(cfg, self._settings)
+
+
+class ProjectAIProvider:
+    """Resolves a run's ``AIProvider`` PER PROJECT — the UI provider choice.
+
+    The executor calls this with the run's session + project so generation uses the
+    backend the project picked (``project.settings['ai_provider']`` → claude_cli or
+    gemini), falling back to the instance default. The built provider is wrapped so a
+    provider failure is tagged + captured as ``provider`` (ADR-0047), matching the
+    prior global wiring. The stored mode is allow-listed in ``resolve_ai_provider_mode``
+    before it reaches the factory.
+    """
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+
+    async def resolve(self, session: AsyncSession, project_id: uuid.UUID) -> AIProvider:
+        project = await ProjectRepository(session).get(project_id)
+        if project is None:
+            raise ApiConfigError(f"project {project_id} not found for AI provider")
+        mode = resolve_ai_provider_mode(project, self._settings)
+        return capturing_ai_provider(build_ai_provider(self._settings, mode=mode))

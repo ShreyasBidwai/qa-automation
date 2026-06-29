@@ -17,10 +17,15 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.stub import StubAIProvider
 from app.api.errors import ApiConfigError
 from app.api.execution import OrchestratorRunExecutor
 from app.api.ports import RunRequest
-from app.api.project_target import ResolvedTargetConfig, resolve_target_config
+from app.api.project_target import (
+    ResolvedTargetConfig,
+    resolve_ai_provider_mode,
+    resolve_target_config,
+)
 from app.api.real_execution import (
     LaravelIngestorAdapter,
     ProjectTargetProvider,
@@ -49,6 +54,31 @@ def _settings(**overrides: object) -> Settings:
     }
     values.update(overrides)
     return Settings(**values)  # type: ignore[arg-type]
+
+
+# --- AI provider: the project's choice, allow-listed, else instance default ---
+
+
+def test_resolve_ai_provider_prefers_the_project_choice() -> None:
+    project = make_project(settings={"ai_provider": "gemini"})
+    settings = _settings(ai_provider_mode="claude_cli")
+    assert resolve_ai_provider_mode(project, settings) == "gemini"
+
+
+def test_resolve_ai_provider_falls_back_for_absent_or_untrusted_values() -> None:
+    settings = _settings(ai_provider_mode="claude_cli")
+    # Absent, an unknown/garbage mode, a non-string, and the non-selectable 'stub'
+    # all fall back to the instance default — a stored value is never trusted blindly.
+    for stored in (
+        {},
+        {"ai_provider": "evil"},
+        {"ai_provider": 123},
+        {"ai_provider": "stub"},
+    ):
+        assert (
+            resolve_ai_provider_mode(make_project(settings=stored), settings)
+            == "claude_cli"
+        )
 
 
 # --- resolver: project wins, env is a deprecated fallback --------------------
@@ -204,7 +234,8 @@ async def test_run_uses_project_target_config_over_env(
     executor = OrchestratorRunExecutor(
         target_provider=_StubTargetProvider(capturing, settings),
         resolver_factory=lambda _s: _FakeResolver(),
-        target_generator_factory=lambda s: _StubGenerator(s),
+        target_generator_factory=lambda s, _provider: _StubGenerator(s),
+        ai_provider=StubAIProvider(),  # fixed provider (tests/stub path)
     )
     await executor.execute(
         session=db_session,
@@ -223,7 +254,7 @@ async def test_executor_without_a_target_source_errors(
 ) -> None:
     executor = OrchestratorRunExecutor(
         resolver_factory=lambda _s: _FakeResolver(),
-        target_generator_factory=lambda s: _StubGenerator(s),
+        target_generator_factory=lambda s, _provider: _StubGenerator(s),
     )  # no target_provider, no runner+target_env
     with pytest.raises(ApiConfigError):
         await executor.execute(

@@ -7,7 +7,9 @@ import { StatePanel } from "@/components/StatePanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { projectApi } from "@/lib/api/client";
+import type { AiProvider } from "@/lib/api/types";
 import { navigate } from "@/lib/router";
 
 import { DbStateTierCard } from "./DbStateTierCard";
@@ -73,12 +75,16 @@ function EditForm({
     repo_url: string;
     app_url: string | null;
     stack?: string | null;
+    ai_provider?: string | null;
   };
 }) {
   const [name, setName] = useState(project.name);
   const [repoUrl, setRepoUrl] = useState(project.repo_url);
   const [appUrl, setAppUrl] = useState(project.app_url ?? "");
   const [stack, setStack] = useState(project.stack ?? "");
+  const [aiProvider, setAiProvider] = useState<AiProvider>(
+    project.ai_provider === "gemini" ? "gemini" : "claude_cli",
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -97,6 +103,7 @@ function EditForm({
       repo_url: repoUrl.trim(),
       app_url: appUrl.trim() || null,
       stack: stack.trim() || null,
+      ai_provider: aiProvider,
     });
     setSaving(false);
     if (result.ok && result.data) {
@@ -132,6 +139,17 @@ function EditForm({
           value={stack}
           onChange={setStack}
           placeholder="Laravel"
+        />
+        <FieldSelect
+          id="ai_provider"
+          label="AI provider"
+          hint="Which model generates this project's tests. The API key stays server-side (env)."
+          value={aiProvider}
+          onChange={(value) => setAiProvider(value as AiProvider)}
+          options={[
+            ["claude_cli", "Claude (claude -p)"],
+            ["gemini", "Gemini"],
+          ]}
         />
 
         {error ? (
@@ -262,6 +280,45 @@ function Field({
         aria-describedby={hint ? `${id}-hint` : undefined}
         className={mono ? "font-mono text-[13px]" : undefined}
       />
+      {hint ? (
+        <p id={`${id}-hint`} className="text-xs text-muted-foreground">
+          {hint}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function FieldSelect({
+  id,
+  label,
+  value,
+  onChange,
+  options,
+  hint,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: [string, string][];
+  hint?: string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <Select
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        aria-describedby={hint ? `${id}-hint` : undefined}
+      >
+        {options.map(([optValue, optLabel]) => (
+          <option key={optValue} value={optValue}>
+            {optLabel}
+          </option>
+        ))}
+      </Select>
       {hint ? (
         <p id={`${id}-hint`} className="text-xs text-muted-foreground">
           {hint}

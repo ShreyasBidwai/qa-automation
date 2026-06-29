@@ -120,6 +120,15 @@ class Settings(BaseSettings):
     ai_retry_base_delay_seconds: float = 0.5
     ai_retry_max_delay_seconds: float = 8.0
 
+    # --- Gemini provider (AI_PROVIDER_MODE=gemini, or chosen per project) ------
+    # The API key is a SECRET, env-only: never hardcoded, logged, stored in the DB,
+    # or returned in a payload. It is sent to Google via the ``x-goog-api-key``
+    # HEADER (never the URL — a key in a URL leaks into logs/history). Absent ⇒ the
+    # gemini provider refuses with a clear error rather than calling unauthenticated.
+    gemini_api_key: str | None = None
+    gemini_generate_model: str = "gemini-2.5-flash"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+
     # --- Embeddings (pluggable; local fastembed dev/prod, stub for tests) ---
     # Provider selection: local (fastembed ONNX) | stub (tests, no download).
     embedding_provider: str = "local"

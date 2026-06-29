@@ -18,6 +18,7 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.stub import StubAIProvider
 from app.api.errors import ApiConfigError
 from app.api.execution import OrchestratorRunExecutor
 from app.api.ports import RunExecution, RunRequest
@@ -687,6 +688,41 @@ async def test_patch_project_updates_fields_and_app_url_round_trips(
     assert got["stack"] == "laravel"
 
 
+async def test_ai_provider_round_trips_and_is_allow_listed(
+    api: tuple[AsyncClient, _StubExecutor, _StubIngestor],
+) -> None:
+    client, _, _ = api
+    # Default create: no provider chosen → null (the instance default applies at run).
+    default = await _create_project(client, name="Defaulted")
+    assert default["ai_provider"] is None
+
+    # Create with an explicit choice → persisted + returned.
+    chosen = await client.post(
+        "/api/v1/projects",
+        json={
+            "name": "Gemini Project",
+            "repo_url": "https://git.example/g.git",
+            "ai_provider": "gemini",
+        },
+    )
+    assert chosen.status_code == 201, chosen.text
+    pid = chosen.json()["id"]
+    assert chosen.json()["ai_provider"] == "gemini"
+
+    # PATCH switches the provider; the change round-trips on GET.
+    patched = await client.patch(
+        f"/api/v1/projects/{pid}", json={"ai_provider": "claude_cli"}
+    )
+    assert patched.status_code == 200 and patched.json()["ai_provider"] == "claude_cli"
+    assert (await client.get(f"/api/v1/projects/{pid}")).json()["ai_provider"] == (
+        "claude_cli"
+    )
+
+    # An unknown provider is rejected at the boundary (allow-list / never a key).
+    bad = await client.patch(f"/api/v1/projects/{pid}", json={"ai_provider": "openai"})
+    assert bad.status_code == 422
+
+
 async def test_patch_unknown_project_is_404(
     api: tuple[AsyncClient, _StubExecutor, _StubIngestor],
 ) -> None:
@@ -883,7 +919,8 @@ async def test_orchestrator_executor_runs_mode_b(db_session: AsyncSession) -> No
         runner=_StubRunner(),
         target_env=_ENV,
         resolver_factory=lambda _session: _FakeResolver(),
-        target_generator_factory=lambda session: _StubGenerator(session),
+        target_generator_factory=lambda session, _provider: _StubGenerator(session),
+        ai_provider=StubAIProvider(),  # fixed provider (tests/stub path)
     )
     execution = await executor.execute(
         session=db_session,
@@ -905,7 +942,7 @@ async def test_orchestrator_executor_mode_c_unconfigured_raises(
         runner=_StubRunner(),
         target_env=_ENV,
         resolver_factory=lambda _session: _FakeResolver(),
-        target_generator_factory=lambda session: _StubGenerator(session),
+        target_generator_factory=lambda session, _provider: _StubGenerator(session),
     )  # no AI/embedding providers
     with pytest.raises(ApiConfigError):
         await executor.execute(
