@@ -128,6 +128,19 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     gemini_generate_model: str = "gemini-2.5-flash"
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    # Rate-limit-aware model fallback (generation path). Gemini returns 429
+    # RESOURCE_EXHAUSTED for BOTH per-minute and per-day exhaustion, distinguished
+    # only by the response body (parsed, never hardcoded). A per-day-exhausted model
+    # is skipped and the NEXT model in the chain is tried; a per-minute 429 waits
+    # (honoring the API's RetryInfo) and retries the SAME model, bounded.
+    #   GEMINI_MODEL_CHAIN: comma-separated, tried in order. Empty ⇒ a one-element
+    #   chain of ``gemini_generate_model`` (the single-model path is unchanged).
+    gemini_model_chain: str = ""
+    # Max per-minute waits on ONE model before giving up on it (never unbounded).
+    gemini_max_minute_retries: int = 3
+    # Cap for a single per-minute wait (also the default when the 429 omits a
+    # RetryInfo). Keeps a hostile/garbled retryDelay from stalling the run.
+    gemini_minute_retry_cap_seconds: float = 60.0
 
     # --- Embeddings (pluggable; local fastembed dev/prod, stub for tests) ---
     # Provider selection: local (fastembed ONNX) | stub (tests, no download).
