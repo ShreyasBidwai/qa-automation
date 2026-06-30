@@ -26,6 +26,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.usage import UsageCollector, install_collector, reset_collector
 from app.brain.cross_layer import Impact, Subgraph
+from app.crawler.crawler import FrontendCrawler
+from app.crawler.types import CrawlConfig, CrawlResult
 from app.db_state.run_phase import DbStatePhaseReport, DbStateRunPhase
 from app.execution.lifecycle import STATUS_PASSED as RUN_STATUS_PASSED
 from app.execution.lifecycle import RunLifecycle
@@ -124,6 +126,9 @@ class ModeBRunReport:
     # (default) or the project is ``off``; carries the refusal reason when the
     # non-prod gate refused the target. Additive — internal report only.
     db_state: DbStatePhaseReport | None = None
+    # Frontend crawl outcome (T4.2): None when no crawler is wired or the UI layer is
+    # out of scope; carries page/edge counts when the run crawled the target frontend.
+    crawl: CrawlResult | None = None
 
 
 def _trigger_for(kind: SelectionStrategyKind) -> RunTrigger:
@@ -142,6 +147,7 @@ class ModeBOrchestrator:
         resolver: BrainResolver,
         generator: TargetGenerator,
         db_state: DbStateRunPhase | None = None,
+        crawler: FrontendCrawler | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._session = session
@@ -150,6 +156,7 @@ class ModeBOrchestrator:
         self._resolver = resolver
         self._generator = generator
         self._db_state = db_state
+        self._crawler = crawler
         self._clock = clock
         self._cases = TestCaseRepository(session)
         self._scripts = TestScriptRepository(session)
@@ -258,6 +265,11 @@ class ModeBOrchestrator:
             if db_in_scope
             else None
         )
+        # Frontend crawl phase (T4.2): when a crawler is wired and the UI layer is in
+        # scope, crawl the target frontend and write page nodes/edges into the Brain —
+        # so a single run exercises backend + DB + frontend. Tier-free; defensive.
+        ui_in_scope = bounds.layers is None or "ui" in bounds.layers
+        crawl_result = await self._run_crawl_phase(project_id) if ui_in_scope else None
 
         scorer = SeverityScorer(self._session, impact_resolver=self._resolver)
         await scorer.score_run(project_id, run.id)
@@ -280,6 +292,7 @@ class ModeBOrchestrator:
             status=run.status,
             ranked_findings=tuple(ranked),
             db_state=db_state_report,
+            crawl=crawl_result,
         )
         logger.info(
             "modes.mode_b.completed",
@@ -367,6 +380,39 @@ class ModeBOrchestrator:
             logger.exception(
                 "modes.mode_b.db_state_phase_failed",
                 extra={"project_id": str(project_id), "run_id": str(run_id)},
+            )
+            return None
+
+    async def _run_crawl_phase(self, project_id: uuid.UUID) -> CrawlResult | None:
+        """Crawl the target frontend if a crawler is wired; NEVER crash the run.
+
+        Bounded BFS from the project's ``base_url`` (the served frontend), writing
+        page nodes + navigates/calls edges into the Brain so one run covers backend +
+        DB + frontend. No crawler or no ``base_url`` ⇒ skipped. Defensive like the
+        DB-state phase: any failure is logged and the rest of the run is unaffected.
+        """
+        if self._crawler is None or not self._target_env.base_url:
+            return None
+        try:
+            result = await self._crawler.crawl(
+                session=self._session,
+                project_id=project_id,
+                config=CrawlConfig(
+                    base_url=self._target_env.base_url,
+                    max_pages=10,
+                    max_depth=2,
+                    time_budget_s=60.0,
+                ),
+            )
+            logger.info(
+                "modes.mode_b.crawl_phase",
+                extra={"project_id": str(project_id), "pages": result.pages},
+            )
+            return result
+        except Exception:  # noqa: BLE001 — the crawl must never crash the rest of a run
+            logger.exception(
+                "modes.mode_b.crawl_phase_failed",
+                extra={"project_id": str(project_id)},
             )
             return None
 

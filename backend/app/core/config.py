@@ -84,6 +84,10 @@ class Settings(BaseSettings):
     # These configure WHERE/AGAINST WHAT it runs; only consulted in orchestrator
     # mode (the slim backend never executes — B5/ADR-0036).
     runner_framework: str = "pest"  # pest | playwright
+    # Frontend crawl phase (T4.2): the node project dir holding the Playwright
+    # ``crawl_page.mjs`` driver (+ a resolvable node_modules). Empty ⇒ a mode_b run
+    # skips the crawl phase. Set it to make one run cover backend + DB + frontend.
+    crawl_driver_dir: str = ""
     # The target app the runner executes in (Pest: the Laravel app dir; Playwright:
     # the node project dir) and the repo the Laravel ingestor reads.
     target_app_path: str = ""

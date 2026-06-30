@@ -16,6 +16,9 @@ from typing import Any, Protocol
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.types import AIProvider
+from app.core.config import get_settings
+from app.crawler.crawler import FrontendCrawler
+from app.crawler.playwright_fetcher import PlaywrightPageFetcher
 from app.credentials import resolve_target_login
 from app.db_state.run_phase import DbStateRunPhase, EngineTargetConnector
 from app.embeddings.types import EmbeddingProvider
@@ -33,6 +36,22 @@ from app.modes.selection import SelectionStrategyKind, build_selection_strategy
 
 from .errors import ApiConfigError
 from .ports import RunExecution, RunRequest
+
+
+def _build_crawler(target_env: TargetEnv) -> FrontendCrawler | None:
+    """A frontend crawler for the run, or None to skip the crawl phase.
+
+    Wired only when ``crawl_driver_dir`` is configured (the Playwright driver lives
+    there) AND the project has a frontend ``base_url`` to crawl. Keeps the crawl
+    opt-in and infra-gated, exactly like the DB-state phase is tier-gated.
+    """
+    driver_dir = get_settings().crawl_driver_dir
+    if not driver_dir or not target_env.base_url:
+        return None
+    fetcher = PlaywrightPageFetcher(
+        base_url=target_env.base_url, node_project_dir=driver_dir
+    )
+    return FrontendCrawler(fetcher)
 
 
 class TargetProvider(Protocol):
@@ -163,6 +182,10 @@ class OrchestratorRunExecutor:
                 resolver=resolver,
                 connector=EngineTargetConnector(target_env.execution_db.url),
             ),
+            # Frontend crawl phase (T4.2): wired only when a crawl driver dir is
+            # configured AND the project has a frontend URL. One run then covers
+            # backend + DB + frontend; otherwise the phase is simply skipped.
+            crawler=_build_crawler(target_env),
         )
         report = await orchestrator.run(
             project_id=project_id,
