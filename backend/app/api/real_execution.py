@@ -71,7 +71,12 @@ class TargetGenerationError(Exception):
 # --- EndpointSpec ⟵ Brain node ----------------------------------------------
 
 
-def _validation_field(data: dict[str, Any]) -> ValidationField:
+def _validation_field(data: dict[str, Any] | str) -> ValidationField:
+    # The static whole-repo Laravel ingester records validation fields as bare
+    # names (``list[str]``); the per-endpoint extractor records rich dicts. Accept
+    # both so generation works off a statically-ingested Brain (the default path).
+    if isinstance(data, str):
+        data = {"name": data}
     constraints = data.get("constraints") or {}
     relational = data.get("relational")
     return ValidationField(

@@ -1,0 +1,67 @@
+"""Regression: ``endpoint_spec_from_node`` must accept the STATIC whole-repo
+ingester's validation shape — ``validation.fields`` as bare names (``list[str]``) —
+not only the per-endpoint extractor's rich dicts. A statically-ingested Brain (the
+default ``INGESTOR_MODE=laravel`` path) has to drive generation without crashing.
+
+Before the fix this raised ``AttributeError: 'str' object has no attribute 'get'``
+in ``_validation_field`` and killed every real mode_b run during generation.
+"""
+
+from __future__ import annotations
+
+import uuid
+
+from app.api.real_execution import _validation_field, endpoint_spec_from_node
+from app.models.enums import NodeKind
+from app.models.model_node import ModelNode
+
+
+def _endpoint_node(validation: dict[str, object]) -> ModelNode:
+    return ModelNode(
+        project_id=uuid.uuid4(),
+        kind=NodeKind.ENDPOINT,
+        name="POST /users",
+        attributes={"method": "POST", "uri": "/users", "validation": validation},
+    )
+
+
+def test_validation_field_accepts_a_bare_string_name() -> None:
+    # The static ingester records a field as just its NAME.
+    field = _validation_field("email")
+    assert field.name == "email"
+    assert field.required is False
+    assert field.type == "unknown"
+    assert field.constraints.max is None
+
+
+def test_endpoint_spec_from_static_ingest_string_fields_does_not_raise() -> None:
+    node = _endpoint_node(
+        {"source": "form_request", "fields": ["name", "email", "age"]}
+    )
+    spec = endpoint_spec_from_node(node)  # must not raise
+    assert spec.method == "POST"
+    assert spec.uri == "/users"
+    assert [f.name for f in spec.validation_fields] == ["name", "email", "age"]
+
+
+def test_endpoint_spec_from_extractor_dict_fields_still_works() -> None:
+    # The richer per-endpoint extractor shape (dicts) must keep working unchanged.
+    node = _endpoint_node(
+        {
+            "fields": [
+                {
+                    "name": "email",
+                    "type": "string",
+                    "required": True,
+                    "constraints": {"max": 255},
+                }
+            ]
+        }
+    )
+    spec = endpoint_spec_from_node(node)
+    assert len(spec.validation_fields) == 1
+    field = spec.validation_fields[0]
+    assert field.name == "email"
+    assert field.required is True
+    assert field.type == "string"
+    assert field.constraints.max == 255
