@@ -1,8 +1,13 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api/client", () => ({ runApi: { events: vi.fn() } }));
 vi.mock("./runEventsStream", () => ({ streamRunEvents: vi.fn() }));
+// Screenshot bytes come from an authorized fetch → object URL; stub the hook so the
+// component renders the <img> without a real network/blob round-trip.
+vi.mock("./useRunScreenshot", () => ({
+  useRunScreenshot: () => ({ url: "blob:fake", state: "ready" }),
+}));
 
 import { runApi } from "@/lib/api/client";
 import type { RunProgressEvent } from "@/lib/api/types";
@@ -91,20 +96,60 @@ describe("LiveRunView", () => {
     expect(screen.getByRole("log", { name: "Run progress" })).toBeInTheDocument();
   });
 
-  it("auto-expands the failing step's screenshot; others stay collapsed", async () => {
-    vi.mocked(runApi.events).mockResolvedValue(eventsResponse(JOURNEY));
+  it("auto-expands the failing step's screenshot when it captured one", async () => {
+    // The failing execute step (seq 3) carries a screenshot; nothing else does.
+    const withShot = JOURNEY.map((e) =>
+      e.seq === 3 ? { ...e, has_screenshot: true } : e,
+    );
+    vi.mocked(runApi.events).mockResolvedValue(eventsResponse(withShot));
 
     render(<LiveRunView runId="r1" />);
     await screen.findByText("Run failed");
 
-    // Exactly one step is revealed on load — the failed one (its screenshot is the
-    // bug; the rest are collapsed behind "Show screenshot").
+    // The failing step auto-reveals → its screenshot image is shown.
     expect(screen.getByText("Hide screenshot")).toBeInTheDocument();
-    expect(screen.getAllByText(/Screenshot capture isn.t available/)).toHaveLength(1);
+    expect(
+      screen.getByRole("img", { name: /Screenshot for step #3/ }),
+    ).toBeInTheDocument();
+    // A step with no captured screenshot offers no toggle at all (nothing to show).
+    expect(screen.queryByText("Show screenshot")).toBeNull();
+  });
 
-    // Revealing a passing step adds a second placeholder.
-    fireEvent.click(screen.getAllByText("Show screenshot")[0]);
-    expect(screen.getAllByText(/Screenshot capture isn.t available/)).toHaveLength(2);
+  it("shows the live browser frame for the latest captured page", async () => {
+    const withCrawl: RunProgressEvent[] = [
+      event({ seq: 0, phase: "run", step: "run", status: "started" }),
+      event({
+        seq: 1,
+        phase: "crawl",
+        step: "Visited /",
+        status: "passed",
+        detail: { url: "http://app/" },
+        has_screenshot: true,
+      }),
+      event({
+        seq: 2,
+        phase: "crawl",
+        step: "Visited /orders",
+        status: "passed",
+        detail: { url: "http://app/orders" },
+        has_screenshot: true,
+      }),
+      event({ seq: 3, phase: "run", step: "run", status: "passed" }),
+    ];
+    vi.mocked(runApi.events).mockResolvedValue(eventsResponse(withCrawl));
+
+    render(<LiveRunView runId="r1" />);
+    await screen.findByText("Run passed");
+
+    // The browser frame shows the MOST RECENT crawled page's screenshot (the alt
+    // carries its URL) — the operator watches the crawl advance page-by-page. The
+    // earlier page (/) is NOT the frame.
+    expect(
+      screen.getByRole("img", { name: /What Polaris saw at http:\/\/app\/orders/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("img", { name: /What Polaris saw at http:\/\/app\/$/ }),
+    ).toBeNull();
   });
 
   it("seeds from replay then appends live events from the stream", async () => {

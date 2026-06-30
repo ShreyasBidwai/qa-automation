@@ -233,6 +233,9 @@ export interface RunProgressEvent {
   status: string;
   detail?: Record<string, unknown> | null;
   timestamp: string; // ISO 8601
+  // Whether this step has a screenshot to watch — its bytes are fetched (authorized)
+  // from GET /runs/{id}/events/screenshot?seq=N. The opaque ref is never exposed.
+  has_screenshot?: boolean;
 }
 
 export interface RunEventsResponse {

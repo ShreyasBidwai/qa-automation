@@ -1,9 +1,10 @@
 import {
   AlertTriangle,
   ArrowLeft,
-  Camera,
   Check,
   ChevronDown,
+  Globe,
+  ImageOff,
   Loader2,
   Minus,
   RefreshCw,
@@ -22,11 +23,14 @@ import { cn } from "@/lib/utils";
 import {
   currentStepSeq,
   detailEntries,
+  frameLabel,
   groupByPhase,
+  latestScreenshotEvent,
   type PhaseGroup,
   runOutcome,
 } from "./runEvents";
 import { useRunEvents, type RunEventsConnection } from "./useRunEvents";
+import { useRunScreenshot } from "./useRunScreenshot";
 
 /**
  * The live run view — watch a run's journey happen step-by-step (ADR-0050),
@@ -43,6 +47,8 @@ export function LiveRunView({ runId }: { runId: string }) {
   const groups = groupByPhase(events);
   const outcome = runOutcome(events);
   const currentSeq = currentStepSeq(events);
+  const liveFrame = latestScreenshotEvent(events);
+  const live = connection === "live" || connection === "connecting";
 
   return (
     <>
@@ -92,6 +98,9 @@ export function LiveRunView({ runId }: { runId: string }) {
                 stepCount={events.length}
                 onReconnect={reconnect}
               />
+              {liveFrame ? (
+                <LiveBrowserFrame runId={runId} event={liveFrame} live={live} />
+              ) : null}
               <StepSpine groups={groups} currentSeq={currentSeq} runId={runId} />
             </>
           )}
@@ -285,16 +294,17 @@ function StepRow({
   runId: string;
 }) {
   const failed = event.status === "failed";
+  const hasShot = event.has_screenshot === true;
   const [revealed, setRevealed] = useState(false);
-  // A failing step auto-reveals its screenshot once (that's where the bug is);
-  // the user can still collapse it, and it won't re-open on later re-renders.
+  // A failing step that captured a screenshot auto-reveals it once (that's where the
+  // bug is); the user can still collapse it, and it won't re-open on re-renders.
   const autoExpanded = useRef(false);
   useEffect(() => {
-    if (failed && !autoExpanded.current) {
+    if (failed && hasShot && !autoExpanded.current) {
       autoExpanded.current = true;
       setRevealed(true);
     }
-  }, [failed]);
+  }, [failed, hasShot]);
 
   const entries = detailEntries(event.detail);
   return (
@@ -349,24 +359,26 @@ function StepRow({
             </dl>
           ) : null}
 
-          <div className="mt-2">
-            <button
-              type="button"
-              onClick={() => setRevealed((value) => !value)}
-              aria-expanded={revealed}
-              className="inline-flex items-center gap-1 text-[11.5px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <ChevronDown
-                className={cn(
-                  "h-3.5 w-3.5 transition-transform",
-                  revealed && "rotate-180",
-                )}
-                aria-hidden="true"
-              />
-              {revealed ? "Hide screenshot" : "Show screenshot"}
-            </button>
-            {revealed ? <ScreenshotPanel runId={runId} seq={event.seq} /> : null}
-          </div>
+          {hasShot ? (
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={() => setRevealed((value) => !value)}
+                aria-expanded={revealed}
+                className="inline-flex items-center gap-1 text-[11.5px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <ChevronDown
+                  className={cn(
+                    "h-3.5 w-3.5 transition-transform",
+                    revealed && "rotate-180",
+                  )}
+                  aria-hidden="true"
+                />
+                {revealed ? "Hide screenshot" : "Show screenshot"}
+              </button>
+              {revealed ? <ScreenshotPanel runId={runId} seq={event.seq} /> : null}
+            </div>
+          ) : null}
         </div>
       </div>
     </li>
@@ -417,23 +429,112 @@ function StepStatusIcon({ status }: { status: string }) {
 }
 
 /**
- * Per-step screenshot. The capture source (has_screenshot + the screenshot
- * endpoint, or a per-step shot) lands in a sibling backend slice and isn't on
- * trunk yet, so we show a clean, honest placeholder on reveal rather than a broken
- * image. When the field/endpoint arrives, swap the placeholder for the <img>.
+ * The live "browser window" — the operator literally watches Polaris drive the
+ * running app. It shows the most recent step that captured a screenshot, framed in
+ * faux browser chrome (URL bar + a Live badge while the run streams). As the crawl
+ * visits each page, `event` advances and the frame swaps, so it animates page by
+ * page. The bytes come from the authorized per-seq endpoint via `useRunScreenshot`.
+ */
+function LiveBrowserFrame({
+  runId,
+  event,
+  live,
+}: {
+  runId: string;
+  event: RunProgressEvent;
+  live: boolean;
+}) {
+  const { url, state } = useRunScreenshot(runId, event.seq, true);
+  const label = frameLabel(event);
+  return (
+    <div className="mb-6 overflow-hidden rounded-xl border border-border bg-surface shadow-card">
+      <div className="flex items-center gap-2 border-b border-border bg-background px-3 py-2">
+        <div className="flex gap-1.5" aria-hidden="true">
+          <span className="h-2.5 w-2.5 rounded-full bg-status-fail-solid/60" />
+          <span className="h-2.5 w-2.5 rounded-full bg-status-flaky-solid/60" />
+          <span className="h-2.5 w-2.5 rounded-full bg-status-pass-solid/60" />
+        </div>
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 py-1">
+          <Globe
+            className="h-3 w-3 shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <span className="truncate font-mono text-[11px] text-muted-foreground">
+            {label}
+          </span>
+        </div>
+        {live ? (
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-subtle px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-accent">
+            <span
+              aria-hidden="true"
+              className="h-1.5 w-1.5 rounded-full bg-accent motion-safe:animate-pulse"
+            />
+            Live
+          </span>
+        ) : null}
+      </div>
+
+      <div className="relative flex aspect-[16/10] items-center justify-center bg-background">
+        {state === "ready" && url ? (
+          <img
+            src={url}
+            alt={`What Polaris saw at ${label}`}
+            className="h-full w-full object-contain"
+          />
+        ) : state === "error" ? (
+          <div className="flex flex-col items-center gap-1.5 text-muted-foreground">
+            <ImageOff className="h-5 w-5" aria-hidden="true" />
+            <p className="text-[12.5px]">This frame isn&rsquo;t available.</p>
+          </div>
+        ) : (
+          <Loader2
+            className="h-5 w-5 text-muted-foreground motion-safe:animate-spin"
+            aria-hidden="true"
+          />
+        )}
+      </div>
+
+      <div className="border-t border-border px-3 py-2">
+        <p className="truncate text-[12.5px] text-foreground-secondary">{event.step}</p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Per-step screenshot, shown when a step reveals its frame. Reuses the authorized
+ * per-seq endpoint via `useRunScreenshot` (only fetches while revealed). An honest
+ * fallback covers the loading + unavailable cases (e.g. a decoupled runner wrote
+ * the bytes on a filesystem the control plane can't reach — ADR-0051).
  */
 function ScreenshotPanel({ runId, seq }: { runId: string; seq: number }) {
-  return (
-    <div className="mt-2 rounded-[9px] border border-dashed border-border bg-background px-3 py-4">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <Camera className="h-4 w-4" aria-hidden="true" />
-        <p className="text-[12.5px]">
-          Screenshot capture isn&rsquo;t available for this step yet.
-        </p>
+  const { url, state } = useRunScreenshot(runId, seq, true);
+  if (state === "ready" && url) {
+    return (
+      <div className="mt-2 overflow-hidden rounded-[9px] border border-border bg-background">
+        <img
+          src={url}
+          alt={`Screenshot for step #${seq}`}
+          className="max-h-[420px] w-full object-contain"
+        />
       </div>
-      <p className="mt-1 font-mono text-[10.5px] text-status-neutral-solid">
-        run {runId.slice(0, 8)} · step #{seq}
-      </p>
+    );
+  }
+  return (
+    <div className="mt-2 flex items-center gap-2 rounded-[9px] border border-dashed border-border bg-background px-3 py-4 text-muted-foreground">
+      {state === "error" ? (
+        <>
+          <ImageOff className="h-4 w-4" aria-hidden="true" />
+          <p className="text-[12.5px]">
+            Screenshot isn&rsquo;t available for this step.
+          </p>
+        </>
+      ) : (
+        <>
+          <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
+          <p className="text-[12.5px]">Loading screenshot…</p>
+        </>
+      )}
     </div>
   );
 }

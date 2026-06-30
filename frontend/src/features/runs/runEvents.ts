@@ -28,6 +28,7 @@ export const PHASE_SPINE: PhaseSpec[] = [
   { key: "select", label: "Understand", caption: "select what to test" },
   { key: "generate", label: "Generate", caption: "author the tests" },
   { key: "execute", label: "Execute", caption: "run the journeys" },
+  { key: "crawl", label: "Explore live site", caption: "drive the running app" },
   { key: "review", label: "Review", caption: "rank the findings" },
 ];
 
@@ -84,4 +85,24 @@ export function detailEntries(
 ): [string, string][] {
   if (!detail) return [];
   return Object.entries(detail).map(([key, value]) => [key, String(value)]);
+}
+
+/**
+ * The most recent event that has a screenshot — the frame the live "browser
+ * window" shows. As the crawl streams in, this advances to each new page, so the
+ * top frame animates page-by-page; null when nothing visual has been captured yet.
+ */
+export function latestScreenshotEvent(
+  events: RunProgressEvent[],
+): RunProgressEvent | null {
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    if (events[i].has_screenshot) return events[i];
+  }
+  return null;
+}
+
+/** What a frame is showing: the crawled page URL (detail.url) or the step label. */
+export function frameLabel(event: RunProgressEvent): string {
+  const url = event.detail?.url;
+  return typeof url === "string" && url ? url : event.step;
 }
