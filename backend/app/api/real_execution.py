@@ -26,7 +26,7 @@ the hermetic suite uses the stub, the manual smoke a real model.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,6 +43,7 @@ from app.generation.e2e_generator import E2EGenerator
 from app.generation.generator import TestGenerator
 from app.incidents import capturing_ai_provider
 from app.ingestion.laravel.ingester import LaravelIngester
+from app.ingestion.laravel.normalize import normalize_rules
 from app.ingestion.laravel.route_list import path_params_from_uri
 from app.ingestion.models import (
     EndpointSpec,
@@ -118,8 +119,22 @@ def endpoint_spec_from_node(node: ModelNode) -> EndpointSpec:
         auth_required=bool(attrs.get("auth_required", False)),
         path_params=path_params_from_uri(uri),
         query_params=[],
-        validation_fields=[_validation_field(f) for f in validation.get("fields", [])],
+        validation_fields=_validation_fields_from(validation),
     )
+
+
+def _validation_fields_from(validation: Mapping[str, Any]) -> list[ValidationField]:
+    """Typed validation fields from a node's ``validation`` attribute.
+
+    Prefer the captured rule SPECS (``rules`` map → ``normalize_rules``) so each field
+    carries its TYPE/constraints and the plan emits type-correct payloads. Fall back to
+    bare field names (``fields``) when only names were captured — older Brains, or
+    array-form / ``Rule::*`` rules the static parser can't reduce to a pipe string.
+    """
+    rules = validation.get("rules")
+    if isinstance(rules, Mapping) and rules:
+        return list(normalize_rules(rules))
+    return [_validation_field(f) for f in validation.get("fields", [])]
 
 
 # --- the production TargetGenerator ------------------------------------------

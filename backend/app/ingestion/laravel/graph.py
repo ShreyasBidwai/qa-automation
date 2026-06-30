@@ -9,7 +9,7 @@ PHP source itself. Mirrors validation.py (T1.3).
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from app.ingestion.commands import CommandRunner, check_output
@@ -41,6 +41,10 @@ class MigrationMeta:
 class ActionValidation:
     source: str  # form_request | inline_validate | none
     fields: list[str]
+    # Rule SPECS keyed by field (e.g. {"age": "required|integer|min:18"}); pipe-string
+    # rules only (the common FormRequest form). Lets generation infer TYPES so it emits
+    # type-correct payloads instead of a generic placeholder — for ANY project.
+    rules: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

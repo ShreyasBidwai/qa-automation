@@ -356,18 +356,25 @@ def _validation(
         path = repo / "app" / f"{rel}.php"
         fields = _rules_fields(path)
         if fields is not None:
-            return ActionValidation(source="form_request", fields=fields)
+            return ActionValidation(
+                source="form_request", fields=fields, rules=_rules_map(path) or {}
+            )
     # 2) inline $request->validate([...]).
     vm = re.search(r"->\s*validate\s*\(", _mask(body))
     if vm:
         bracket = _mask(body).find("[", vm.end())
         if bracket != -1 and bracket - vm.end() < 4:
             arr = body[bracket : _match(_mask(body), bracket) + 1]
-            return ActionValidation(source="inline_validate", fields=_array_keys(arr))
+            return ActionValidation(
+                source="inline_validate",
+                fields=_array_keys(arr),
+                rules=_array_pairs(arr),
+            )
     return ActionValidation(source="none", fields=[])
 
 
-def _rules_fields(path: Path) -> list[str] | None:
+def _rules_block(path: Path) -> str | None:
+    """The raw source of a FormRequest's ``rules()`` return-array, or None."""
     src = _read(path)
     if src is None:
         return None
@@ -378,14 +385,37 @@ def _rules_fields(path: Path) -> list[str] | None:
         rm = re.search(r"\breturn\b", _mask(body))
         bracket = _mask(body).find("[", rm.end()) if rm else -1
         if bracket != -1:
-            arr = body[bracket : _match(_mask(body), bracket) + 1]
-            return _array_keys(arr)
-        return []
+            return body[bracket : _match(_mask(body), bracket) + 1]
+        return ""
     return None
+
+
+def _rules_fields(path: Path) -> list[str] | None:
+    arr = _rules_block(path)
+    return None if arr is None else _array_keys(arr)
+
+
+def _rules_map(path: Path) -> dict[str, str] | None:
+    arr = _rules_block(path)
+    return None if arr is None else _array_pairs(arr)
 
 
 def _array_keys(arr_src: str) -> list[str]:
     return list(dict.fromkeys(re.findall(r"['\"]([^'\"]+)['\"]\s*=>", arr_src)))
+
+
+def _array_pairs(arr_src: str) -> dict[str, str]:
+    """Map each ``'field' => 'rule|spec'`` entry to its (string) rule spec.
+
+    Pipe-string rules only — the common FormRequest form. Array-form or
+    ``Rule::*``-object rules yield no spec (the field still appears in ``fields``
+    via ``_array_keys`` and degrades to a bare name downstream)."""
+    pairs: dict[str, str] = {}
+    for key, spec in re.findall(
+        r"['\"]([^'\"]+)['\"]\s*=>\s*['\"]([^'\"]*)['\"]", arr_src
+    ):
+        pairs.setdefault(key, spec)
+    return pairs
 
 
 def parse_graph(repo_path: str) -> RepoGraph:

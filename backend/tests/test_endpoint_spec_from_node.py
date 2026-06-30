@@ -34,6 +34,28 @@ def test_validation_field_accepts_a_bare_string_name() -> None:
     assert field.constraints.max is None
 
 
+def test_endpoint_spec_prefers_typed_rules_over_bare_names() -> None:
+    # When the Brain carries the rule SPECS, fields are TYPED (so the plan can emit
+    # type-correct payloads) — not the type='unknown' bare-name fallback.
+    node = _endpoint_node(
+        {
+            "source": "form_request",
+            "fields": ["age", "email"],
+            "rules": {
+                "age": "required|integer|min:18|max:120",
+                "email": "required|email",
+            },
+        }
+    )
+    spec = endpoint_spec_from_node(node)
+    by_name = {f.name: f for f in spec.validation_fields}
+    assert by_name["age"].type == "integer"
+    assert by_name["age"].required is True
+    assert by_name["age"].constraints.min == 18
+    assert by_name["age"].constraints.max == 120
+    assert by_name["email"].type == "email"
+
+
 def test_endpoint_spec_from_static_ingest_string_fields_does_not_raise() -> None:
     node = _endpoint_node(
         {"source": "form_request", "fields": ["name", "email", "age"]}

@@ -302,8 +302,14 @@ def test_controller_actions_model_refs_and_validation(tmp_path: Path) -> None:
     assert actions["index"].model_refs == ["App\\Models\\Post"]
     assert actions["store"].validation.source == "form_request"
     assert actions["store"].validation.fields == ["title", "body"]
+    # The rule SPECS are captured too (not just the keys) so generation can type them.
+    assert actions["store"].validation.rules == {
+        "title": "required",
+        "body": "required",
+    }
     assert actions["inline"].validation.source == "inline_validate"
     assert actions["inline"].validation.fields == ["name", "email"]
+    assert actions["inline"].validation.rules == {"name": "required", "email": "email"}
 
 
 def test_messy_controller_does_not_abort_the_rest(tmp_path: Path) -> None:
