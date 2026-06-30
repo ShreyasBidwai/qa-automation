@@ -84,7 +84,9 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
     setSubmitting(false);
 
     if (result.ok && result.data) {
-      navigate(`/runs/${result.data.run_id}`);
+      // Land straight on the live view: the run is watchable from the first step
+      // (Polaris driving the site, page-by-page) rather than a coarse status page.
+      navigate(`/runs/${result.data.run_id}/live`);
       return;
     }
     setError(result.error ?? "Could not start the run.");
