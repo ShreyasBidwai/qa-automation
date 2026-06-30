@@ -56,6 +56,30 @@ def test_no_factories_steers_the_model_off_them(endpoint_spec: object) -> None:
     assert "NO model factories" in spy.instruction
 
 
+def test_dependency_order_steer_added_when_case_has_db_dependencies(
+    endpoint_spec: object,
+) -> None:
+    # A case with a foreign-key dependency gets the ordering steer so the model
+    # creates dependency rows before the user factory (which would otherwise collide).
+    cases = plan_cases(endpoint_spec)  # type: ignore[arg-type]
+    dep_case = next(c for c in cases if c.dependencies)
+    spy = _CapturingProvider()
+    render_script(spy, endpoint_spec, dep_case, 4096, factories_available=True)  # type: ignore[arg-type]
+    assert "DB-dependency rows FIRST" in spy.instruction
+
+
+def test_no_dependency_order_steer_when_case_has_no_dependencies(
+    endpoint_spec: object,
+) -> None:
+    import dataclasses
+
+    cases = plan_cases(endpoint_spec)  # type: ignore[arg-type]
+    nodep_case = dataclasses.replace(cases[0], dependencies=[])  # strip deps
+    spy = _CapturingProvider()
+    render_script(spy, endpoint_spec, nodep_case, 4096, factories_available=True)  # type: ignore[arg-type]
+    assert "DB-dependency rows FIRST" not in spy.instruction
+
+
 def test_render_script_extracts_runnable_php_from_messy_model_output(
     endpoint_spec: object,
 ) -> None:
