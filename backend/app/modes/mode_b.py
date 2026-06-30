@@ -37,6 +37,7 @@ from app.models.enums import RunMode, RunTrigger
 from app.models.finding import Finding
 from app.models.result import Result
 from app.progress import (
+    PHASE_CRAWL,
     PHASE_GENERATE,
     PHASE_REVIEW,
     PHASE_RUN,
@@ -393,6 +394,14 @@ class ModeBOrchestrator:
         """
         if self._crawler is None or not self._target_env.base_url:
             return None
+        # Frame the phase so the live view shows "Explore live site" even before the
+        # first page lands; the crawler emits a watchable frame per page in between.
+        await emit(
+            phase=PHASE_CRAWL,
+            step="Explore live site",
+            status=STATUS_STARTED,
+            detail={"base_url": self._target_env.base_url},
+        )
         try:
             result = await self._crawler.crawl(
                 session=self._session,
@@ -408,11 +417,27 @@ class ModeBOrchestrator:
                 "modes.mode_b.crawl_phase",
                 extra={"project_id": str(project_id), "pages": result.pages},
             )
+            await emit(
+                phase=PHASE_CRAWL,
+                step=f"Explored {result.pages} pages",
+                status=STATUS_PASSED,
+                detail={
+                    "pages": result.pages,
+                    "nav_edges": result.nav_edges,
+                    "call_edges": result.call_edges,
+                },
+            )
             return result
         except Exception:  # noqa: BLE001 — the crawl must never crash the rest of a run
             logger.exception(
                 "modes.mode_b.crawl_phase_failed",
                 extra={"project_id": str(project_id)},
+            )
+            await emit(
+                phase=PHASE_CRAWL,
+                step="Explore live site",
+                status=STATUS_FAILED,
+                detail={"base_url": self._target_env.base_url},
             )
             return None
 

@@ -628,6 +628,9 @@ class RunEventItem(BaseModel):
     status: str
     detail: dict[str, Any] | None = None
     timestamp: datetime
+    # Whether this step has a stored screenshot, fetched via the authorized
+    # ``GET /runs/{run_id}/events/screenshot?seq=N`` — the opaque ref is never exposed.
+    has_screenshot: bool = False
 
 
 class RunEventsResponse(BaseModel):

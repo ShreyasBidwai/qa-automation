@@ -38,6 +38,7 @@ from app.embeddings.types import EmbeddingProvider
 from app.models.enums import EdgeKind, NodeKind
 from app.models.model_edge import ModelEdge
 from app.models.model_node import EMBEDDING_DIM, ModelNode
+from app.progress import PHASE_CRAWL, STATUS_PASSED, emit
 from app.repositories.edge_repository import EdgeRepository
 from app.repositories.node_repository import NodeRepository
 from app.screenshots.storage import store_project_screenshot
@@ -188,6 +189,23 @@ class FrontendCrawler:
             if not cache_hit:
                 changed.append((node, document))
             pages[page_id] = node
+
+            # Live "browser frame" (ADR-0050): each visited page is a watchable step
+            # carrying its screenshot, so the operator sees the crawl page-by-page in
+            # the live view. Best-effort no-op off the run path (no emitter installed).
+            await emit(
+                phase=PHASE_CRAWL,
+                step=f"Visited {page_id}",
+                status=STATUS_PASSED,
+                detail={
+                    "url": snapshot.url,
+                    "title": snapshot.title,
+                    "forms": len(snapshot.forms),
+                    "links": len(snapshot.links),
+                    "calls": len(snapshot.network),
+                },
+                screenshot_ref=ref,
+            )
 
         # --- page -> page (navigates) + page -> endpoint (calls) edges -------
         nav_edges = 0

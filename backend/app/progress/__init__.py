@@ -11,6 +11,7 @@ or replayed via a plain GET.
 from __future__ import annotations
 
 from .emitter import (
+    PHASE_CRAWL,
     PHASE_EXECUTE,
     PHASE_GENERATE,
     PHASE_REVIEW,
@@ -42,6 +43,7 @@ __all__ = [
     "PHASE_SELECT",
     "PHASE_GENERATE",
     "PHASE_EXECUTE",
+    "PHASE_CRAWL",
     "PHASE_REVIEW",
     "STATUSES",
     "STATUS_STARTED",

@@ -48,5 +48,11 @@ class RunEvent(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # Optional structured context (endpoint/page/test identity, duration, counts, …).
     detail: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
+    # Optional opaque screenshot ref (ADR-0051) for the step — a crawled page's frame
+    # or a failing test's capture. The bytes are served ONLY through the authorized
+    # ``GET /runs/{run_id}/events/screenshot?seq=N`` endpoint, never exposed as a path;
+    # the client sees only ``has_screenshot`` (a bool), never this storage key.
+    screenshot_ref: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
 
 __all__ = ["RunEvent"]

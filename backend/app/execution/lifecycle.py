@@ -129,6 +129,10 @@ class RunLifecycle:
             )
             exec_results = self._runner.run(scripts, target_env)
             for er in exec_results:
+                # Capture once: the row carries it (the assembler copies it onto the
+                # finding) AND the live view serves it as the step's frame, so a
+                # failing test is watchable with its screenshot. Best-effort (ADR-0051).
+                shot_ref = _capture_screenshot(run.id, er)
                 await result_repo.add(
                     Result(
                         project_id=run.project_id,
@@ -137,9 +141,7 @@ class RunLifecycle:
                         outcome=er.outcome,
                         triage=None,  # Sprint 7
                         evidence_ref=er.evidence_ref,
-                        # Failure screenshot (ADR-0051); the assembler copies the ref
-                        # onto the finding. Best-effort — never breaks the run.
-                        screenshot_ref=_capture_screenshot(run.id, er),
+                        screenshot_ref=shot_ref,
                         message=er.message,  # B8: detail for heal classification
                     )
                 )
@@ -152,6 +154,7 @@ class RunLifecycle:
                         else progress.STATUS_FAILED
                     ),
                     detail={"test": er.name, "outcome": er.outcome.value},
+                    screenshot_ref=shot_ref,
                 )
             status = (
                 STATUS_PASSED

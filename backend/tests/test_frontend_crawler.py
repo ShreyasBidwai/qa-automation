@@ -33,6 +33,7 @@ from app.crawler.urls import identity, normalize, resolve, same_origin
 from app.models.enums import EdgeKind, NodeKind
 from app.models.model_edge import ModelEdge
 from app.models.model_node import EMBEDDING_DIM, ModelNode
+from app.progress import PHASE_CRAWL, install_emitter, reset_emitter
 from app.repositories.node_repository import NodeRepository
 from tests.factories import make_project
 
@@ -239,6 +240,51 @@ async def test_crawl_stores_per_project_screenshot_ref_on_page_nodes(
     ref = page.attributes.get("screenshot_ref")
     assert isinstance(ref, str)
     assert ref.startswith(f"{project_id}/")  # grouped under the project's folder
+
+
+class _RecordingEmitter:
+    """A drop-in progress sink that records emit() calls (no DB) — proves the crawl
+    pushes a live frame per page through the same seam the live view consumes."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, str, str | None]] = []
+
+    async def emit(
+        self,
+        *,
+        phase: str,
+        step: str,
+        status: str,
+        detail: dict[str, object] | None = None,
+        screenshot_ref: str | None = None,
+    ) -> None:
+        self.calls.append((phase, step, status, screenshot_ref))
+
+
+async def test_crawl_emits_a_live_frame_per_page_carrying_the_screenshot(
+    db_session: AsyncSession,
+) -> None:
+    # With an emitter installed, each visited page is a watchable CRAWL frame whose
+    # screenshot_ref points at the per-project stored shot — what the operator sees.
+    project_id = await _project(db_session)
+    shot = base64.b64encode(b"\x89PNG fake screenshot bytes").decode()
+    rec = _RecordingEmitter()
+    token = install_emitter(rec)  # type: ignore[arg-type]
+    try:
+        crawler = FrontendCrawler(_FakeFetcher([_snap("/", screenshot_b64=shot)]))
+        await crawler.crawl(
+            session=db_session,
+            project_id=project_id,
+            config=CrawlConfig(base_url=_BASE),
+        )
+    finally:
+        reset_emitter(token)
+
+    frames = [c for c in rec.calls if c[0] == PHASE_CRAWL]
+    assert len(frames) == 1
+    _, step, _, ref = frames[0]
+    assert step == "Visited /"
+    assert ref is not None and ref.startswith(f"{project_id}/")  # the live frame's shot
 
 
 async def test_recrawl_is_idempotent_with_embed_cache(db_session: AsyncSession) -> None:

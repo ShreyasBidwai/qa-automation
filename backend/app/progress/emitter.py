@@ -38,9 +38,17 @@ PHASE_RUN = "run"
 PHASE_SELECT = "select"
 PHASE_GENERATE = "generate"
 PHASE_EXECUTE = "execute"
+PHASE_CRAWL = "crawl"  # the live frontend crawl — each page a watchable frame (T4.2)
 PHASE_REVIEW = "review"
 PHASES = frozenset(
-    {PHASE_RUN, PHASE_SELECT, PHASE_GENERATE, PHASE_EXECUTE, PHASE_REVIEW}
+    {
+        PHASE_RUN,
+        PHASE_SELECT,
+        PHASE_GENERATE,
+        PHASE_EXECUTE,
+        PHASE_CRAWL,
+        PHASE_REVIEW,
+    }
 )
 
 # A step's status. ``started`` opens a step; the rest close it.
@@ -83,9 +91,15 @@ class RunProgressEmitter:
         step: str,
         status: str,
         detail: dict[str, Any] | None = None,
+        screenshot_ref: str | None = None,
     ) -> None:
         """Persist one progress event. Best-effort: any failure is logged, never
-        raised, so progress emission can't break or stall the run."""
+        raised, so progress emission can't break or stall the run.
+
+        ``screenshot_ref`` is an opaque storage key (ADR-0051) for the step's frame —
+        the live view serves its bytes via the authorized screenshot endpoint; the
+        client only ever learns ``has_screenshot``, never this key.
+        """
         seq = self._seq
         self._seq += 1
         try:
@@ -97,6 +111,7 @@ class RunProgressEmitter:
                 step=step[:_STEP_LIMIT],
                 status=status,
                 detail=detail,
+                screenshot_ref=screenshot_ref,
             )
             async with self._sm() as session:
                 session.add(event)
@@ -142,6 +157,7 @@ async def emit(
     step: str,
     status: str,
     detail: dict[str, Any] | None = None,
+    screenshot_ref: str | None = None,
 ) -> None:
     """Emit a progress event to the installed emitter, if any (best-effort no-op).
 
@@ -150,4 +166,10 @@ async def emit(
     """
     emitter = _current.get()
     if emitter is not None:
-        await emitter.emit(phase=phase, step=step, status=status, detail=detail)
+        await emitter.emit(
+            phase=phase,
+            step=step,
+            status=status,
+            detail=detail,
+            screenshot_ref=screenshot_ref,
+        )

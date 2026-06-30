@@ -42,3 +42,15 @@ class RunEventRepository:
             stmt = stmt.where(RunEvent.seq > after_seq)
         stmt = stmt.order_by(RunEvent.seq)
         return list((await self.session.scalars(stmt)).all())
+
+    async def get(
+        self, project_id: uuid.UUID, run_id: uuid.UUID, seq: int
+    ) -> RunEvent | None:
+        """The single event at ``seq`` for a run, or None — the live view addresses a
+        step's screenshot by its ``seq``. Project-scoped (defence in depth)."""
+        stmt = select(RunEvent).where(
+            RunEvent.project_id == project_id,
+            RunEvent.run_id == run_id,
+            RunEvent.seq == seq,
+        )
+        return (await self.session.scalars(stmt)).one_or_none()
