@@ -31,6 +31,12 @@ logger = logging.getLogger("app.screenshots")
 # A ref is an opaque 32-hex-char key (a stored file is ``<dir>/<ref>.png``). The
 # strict shape also forbids any path-traversal input reaching the filesystem.
 _REF = re.compile(r"\A[0-9a-f]{32}\Z")
+# A PROJECT-scoped ref groups screenshots into a per-project folder (ADR-0051): the
+# ref is ``<project_uuid>/<hex>`` and the file is ``<dir>/<project_uuid>/<hex>.png``.
+# Both segments are strictly validated, so the ref can never traverse the filesystem.
+_PROJECT_REF = re.compile(
+    r"\A([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})/([0-9a-f]{32})\Z"
+)
 _SUFFIX = ".png"
 
 
@@ -55,11 +61,34 @@ def store_screenshot(data: bytes, *, base_dir: str | Path | None = None) -> str:
     return ref
 
 
+def store_project_screenshot(
+    project_id: uuid.UUID, data: bytes, *, base_dir: str | Path | None = None
+) -> str:
+    """Persist screenshot ``data`` under a per-PROJECT folder; ref is ``<id>/<hex>``.
+
+    The user-facing organisation the operator asked for: every project's testing
+    screenshots live under ``<screenshot_dir>/<project_id>/``. The returned ref is
+    still opaque (no absolute path) and round-trips through ``get_screenshot``.
+    """
+    ref = uuid.uuid4().hex
+    directory = _base_dir(base_dir) / str(project_id)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{ref}{_SUFFIX}").write_bytes(data)
+    return f"{project_id}/{ref}"
+
+
 def get_screenshot(ref: str, *, base_dir: str | Path | None = None) -> bytes | None:
-    """The bytes for ``ref``, or None if the ref is malformed or has no stored file."""
-    if not _REF.match(ref):
+    """The bytes for ``ref``, or None if the ref is malformed or has no stored file.
+
+    Accepts both a flat ref (``<hex>``) and a project-scoped ref (``<id>/<hex>``);
+    both segments are strictly validated, so a ref can never escape the base dir.
+    """
+    if _REF.match(ref):
+        path = _base_dir(base_dir) / f"{ref}{_SUFFIX}"
+    elif match := _PROJECT_REF.match(ref):
+        path = _base_dir(base_dir) / match.group(1) / f"{match.group(2)}{_SUFFIX}"
+    else:
         return None
-    path = _base_dir(base_dir) / f"{ref}{_SUFFIX}"
     try:
         return path.read_bytes()
     except OSError:

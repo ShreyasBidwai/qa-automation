@@ -7,6 +7,16 @@ path and the bytes are only ever served through the authorized finding endpoint.
 
 from __future__ import annotations
 
-from .storage import get_screenshot, placeholder_screenshot, store_screenshot
+from .storage import (
+    get_screenshot,
+    placeholder_screenshot,
+    store_project_screenshot,
+    store_screenshot,
+)
 
-__all__ = ["store_screenshot", "get_screenshot", "placeholder_screenshot"]
+__all__ = [
+    "store_screenshot",
+    "store_project_screenshot",
+    "get_screenshot",
+    "placeholder_screenshot",
+]

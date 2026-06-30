@@ -143,6 +143,7 @@ def _parse_snapshot(data: dict[str, Any]) -> PageSnapshot:
         if isinstance(c, dict) and c.get("url")
     )
     links = tuple(str(href) for href in data.get("links", []) if href)
+    shot = data.get("screenshot")
     return PageSnapshot(
         url=str(data["url"]),
         title=str(data.get("title", "")),
@@ -150,4 +151,5 @@ def _parse_snapshot(data: dict[str, Any]) -> PageSnapshot:
         forms=forms,
         elements=elements,
         network=network,
+        screenshot_b64=shot if isinstance(shot, str) and shot else None,
     )

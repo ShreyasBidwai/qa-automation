@@ -75,6 +75,16 @@ try {
     return { title: document.title, links, forms, elements };
   });
 
+  // A screenshot of the rendered page (base64 PNG): the operator sees what the
+  // crawler saw, and the bytes are stored per-project. Best-effort — a capture
+  // failure must not lose the page snapshot, so it degrades to null.
+  let screenshot = null;
+  try {
+    screenshot = (await page.screenshot({ type: "png" })).toString("base64");
+  } catch {
+    /* keep the snapshot even if the shot fails */
+  }
+
   process.stdout.write(
     JSON.stringify({
       url: page.url(),
@@ -83,6 +93,7 @@ try {
       forms: dom.forms,
       elements: dom.elements,
       network: calls,
+      screenshot,
     }),
   );
 } finally {

@@ -9,6 +9,7 @@ real fetcher's parsing + credentials-never-logged guarantee (fake node runner).
 
 from __future__ import annotations
 
+import base64
 import uuid
 from typing import Any
 
@@ -45,6 +46,7 @@ def _snap(
     network: tuple[NetworkCall, ...] = (),
     forms: tuple[FormSpec, ...] = (),
     title: str = "Page",
+    screenshot_b64: str | None = None,
 ) -> PageSnapshot:
     abs_links = tuple(resolve(_BASE, link) for link in links)
     return PageSnapshot(
@@ -53,6 +55,7 @@ def _snap(
         links=abs_links,
         network=network,
         forms=forms,
+        screenshot_b64=screenshot_b64,
     )
 
 
@@ -218,6 +221,24 @@ async def test_crawl_builds_pages_nav_and_call_edges(db_session: AsyncSession) -
     )
     assert home_to_ping.confidence == 0.9
     assert any(e.dst_node_id == users_api.id for e in by_kind[EdgeKind.CALLS])
+
+
+async def test_crawl_stores_per_project_screenshot_ref_on_page_nodes(
+    db_session: AsyncSession,
+) -> None:
+    # A page snapshot carrying a screenshot ⇒ the crawl stores the bytes under the
+    # project's folder and records the project-scoped ref on the page node, so the
+    # operator's per-project screenshots are discoverable from the Brain.
+    project_id = await _project(db_session)
+    shot = base64.b64encode(b"\x89PNG fake screenshot bytes").decode()
+    crawler = FrontendCrawler(_FakeFetcher([_snap("/", screenshot_b64=shot)]))
+    await crawler.crawl(
+        session=db_session, project_id=project_id, config=CrawlConfig(base_url=_BASE)
+    )
+    page = (await NodeRepository(db_session).list_by_kind(project_id, NodeKind.PAGE))[0]
+    ref = page.attributes.get("screenshot_ref")
+    assert isinstance(ref, str)
+    assert ref.startswith(f"{project_id}/")  # grouped under the project's folder
 
 
 async def test_recrawl_is_idempotent_with_embed_cache(db_session: AsyncSession) -> None:

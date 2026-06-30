@@ -35,13 +35,18 @@ from app.models.enums import (
 )
 from app.models.finding import Finding
 from app.models.organization import Organization
+from app.reporting.finding_assembler import FindingAssembler
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.result_repository import ResultRepository
 from app.repositories.run_repository import RunRepository
 from app.repositories.test_case_repository import TestCaseRepository
-from app.screenshots import get_screenshot, placeholder_screenshot, store_screenshot
+from app.screenshots import (
+    get_screenshot,
+    placeholder_screenshot,
+    store_project_screenshot,
+    store_screenshot,
+)
 from app.screenshots import storage as screenshot_storage
-from app.reporting.finding_assembler import FindingAssembler
 from tests.factories import make_project, make_result, make_run, make_test_case
 
 
@@ -68,6 +73,24 @@ def test_store_returns_opaque_ref_and_get_round_trips(tmp_path) -> None:
     assert "/" not in ref and "." not in ref
     assert get_screenshot(ref, base_dir=tmp_path) == b"image-bytes"
     assert (tmp_path / f"{ref}.png").exists()
+
+
+def test_store_project_groups_under_project_folder_and_round_trips(tmp_path) -> None:
+    project_id = uuid.uuid4()
+    ref = store_project_screenshot(project_id, b"page-bytes", base_dir=tmp_path)
+    # The ref is project-scoped (``<id>/<hex>``) but still opaque — no absolute path.
+    assert ref.startswith(f"{project_id}/")
+    hex_part = ref.split("/", 1)[1]
+    assert len(hex_part) == 32 and all(c in "0123456789abcdef" for c in hex_part)
+    # Bytes live under the per-project folder and round-trip through the same getter.
+    assert (tmp_path / str(project_id) / f"{hex_part}.png").exists()
+    assert get_screenshot(ref, base_dir=tmp_path) == b"page-bytes"
+
+
+def test_get_rejects_project_ref_traversal(tmp_path) -> None:
+    # A project segment that isn't a clean UUID never reaches the filesystem.
+    assert get_screenshot(f"../../etc/{uuid.uuid4().hex}", base_dir=tmp_path) is None
+    assert get_screenshot(f"{uuid.uuid4()}/../escape", base_dir=tmp_path) is None
 
 
 def test_get_unknown_ref_is_none(tmp_path) -> None:
@@ -149,7 +172,9 @@ async def test_failing_result_captures_stores_and_attaches_ref(
     project_id = await _project(db_session)
     case = await TestCaseRepository(db_session).add(make_test_case(project_id))
     run = await _run_lifecycle(
-        db_session, project_id, [_exec_result(case.id, Outcome.FAIL, screenshot=b"shot")]
+        db_session,
+        project_id,
+        [_exec_result(case.id, Outcome.FAIL, screenshot=b"shot")],
     )
 
     results = await ResultRepository(db_session).list_for_run(project_id, run.id)

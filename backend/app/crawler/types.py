@@ -56,6 +56,7 @@ class PageSnapshot:
     forms: tuple[FormSpec, ...] = ()
     elements: tuple[ElementSpec, ...] = ()
     network: tuple[NetworkCall, ...] = ()  # observed backend (xhr/fetch) calls
+    screenshot_b64: str | None = None  # base64 PNG of the rendered page, if captured
 
 
 @dataclass(frozen=True)
