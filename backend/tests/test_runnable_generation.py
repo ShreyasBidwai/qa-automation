@@ -21,6 +21,41 @@ def _first_case(endpoint_spec: object) -> Any:
     return plan_cases(endpoint_spec)[0]  # type: ignore[arg-type]
 
 
+class _CapturingProvider:
+    """Records the instruction the renderer sends, returns a minimal valid class."""
+
+    def __init__(self) -> None:
+        self.instruction = ""
+
+    def generate(self, prompt: str, context: Any, budget_tokens: int) -> str:
+        self.instruction = prompt
+        return (
+            "<?php\nnamespace Tests\\Feature;\nuse Tests\\TestCase;\n"
+            "class X extends TestCase { public function test_x(): void "
+            "{ $this->assertTrue(true); } }"
+        )
+
+    def triage(self, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover
+        raise NotImplementedError
+
+
+def test_factories_present_steers_the_model_to_use_them(endpoint_spec: object) -> None:
+    # Agnostic: when the target ships factories, generation is told to build setup
+    # rows via factories (which encode the real schema) instead of guessing columns.
+    spy = _CapturingProvider()
+    case = _first_case(endpoint_spec)
+    render_script(spy, endpoint_spec, case, 4096, factories_available=True)  # type: ignore[arg-type]
+    assert "DEFINES model factories" in spy.instruction
+    assert "factory()" in spy.instruction
+
+
+def test_no_factories_steers_the_model_off_them(endpoint_spec: object) -> None:
+    spy = _CapturingProvider()
+    case = _first_case(endpoint_spec)
+    render_script(spy, endpoint_spec, case, 4096, factories_available=False)  # type: ignore[arg-type]
+    assert "NO model factories" in spy.instruction
+
+
 def test_render_script_extracts_runnable_php_from_messy_model_output(
     endpoint_spec: object,
 ) -> None:
