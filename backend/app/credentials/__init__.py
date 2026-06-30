@@ -13,7 +13,11 @@ from .crypto import (
     decrypt_secret,
     encrypt_secret,
 )
-from .resolver import ResolvedTargetLogin, resolve_target_login
+from .resolver import (
+    ResolvedTargetLogin,
+    resolve_target_auth_config,
+    resolve_target_login,
+)
 
 __all__ = [
     "encrypt_secret",
@@ -22,4 +26,5 @@ __all__ = [
     "CredentialsDecryptError",
     "ResolvedTargetLogin",
     "resolve_target_login",
+    "resolve_target_auth_config",
 ]

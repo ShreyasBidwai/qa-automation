@@ -29,6 +29,7 @@ from app.credentials import (
     ResolvedTargetLogin,
     decrypt_secret,
     encrypt_secret,
+    resolve_target_auth_config,
     resolve_target_login,
 )
 from app.models.enums import NodeKind, OrgRole, RunMode
@@ -135,6 +136,76 @@ async def test_resolve_returns_none_for_polaris_or_missing(
         project_id, mode="polaris_creates", identifier=None, encrypted_secret=None
     )
     assert await resolve_target_login(db_session, project_id) is None
+
+
+# --- the crawl's AuthConfig: needs BOTH a credential and a login config ------
+
+
+async def _project_with_settings(
+    session: AsyncSession, settings: dict[str, object]
+) -> uuid.UUID:
+    project = await ProjectRepository(session).add(
+        Project(name="P", slug=f"p-{uuid.uuid4().hex[:8]}", settings=settings)
+    )
+    return project.id
+
+
+async def _set_specific_account(
+    session: AsyncSession, project_id: uuid.UUID, *, identifier: str, secret: str
+) -> None:
+    await TargetCredentialsRepository(session).upsert(
+        project_id,
+        mode="specific_account",
+        identifier=identifier,
+        encrypted_secret=encrypt_secret(secret),
+    )
+
+
+async def test_resolve_auth_config_needs_both_credentials_and_login_config(
+    db_session: AsyncSession,
+) -> None:
+    # A login config but no credentials → None (no account to log in as).
+    only_cfg = await _project_with_settings(
+        db_session, {"auth_config": {"login_url": "https://t/login"}}
+    )
+    assert await resolve_target_auth_config(db_session, only_cfg) is None
+
+    # Credentials but no login config → None (nowhere to log in).
+    only_creds = await _project_with_settings(db_session, {})
+    await _set_specific_account(
+        db_session, only_creds, identifier="a@b.test", secret="pw"
+    )
+    assert await resolve_target_auth_config(db_session, only_creds) is None
+
+    # Credentials + an auth_config that lacks login_url → still None.
+    no_url = await _project_with_settings(
+        db_session, {"auth_config": {"username_selector": "#u"}}
+    )
+    await _set_specific_account(db_session, no_url, identifier="a@b.test", secret="pw")
+    assert await resolve_target_auth_config(db_session, no_url) is None
+
+
+async def test_resolve_auth_config_builds_from_credentials_and_settings(
+    db_session: AsyncSession,
+) -> None:
+    project_id = await _project_with_settings(
+        db_session,
+        {"auth_config": {"login_url": "https://t/login", "username_selector": "#email"}},
+    )
+    await _set_specific_account(
+        db_session, project_id, identifier="runner@acme.test", secret="run-secret-1234"
+    )
+
+    cfg = await resolve_target_auth_config(db_session, project_id)
+    assert cfg is not None
+    assert cfg.login_url == "https://t/login"
+    assert cfg.username == "runner@acme.test" and cfg.account == "runner@acme.test"
+    assert cfg.password == "run-secret-1234"  # the decrypted secret, only in memory
+    assert cfg.username_selector == "#email"  # the override is applied
+    # An un-overridden selector keeps its cross-stack default.
+    assert cfg.password_selector == "input[type=password], input[name=password]"
+    # The secret never leaks through the AuthConfig's repr (defence in depth).
+    assert "run-secret-1234" not in repr(cfg)
 
 
 # --- run-path selection: mode drives the path, no secret in the summary ------

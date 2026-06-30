@@ -25,6 +25,7 @@ from typing import Protocol
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.usage import UsageCollector, install_collector, reset_collector
+from app.auth.types import AuthConfig
 from app.brain.cross_layer import Impact, Subgraph
 from app.crawler.crawler import FrontendCrawler
 from app.crawler.types import CrawlConfig, CrawlResult
@@ -149,6 +150,7 @@ class ModeBOrchestrator:
         generator: TargetGenerator,
         db_state: DbStateRunPhase | None = None,
         crawler: FrontendCrawler | None = None,
+        auth_config: AuthConfig | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._session = session
@@ -158,6 +160,9 @@ class ModeBOrchestrator:
         self._generator = generator
         self._db_state = db_state
         self._crawler = crawler
+        # The login config the crawl authenticates with (None ⇒ unauthenticated). Its
+        # repr masks the secret; it is never logged or put in the run summary/events.
+        self._auth_config = auth_config
         self._clock = clock
         self._cases = TestCaseRepository(session)
         self._scripts = TestScriptRepository(session)
@@ -411,6 +416,9 @@ class ModeBOrchestrator:
                     max_pages=10,
                     max_depth=2,
                     time_budget_s=60.0,
+                    # Log in + crawl behind the gate when a login config is present;
+                    # the crawler delegates the single login to its AuthStrategy.
+                    auth=self._auth_config,
                 ),
             )
             logger.info(

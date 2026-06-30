@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.errors import AuthConfigError, LoginFailedError
 from app.auth.factory import build_auth_strategy
+from app.auth.otp import autonomous_otp_unavailable
 from app.auth.redact import redact_label
 from app.auth.strategy import (
     ManualOtpStrategy,
@@ -208,3 +209,12 @@ def test_redact_label_masks_identifiers() -> None:
     masked = redact_label("+14155551234")
     assert masked.endswith("34") and "4155551" not in masked
     assert "•••" in redact_label("x")
+
+
+def test_autonomous_otp_provider_fails_fast_without_leaking_the_account() -> None:
+    # An autonomous run has no operator to read a code — the provider raises (never
+    # blocks on stdin) so the crawl phase can degrade to an unauthenticated crawl.
+    request = OtpRequest(project_id=uuid.uuid4(), account="jane@example.com")
+    with pytest.raises(LoginFailedError) as excinfo:
+        autonomous_otp_unavailable(request)
+    assert "jane@example.com" not in str(excinfo.value)  # account is redacted

@@ -12,6 +12,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.types import AuthConfig
 from app.crawler.types import CrawlConfig, CrawlResult
 from app.execution.types import DbHandle, DbRole, TargetEnv
 from app.models.enums import NodeKind, Outcome
@@ -32,16 +33,19 @@ def _env(base_url: str | None) -> TargetEnv:
 
 
 class _FakeCrawler:
-    """Records the base_url it was driven against; returns a fixed crawl result
-    (no real browser — this seam test proves the phase RUNS, not the crawl itself)."""
+    """Records the base_url + auth config it was driven against; returns a fixed crawl
+    result (no real browser — this seam test proves the phase RUNS + how it's
+    configured, not the crawl itself)."""
 
     def __init__(self) -> None:
         self.crawled_base: str | None = None
+        self.crawled_auth: AuthConfig | None = None
 
     async def crawl(
         self, *, session: AsyncSession, project_id: uuid.UUID, config: CrawlConfig
     ) -> CrawlResult:
         self.crawled_base = config.base_url
+        self.crawled_auth = config.auth
         return CrawlResult(pages=3, nav_edges=2, call_edges=1, visited=("/", "/a"))
 
 
@@ -61,7 +65,11 @@ async def _project(session: AsyncSession) -> uuid.UUID:
 
 
 def _orchestrator(
-    session: AsyncSession, env: TargetEnv, crawler: _FakeCrawler
+    session: AsyncSession,
+    env: TargetEnv,
+    crawler: _FakeCrawler,
+    *,
+    auth_config: AuthConfig | None = None,
 ) -> ModeBOrchestrator:
     return ModeBOrchestrator(
         session=session,
@@ -70,6 +78,7 @@ def _orchestrator(
         resolver=_FakeResolver(),
         generator=_StubGenerator(session),
         crawler=crawler,  # type: ignore[arg-type]
+        auth_config=auth_config,
     )
 
 
@@ -108,3 +117,33 @@ async def test_crawl_phase_skipped_without_a_frontend_url(
     )
     assert crawler.crawled_base is None  # never driven — no frontend to crawl
     assert report.crawl is None
+
+
+async def test_crawl_phase_threads_the_auth_config_for_a_gated_crawl(
+    db_session: AsyncSession,
+) -> None:
+    # With a login config wired, the crawl is driven WITH it (so it logs in + reaches
+    # behind-the-gate pages); without one it crawls unauthenticated.
+    auth = AuthConfig(
+        login_url="https://app.local/login",
+        username="runner@acme.test",
+        password="pw",
+        account="runner@acme.test",
+    )
+    project_id = await _project(db_session)
+    crawler = _FakeCrawler()
+    await _run(
+        db_session,
+        _orchestrator(db_session, _env("http://app.local"), crawler, auth_config=auth),
+        project_id,
+    )
+    assert crawler.crawled_auth is auth  # the login config reached the crawl
+
+    project_id2 = await _project(db_session)
+    crawler2 = _FakeCrawler()
+    await _run(
+        db_session,
+        _orchestrator(db_session, _env("http://app.local"), crawler2),
+        project_id2,
+    )
+    assert crawler2.crawled_auth is None  # default: unauthenticated crawl

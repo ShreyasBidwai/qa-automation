@@ -17,7 +17,7 @@ from __future__ import annotations
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
@@ -37,7 +37,9 @@ class AuthConfig:
 
     login_url: str
     username: str
-    password: str
+    # The target secret. Excluded from the dataclass repr so it can't leak through an
+    # f-string, a traceback, or a log line (the same defence as ResolvedTargetLogin).
+    password: str = field(repr=False)
     account: str
     username_selector: str = (
         "input[type=email], input[name=email], input[name=username]"
