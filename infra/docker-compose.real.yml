@@ -14,9 +14,19 @@ services:
     environment:
       EXECUTOR_MODE: orchestrator # compose the real OrchestratorRunExecutor
       INGESTOR_MODE: laravel # real Laravel ingestion (reads the checked-out repo)
-      AI_PROVIDER_MODE: claude_cli # real generation, routed to the host via the bridge
-      AI_GENERATE_MODEL: ${AI_GENERATE_MODEL:-sonnet} # generation model (trunk AI change)
+      # Instance-default AI backend. Defaults to claude_cli (the host bridge, below),
+      # but override in .env to anthropic_api | gemini to use a plain API key instead
+      # of a host daemon — the keys are plumbed to the runner below. A PROJECT can also
+      # override this per-project from the UI (agnostic selection).
+      AI_PROVIDER_MODE: ${AI_PROVIDER_MODE:-claude_cli}
+      AI_GENERATE_MODEL: ${AI_GENERATE_MODEL:-sonnet} # frontier model (generation)
+      AI_TRIAGE_MODEL: ${AI_TRIAGE_MODEL:-claude-haiku-4-5} # cheap model (triage)
       EMBEDDING_PROVIDER: local # fastembed (downloads the model on first use)
+      # API-key providers (used when AI_PROVIDER_MODE / a project picks them): the key
+      # is a SECRET from the gitignored .env, sent to the upstream via a header, never
+      # logged. Empty ⇒ that provider refuses clearly rather than calling unauthed.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       # Generation runs `claude -p` on the HOST via the bridge daemon (`make bridge`),
       # so the container NEVER touches the host's ~/.claude login — no read-write,
       # cross-uid auth mount, hence no logout churn on up-real/down-real. The token is
