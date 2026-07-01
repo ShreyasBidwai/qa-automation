@@ -24,6 +24,7 @@ from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.types import AIProvider, FailureEvidence
 from app.ai.usage import UsageCollector, install_collector, reset_collector
 from app.auth.types import AuthConfig
 from app.brain.cross_layer import Impact, Subgraph
@@ -34,7 +35,7 @@ from app.execution.lifecycle import STATUS_PASSED as RUN_STATUS_PASSED
 from app.execution.lifecycle import RunLifecycle
 from app.execution.types import ExecutionRunner, PestScript, TargetEnv
 from app.models.ai_usage import AiUsage
-from app.models.enums import RunMode, RunTrigger
+from app.models.enums import Outcome, RunMode, RunTrigger, Triage
 from app.models.finding import Finding
 from app.models.result import Result
 from app.progress import (
@@ -151,6 +152,7 @@ class ModeBOrchestrator:
         db_state: DbStateRunPhase | None = None,
         crawler: FrontendCrawler | None = None,
         auth_config: AuthConfig | None = None,
+        ai_provider: AIProvider | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._session = session
@@ -163,6 +165,8 @@ class ModeBOrchestrator:
         # The login config the crawl authenticates with (None ⇒ unauthenticated). Its
         # repr masks the secret; it is never logged or put in the run summary/events.
         self._auth_config = auth_config
+        # The AI provider used to triage failures (None ⇒ triage phase skipped).
+        self._ai_provider = ai_provider
         self._clock = clock
         self._cases = TestCaseRepository(session)
         self._scripts = TestScriptRepository(session)
@@ -255,6 +259,10 @@ class ModeBOrchestrator:
         # run row exists (best-effort; ADR-0049).
         await self._flush_usage(project_id, run.id, usage)
         results = await ResultRepository(self._session).list_for_run(project_id, run.id)
+
+        # AI triage (ADR-0049 usage-captured): classify WHY each failure happened
+        # (real-bug / bad-test / flaky / infra) so the operator sees signal vs noise.
+        await self._triage_failures(results)
 
         # Reporting pipeline (reused): assemble → DB-state phase → score → classify
         # → rank. DB-state findings (layer=db) land before scoring so they flow
@@ -386,6 +394,57 @@ class ModeBOrchestrator:
             logger.exception(
                 "modes.mode_b.db_state_phase_failed",
                 extra={"project_id": str(project_id), "run_id": str(run_id)},
+            )
+            return None
+
+    async def _triage_failures(self, results: Sequence[Result]) -> None:
+        """Classify each failing result with the AI provider; best-effort (ADR-0049).
+
+        No provider ⇒ skipped. Only FAIL/ERROR results are triaged (a pass has no
+        root cause). Each classification is persisted on the result's ``triage`` and
+        surfaces on the finding. A per-result triage failure is logged and left
+        ``None`` — triage must never break or fail a run.
+        """
+        if self._ai_provider is None:
+            return
+        failing = [r for r in results if r.outcome in (Outcome.FAIL, Outcome.ERROR)]
+        if not failing:
+            return
+        await emit(
+            phase=PHASE_REVIEW,
+            step=f"Triage {len(failing)} failures",
+            status=STATUS_STARTED,
+            detail={"failures": len(failing)},
+        )
+        classified = 0
+        for result in failing:
+            label = self._classify(result)
+            if label is not None:
+                result.triage = label
+                classified += 1
+        await self._session.flush()
+        await emit(
+            phase=PHASE_REVIEW,
+            step="Triage complete",
+            status=STATUS_PASSED,
+            detail={"triaged": classified, "failures": len(failing)},
+        )
+
+    def _classify(self, result: Result) -> Triage | None:
+        """One result → an AI triage label, or None if the provider errors."""
+        try:
+            return self._ai_provider.triage(  # type: ignore[union-attr]
+                FailureEvidence(
+                    test_case_id=str(result.test_case_id),
+                    outcome=result.outcome.value,
+                    message=result.message or "",
+                    evidence_ref=result.evidence_ref,
+                )
+            )
+        except Exception:  # noqa: BLE001 — triage is best-effort, never breaks a run
+            logger.warning(
+                "modes.mode_b.triage_failed",
+                extra={"result_id": str(result.id)},
             )
             return None
 

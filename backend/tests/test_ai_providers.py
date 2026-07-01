@@ -18,8 +18,10 @@ from app.ai.errors import (
     BudgetExceeded,
 )
 from app.ai.stub import StubAIProvider
-from app.ai.types import Subgraph, SubgraphNode
+from app.ai.triage import parse_triage_label, render_failure
+from app.ai.types import FailureEvidence, Subgraph, SubgraphNode
 from app.core.config import Settings
+from app.models.enums import Triage
 
 
 @pytest.fixture(autouse=True)
@@ -87,6 +89,68 @@ def test_claude_cli_generate_uses_stdin_and_configured_model() -> None:
     # Prompt goes via stdin, never argv (no leak to `ps`).
     assert "write a smoke test" in captured["stdin"]
     assert all("write a smoke test" not in arg for arg in captured["argv"])
+
+
+def _failure(message: str, outcome: str = "fail") -> FailureEvidence:
+    return FailureEvidence(test_case_id="c1", outcome=outcome, message=message)
+
+
+def test_parse_triage_label_bare_prose_and_fallback() -> None:
+    # A bare label, any case/separator.
+    assert parse_triage_label("real-bug") is Triage.REAL_BUG
+    assert parse_triage_label("  REAL_BUG\n") is Triage.REAL_BUG
+    assert parse_triage_label("bad test") is Triage.BAD_TEST
+    # First label mentioned inside prose wins.
+    assert parse_triage_label("This is a flaky timing issue, not a real-bug.") is (
+        Triage.FLAKY
+    )
+    # Unrecognised → unknown, never raises.
+    assert parse_triage_label("no idea what happened") is Triage.UNKNOWN
+    assert parse_triage_label("") is Triage.UNKNOWN
+
+
+def test_render_failure_caps_a_giant_trace() -> None:
+    rendered = render_failure(_failure("x" * 10_000, outcome="error"))
+    assert "outcome: error" in rendered
+    assert "truncated" in rendered
+    assert len(rendered) < 6000  # capped, so the cheap triage prompt stays cheap
+
+
+def test_stub_triage_is_deterministic_and_keyword_driven() -> None:
+    stub = StubAIProvider()
+    assert stub.triage(_failure("Connection refused to the DB")) is Triage.INFRA
+    assert stub.triage(_failure("missing Country factory")) is Triage.BAD_TEST
+    assert stub.triage(_failure("expected status 201 but got 500")) is Triage.REAL_BUG
+    # Same input → same label (offline, no model).
+    e = _failure("expected status 201 but got 500")
+    assert stub.triage(e) is stub.triage(e)
+
+
+def test_claude_cli_triage_uses_the_cheap_model_and_parses_the_label() -> None:
+    captured: dict[str, Any] = {}
+
+    def runner(
+        argv: Sequence[str], stdin_text: str, timeout: float
+    ) -> CommandResult:
+        captured["argv"] = list(argv)
+        captured["stdin"] = stdin_text
+        # A real model often answers with prose; parsing must still classify it.
+        return CommandResult(
+            0, '{"result": "This is a real-bug in the endpoint."}', ""
+        )
+
+    provider = ClaudeCliProvider(
+        _settings(ai_triage_model="claude-haiku-4-5"), runner=runner, sleep=_noop
+    )
+    label = provider.triage(_failure("expected 201, got 500"))
+
+    assert label is Triage.REAL_BUG
+    # The cheap TRIAGE model is used, not the frontier generate model.
+    assert "claude-haiku-4-5" in captured["argv"]
+    assert "claude-opus-4-8" not in captured["argv"]
+    # The failure message travels via stdin, never argv.
+    assert "expected 201, got 500" in captured["stdin"]
+    assert all("expected 201, got 500" not in arg for arg in captured["argv"])
 
 
 def test_claude_cli_retries_transient_then_succeeds() -> None:

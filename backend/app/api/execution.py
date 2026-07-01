@@ -218,6 +218,9 @@ class OrchestratorRunExecutor:
             # The login config the crawl authenticates with (None ⇒ unauthenticated);
             # its secret is masked and never logged/summarised.
             auth_config=auth_config,
+            # The project's AI backend also triages failures (real-bug vs noise); the
+            # cheap tier (ai_triage_model) keeps it inexpensive (ADR-0049).
+            ai_provider=ai_provider,
         )
         report = await orchestrator.run(
             project_id=project_id,

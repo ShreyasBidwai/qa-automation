@@ -9,13 +9,35 @@ from __future__ import annotations
 
 import hashlib
 
+from app.models.enums import Triage
+
 from .types import FailureEvidence, Subgraph, TriageLabel
-from .usage import PHASE_GENERATION, CliUsage, record_usage
+from .usage import PHASE_GENERATION, PHASE_TRIAGE, CliUsage, record_usage
 
 # The stub never invokes a real model, so there is no billed cost and no real token
 # usage — it records a flagged-unavailable entry so the capture seam still fires
 # under the stub (the aggregate counts the call; cost/tokens stay null). ADR-0049.
 _STUB_USAGE = CliUsage.unavailable(model="stub")
+
+# Deterministic keyword heuristic so the stub returns a believable, stable label
+# (no real model): the hermetic suite exercises the whole triage WIRING without a
+# network call. Order matters — the first matching bucket wins.
+_TRIAGE_KEYWORDS: tuple[tuple[Triage, tuple[str, ...]], ...] = (
+    (Triage.INFRA, ("timeout", "timed out", "connection", "refused", "unreachable")),
+    (Triage.BAD_TEST, ("factory", "seed", "setup", "fixture", "no such table")),
+    (Triage.FLAKY, ("flaky", "intermittent", "retry", "race")),
+    (Triage.REAL_BUG, ("assert", "expected", "status", "unexpected", "mismatch")),
+)
+
+
+def stub_triage(failure: FailureEvidence) -> Triage:
+    """A deterministic label from the evidence — the fake model's classifier."""
+    record_usage(_STUB_USAGE, phase=PHASE_TRIAGE)
+    haystack = f"{failure.outcome} {failure.message}".lower()
+    for label, keywords in _TRIAGE_KEYWORDS:
+        if any(keyword in haystack for keyword in keywords):
+            return label
+    return Triage.UNKNOWN
 
 
 class StubAIProvider:
@@ -31,7 +53,7 @@ class StubAIProvider:
         )
 
     def triage(self, failure: FailureEvidence) -> TriageLabel:
-        raise NotImplementedError("triage lands in Sprint 7")
+        return stub_triage(failure)
 
 
 class ProseWrappingStubAIProvider:
@@ -87,4 +109,4 @@ class ProseWrappingStubAIProvider:
         )
 
     def triage(self, failure: FailureEvidence) -> TriageLabel:
-        raise NotImplementedError("triage lands in Sprint 7")
+        return stub_triage(failure)

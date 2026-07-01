@@ -24,8 +24,9 @@ from app.execution.types import (
     PestScript,
     TargetEnv,
 )
+from app.ai.stub import StubAIProvider
 from app.impact.selector import ChangeSet
-from app.models.enums import CaseOrigin, NodeKind, Outcome
+from app.models.enums import CaseOrigin, NodeKind, Outcome, Triage
 from app.models.model_node import ModelNode
 from app.modes.errors import ModeBError
 from app.modes.mode_b import ModeBBounds, ModeBOrchestrator
@@ -35,7 +36,9 @@ from app.modes.selection import (
     Target,
     build_selection_strategy,
 )
+from app.reporting.finding_detail import FindingDetailReader
 from app.repositories.node_repository import NodeRepository
+from app.repositories.result_repository import ResultRepository
 from app.repositories.test_case_repository import TestCaseRepository
 from app.repositories.test_script_repository import TestScriptRepository
 from tests.factories import make_node, make_project, make_test_case, make_test_script
@@ -162,6 +165,7 @@ def _orchestrator(
     runner: _StubRunner,
     *,
     clock: Callable[[], float] = time.monotonic,
+    ai_provider: object | None = None,
 ) -> ModeBOrchestrator:
     return ModeBOrchestrator(
         session=session,
@@ -170,7 +174,59 @@ def _orchestrator(
         resolver=_FakeResolver(),
         generator=generator,
         clock=clock,
+        ai_provider=ai_provider,  # type: ignore[arg-type]
     )
+
+
+async def test_failures_are_ai_triaged_and_surface_on_the_finding(
+    db_session: AsyncSession,
+) -> None:
+    # With an AI provider wired, every failing result gets a root-cause label, which
+    # rides through to the finding-detail payload the UI reads.
+    project_id = await _project(db_session)
+    await _node(db_session, project_id, NodeKind.ENDPOINT, "GET api/orders")
+    orchestrator = _orchestrator(
+        db_session,
+        _StubGenerator(db_session),
+        _StubRunner(Outcome.FAIL),
+        ai_provider=StubAIProvider(),
+    )
+    strategy = build_selection_strategy(
+        SelectionStrategyKind.FULL_SWEEP, session=db_session
+    )
+
+    report = await orchestrator.run(
+        project_id=project_id, strategy=strategy, bounds=ModeBBounds(max_targets=10)
+    )
+
+    # Every failing result is classified (a valid Triage label, never left null).
+    results = await ResultRepository(db_session).list_for_run(project_id, report.run_id)
+    failing = [r for r in results if r.outcome is Outcome.FAIL]
+    assert failing and all(r.triage in set(Triage) for r in failing)
+    # And the classification surfaces on the finding-detail the dashboard renders.
+    detail = await FindingDetailReader(db_session).detail_for(
+        project_id, report.run_id, list(report.ranked_findings)
+    )
+    assert detail and all(d.ai_triage is not None for d in detail.values())
+
+
+async def test_failures_are_not_triaged_without_a_provider(
+    db_session: AsyncSession,
+) -> None:
+    # No provider ⇒ the triage phase is a no-op; results stay unclassified (as before).
+    project_id = await _project(db_session)
+    await _node(db_session, project_id, NodeKind.ENDPOINT, "GET api/orders")
+    orchestrator = _orchestrator(
+        db_session, _StubGenerator(db_session), _StubRunner(Outcome.FAIL)
+    )
+    strategy = build_selection_strategy(
+        SelectionStrategyKind.FULL_SWEEP, session=db_session
+    )
+    report = await orchestrator.run(
+        project_id=project_id, strategy=strategy, bounds=ModeBBounds(max_targets=10)
+    )
+    results = await ResultRepository(db_session).list_for_run(project_id, report.run_id)
+    assert all(r.triage is None for r in results)
 
 
 async def test_full_sweep_drives_pipeline_and_returns_ranked_findings(

@@ -454,6 +454,10 @@ class FindingResponse(BaseModel):
     evidence_ref: str | None = None
     # Triage disposition, keyed by root_cause_key (ADR-0027); absent record = open.
     triage: TriageInfo
+    # The AI's root-cause classification of the failure (real-bug / bad-test / flaky /
+    # infra / unknown), or None if triage didn't run. Distinct from ``triage`` above,
+    # which is the human disposition; this is the model's read (signal vs noise).
+    ai_triage: str | None = None
     # True when an active heal masks this finding (B8): a LOCATION failure that's
     # addressing drift ("test needs re-addressing"), not a broken app. Dropped from
     # the default inbox; reachable via the heals list or ``include_superseded``.
