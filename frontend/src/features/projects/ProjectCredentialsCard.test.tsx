@@ -13,6 +13,7 @@ function status(over: {
   mode?: string;
   identifier?: string | null;
   has_credentials?: boolean;
+  has_totp?: boolean;
 }) {
   return {
     ok: true,
@@ -21,6 +22,7 @@ function status(over: {
       mode: over.mode ?? "polaris_creates",
       identifier: over.identifier ?? null,
       has_credentials: over.has_credentials ?? false,
+      has_totp: over.has_totp ?? false,
     },
   };
 }
