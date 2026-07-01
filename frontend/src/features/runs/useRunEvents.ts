@@ -5,8 +5,15 @@ import type { RunProgressEvent } from "@/lib/api/types";
 
 import { isTerminalEvent } from "./runEvents";
 import { streamRunEvents } from "./runEventsStream";
+import { isTerminal } from "./runStatus";
 
 export type RunEventsConnection = "connecting" | "live" | "done" | "error";
+
+// The backend SSE stream self-closes at a server safety cap (~5 min) even while a
+// run is still going. When it closes with no terminal event, we re-open it after
+// this short beat so a long run keeps streaming live instead of stranding the
+// viewer on a false "Run ended".
+const RECONNECT_DELAY_MS = 1200;
 
 export interface RunEventsState {
   events: RunProgressEvent[];
@@ -26,10 +33,12 @@ export interface RunEventsState {
  *  2. LIVE — otherwise open the SSE stream and append events as they arrive, in
  *     seq order, de-duplicated against the catch-up (the stream re-sends from the
  *     start). On the terminal event we abort and settle to `done`.
- *  3. CLOSE — the fetch-stream resolves when the server closes (terminal, or the
- *     run otherwise ended) → `done`; a transport error reconciles with one more
- *     replay and surfaces `error` (with `reconnect()` to resume) only if the run
- *     isn't actually finished. There is no auto-reconnect loop.
+ *  3. CLOSE — the fetch-stream resolves when the server closes it. If a terminal
+ *     event was seen the run is over → `done`. Otherwise the close is ambiguous
+ *     (the ~5-min safety cap vs. a genuinely drained run), so we ask the
+ *     authoritative job status: still running → re-open the stream (a long run must
+ *     never read as "ended"); terminal → `done`; unreachable → `error` (with
+ *     `reconnect()` to resume).
  */
 export function useRunEvents(runId: string): RunEventsState {
   const [events, setEvents] = useState<RunProgressEvent[]>([]);
@@ -42,6 +51,7 @@ export function useRunEvents(runId: string): RunEventsState {
   useEffect(() => {
     const controller = new AbortController();
     let cancelled = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     const seen = new Set<number>();
     let ordered: RunProgressEvent[] = [];
     let sawTerminal = false;
@@ -58,6 +68,25 @@ export function useRunEvents(runId: string): RunEventsState {
       if (!changed || cancelled) return;
       ordered = [...ordered].sort((a, b) => a.seq - b.seq);
       setEvents(ordered);
+    }
+
+    // The stream closed with no terminal event — ambiguous (safety cap vs. a
+    // drained run). Ask the authoritative job status: still running → re-open the
+    // stream so the live view continues; terminal → settle `done`; unreachable →
+    // `error` (a manual Reconnect), never a silent hot loop.
+    async function settleOrReconnect(): Promise<void> {
+      const status = await runApi.get(runId);
+      if (cancelled) return;
+      const jobStatus = status.ok && status.data ? status.data.status : null;
+      if (jobStatus !== null && !isTerminal(jobStatus)) {
+        setConnection("connecting"); // keep the banner "live", not "ended"
+        reconnectTimer = setTimeout(() => {
+          if (!cancelled) setAttempt((value) => value + 1);
+        }, RECONNECT_DELAY_MS);
+        return;
+      }
+      setTerminal(sawTerminal);
+      setConnection(jobStatus === null ? "error" : "done");
     }
 
     async function load() {
@@ -83,10 +112,14 @@ export function useRunEvents(runId: string): RunEventsState {
             if (sawTerminal) controller.abort(); // terminal → stop reading
           },
         });
-        // 3a) Server closed the stream cleanly → the run is over.
+        // 3a) Server closed the stream cleanly.
         if (cancelled) return;
-        setTerminal(sawTerminal);
-        setConnection("done");
+        if (sawTerminal) {
+          setTerminal(true);
+          setConnection("done");
+          return;
+        }
+        await settleOrReconnect();
       } catch {
         if (cancelled) return;
         if (sawTerminal || controller.signal.aborted) {
@@ -94,14 +127,18 @@ export function useRunEvents(runId: string): RunEventsState {
           setConnection("done");
           return;
         }
-        // 3b) Transport error mid-run — reconcile once, then surface honestly.
+        // 3b) Transport error mid-run — reconcile once, then settle-or-reconnect.
         const lastSeq =
           ordered.length > 0 ? ordered[ordered.length - 1].seq : undefined;
         const reconcile = await runApi.events(runId, lastSeq);
         if (cancelled) return;
         if (reconcile.ok && reconcile.data) ingest(reconcile.data.events);
-        setTerminal(sawTerminal);
-        setConnection(sawTerminal ? "done" : "error");
+        if (sawTerminal) {
+          setTerminal(true);
+          setConnection("done");
+          return;
+        }
+        await settleOrReconnect();
       }
     }
 
@@ -109,6 +146,7 @@ export function useRunEvents(runId: string): RunEventsState {
     return () => {
       cancelled = true;
       controller.abort();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
     };
   }, [runId, attempt]);
 

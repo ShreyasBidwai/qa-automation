@@ -38,6 +38,27 @@ export interface PhaseGroup {
 }
 
 /**
+ * Collapse a step's lifecycle into ONE row. The backend emits a `started` event
+ * and then a terminal (`passed`/`failed`/`skipped`) event for the same step — the
+ * live view should show a single row that transitions spinner → check, not two
+ * near-identical rows. We key by step label, keep the latest event (so the row
+ * shows the current status), and preserve first-seen order (so a row never jumps
+ * when it completes). A still-running step has only its `started` event → spinner.
+ */
+export function collapseSteps(events: RunProgressEvent[]): RunProgressEvent[] {
+  const firstSeq = new Map<string, number>();
+  const latest = new Map<string, RunProgressEvent>();
+  for (const event of events) {
+    if (!firstSeq.has(event.step)) firstSeq.set(event.step, event.seq);
+    const prev = latest.get(event.step);
+    if (!prev || event.seq >= prev.seq) latest.set(event.step, event);
+  }
+  return [...latest.values()].sort(
+    (a, b) => (firstSeq.get(a.step) ?? a.seq) - (firstSeq.get(b.step) ?? b.seq),
+  );
+}
+
+/**
  * Group events into the phase spine: the four known phases always appear (in spine
  * order, possibly empty so the journey ahead is visible), then any other non-`run`
  * phase the backend emits is appended in first-seen order (forward-compat, never
@@ -52,7 +73,7 @@ export function groupByPhase(events: RunProgressEvent[]): PhaseGroup[] {
   }
   return order.map((key) => ({
     spec: known.get(key) ?? { key, label: key, caption: "" },
-    events: events.filter((event) => event.phase === key),
+    events: collapseSteps(events.filter((event) => event.phase === key)),
   }));
 }
 

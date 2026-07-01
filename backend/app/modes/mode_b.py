@@ -538,8 +538,12 @@ class ModeBOrchestrator:
     async def _ensure_for_target(
         self, project_id: uuid.UUID, target: Target
     ) -> list[EnsuredCase]:
-        step = f"{target.kind.value} {target.node_id}"
-        detail = {"kind": target.kind.value, "node_id": str(target.node_id)}
+        # The step text is the human-readable target label (e.g. "GET api/orders"),
+        # never the opaque node UUID — a live viewer reads endpoints, not IDs. The
+        # node_id is kept out of the emitted detail so it doesn't render as a chip;
+        # the label already identifies the target, and the id stays in the logs.
+        step = target.name or target.kind.value
+        detail = {"kind": target.kind.value}
         reused = await self._reuse_scripts(project_id, target)
         if reused:  # never regenerate over an existing case (never-clobber)
             # Reuse is part of the journey too — surfaced as a skipped generate step.

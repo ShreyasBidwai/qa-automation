@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { RunProgressEvent } from "@/lib/api/types";
 
 import {
+  collapseSteps,
   currentStepSeq,
   detailEntries,
   frameLabel,
@@ -103,5 +104,27 @@ describe("runEvents helpers", () => {
       ["actual", "500"],
     ]);
     expect(detailEntries(null)).toEqual([]);
+  });
+
+  it("collapses a step's started+terminal events into one row", () => {
+    // The backend emits started THEN passed for the same step — the live view must
+    // show ONE row (latest status), keeping first-seen order so it never reorders.
+    const collapsed = collapseSteps([
+      event({ seq: 0, phase: "generate", step: "Generate GET /a", status: "started" }),
+      event({ seq: 1, phase: "generate", step: "Generate GET /a", status: "passed" }),
+      event({ seq: 2, phase: "generate", step: "Generate POST /b", status: "started" }),
+    ]);
+    expect(collapsed.map((e) => [e.step, e.status])).toEqual([
+      ["Generate GET /a", "passed"], // one row, latest status wins
+      ["Generate POST /b", "started"], // still running → keeps its spinner
+    ]);
+  });
+
+  it("groups collapse each phase's duplicate lifecycle events", () => {
+    const gen = groupByPhase([
+      event({ seq: 0, phase: "generate", step: "Generate GET /a", status: "started" }),
+      event({ seq: 1, phase: "generate", step: "Generate GET /a", status: "passed" }),
+    ]).find((g) => g.spec.key === "generate");
+    expect(gen?.events).toHaveLength(1); // not two near-identical rows
   });
 });

@@ -1,7 +1,7 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/api/client", () => ({ runApi: { events: vi.fn() } }));
+vi.mock("@/lib/api/client", () => ({ runApi: { events: vi.fn(), get: vi.fn() } }));
 vi.mock("./runEventsStream", () => ({ streamRunEvents: vi.fn() }));
 // Screenshot bytes come from an authorized fetch → object URL; stub the hook so the
 // component renders the <img> without a real network/blob round-trip.
@@ -73,6 +73,7 @@ function eventsResponse(events: RunProgressEvent[]) {
 describe("LiveRunView", () => {
   beforeEach(() => {
     vi.mocked(runApi.events).mockReset();
+    vi.mocked(runApi.get).mockReset();
     vi.mocked(streamRunEvents).mockReset();
   });
 
@@ -186,6 +187,14 @@ describe("LiveRunView", () => {
   it("surfaces a reconnect affordance when the stream can't be reached", async () => {
     vi.mocked(runApi.events).mockResolvedValue(eventsResponse([]));
     vi.mocked(streamRunEvents).mockRejectedValue(new Error("network"));
+    // Backend unreachable → the status probe fails too, so we surface the error
+    // (a manual Reconnect) rather than looping on a dead endpoint.
+    vi.mocked(runApi.get).mockResolvedValue({
+      ok: false,
+      status: 0,
+      data: null,
+      error: "network",
+    });
 
     render(<LiveRunView runId="r1" />);
 
@@ -194,5 +203,40 @@ describe("LiveRunView", () => {
     expect(
       within(document.body).getByRole("button", { name: "Reconnect" }),
     ).toBeInTheDocument();
+  });
+
+  it("re-opens the stream (never 'Run ended') when a long run is still going", async () => {
+    vi.useFakeTimers();
+    try {
+      // A mid-run journey with no terminal event yet…
+      vi.mocked(runApi.events).mockResolvedValue(eventsResponse(JOURNEY.slice(0, 3)));
+      // …the SSE stream closes cleanly WITHOUT a terminal (the ~5-min safety cap)…
+      vi.mocked(streamRunEvents).mockResolvedValue(undefined);
+      // …but the authoritative job status says the run is still running.
+      vi.mocked(runApi.get).mockResolvedValue({
+        ok: true,
+        status: 200,
+        data: { run_id: "r1", mode: "mode_b", status: "running", summary: null },
+      });
+
+      render(<LiveRunView runId="r1" />);
+
+      // Initial load: replay → stream closes → status probe → schedules a reconnect.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(streamRunEvents).toHaveBeenCalledTimes(1);
+      // The run is NOT over — it must never settle to a terminal "Run ended" banner.
+      expect(screen.queryByText("Run ended")).toBeNull();
+
+      // The reconnect beat fires → the stream re-opens on its own.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1300);
+      });
+      expect(streamRunEvents).toHaveBeenCalledTimes(2);
+      expect(screen.queryByText("Run ended")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
