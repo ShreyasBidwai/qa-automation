@@ -11,6 +11,8 @@ runner's HTTP mapping onto the provider's error taxonomy.
 from __future__ import annotations
 
 import json
+import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -19,6 +21,7 @@ import pytest
 from app.ai.claude_bridge import make_bridge_runner
 from app.ai.errors import AIInvocationError, AITransientError
 from app.bridge.server import (
+    ConcurrencyGate,
     handle_generate,
     is_authorized,
     model_allowed,
@@ -204,3 +207,54 @@ def test_run_claude_reports_a_missing_cli_clearly(monkeypatch) -> None:
     monkeypatch.setattr("app.bridge.server.subprocess.run", boom)
     out = run_claude("p", "sonnet", 10.0, cli="claude")
     assert out["returncode"] == 127 and "not found" in out["stderr"]
+
+
+# --- ConcurrencyGate: N-way claude, but the OAuth refresh stays serial ---------
+
+
+def _probe_max_concurrency(gate: ConcurrencyGate, n_calls: int) -> dict[str, int]:
+    """Run ``n_calls`` fns through the gate from threads, recording how many ran at
+    once and the concurrency the FIRST-entering call saw (the warm-up must be alone)."""
+    lock = threading.Lock()
+    state = {"current": 0, "max": 0, "first_seen": 0}
+
+    def fn() -> dict[str, int]:
+        with lock:
+            state["current"] += 1
+            state["max"] = max(state["max"], state["current"])
+            if state["first_seen"] == 0:
+                state["first_seen"] = state["current"]
+        time.sleep(0.05)
+        with lock:
+            state["current"] -= 1
+        return {"returncode": 0}
+
+    threads = [threading.Thread(target=lambda: gate.run(fn)) for _ in range(n_calls)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    return state
+
+
+def test_gate_is_fully_serial_at_concurrency_one() -> None:
+    # The safe default: byte-for-byte the old behaviour — one claude at a time.
+    state = _probe_max_concurrency(ConcurrencyGate(1, warm_interval=0.0), n_calls=5)
+    assert state["max"] == 1
+
+
+def test_gate_runs_calls_concurrently_but_warms_up_exclusively() -> None:
+    # concurrency=4: the FIRST call (a stale window) runs ALONE and refreshes the
+    # token; then the rest run concurrently, capped at N. Proves both invariants.
+    state = _probe_max_concurrency(ConcurrencyGate(4, warm_interval=600.0), n_calls=6)
+    assert state["first_seen"] == 1  # the warm-up ran with no peer (refresh-safe)
+    assert 2 <= state["max"] <= 4  # then real concurrency, never above N
+
+
+def test_gate_re_warms_after_the_interval_elapses() -> None:
+    # A second stale window re-warms exclusively (single-flight), never racing.
+    gate = ConcurrencyGate(3, warm_interval=0.0)  # every window is "stale" → warms
+    # Serial-ish because each call re-warms; the point is it never errors/deadlocks
+    # and still admits work. Two sequential calls both complete.
+    assert gate.run(lambda: {"ok": 1}) == {"ok": 1}
+    assert gate.run(lambda: {"ok": 2}) == {"ok": 2}

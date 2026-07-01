@@ -12,8 +12,10 @@ SECURITY — this endpoint spends your Claude account:
 - the request supplies only ``{prompt, model}`` — the bridge BUILDS the ``claude``
   argv itself from a validated model, so a container can request a generation but can
   NOT run an arbitrary command on the host (no RCE via a forged argv);
-- calls are SERIALIZED (one ``claude`` at a time) so concurrent token refreshes can't
-  race and invalidate each other;
+- concurrency is bounded + refresh-safe (``ConcurrencyGate``): up to
+  ``CLAUDE_BRIDGE_CONCURRENCY`` calls run at once, but the OAuth token REFRESH stays
+  serial (a stale window's first call runs alone to refresh), so concurrent refreshes
+  can't race and invalidate each other. Default 1 ⇒ fully serial (safe);
 - bind to a host-only / docker-gateway address — do not expose it beyond localhost.
 
 Pure stdlib, no app imports: it runs on the host under bare ``python3``
@@ -31,6 +33,7 @@ import os
 import re
 import subprocess
 import threading
+import time
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -44,9 +47,85 @@ _DEFAULT_MODELS = "sonnet,opus,haiku"
 # a shell string), so this is an allow-list, not an injection guard.
 _MODEL_ID_RE = re.compile(r"claude-[A-Za-z0-9.\-]+")
 
-# Serialize claude calls: one OAuth-token holder at a time, so concurrent refreshes
-# (which invalidate each other's single-use refresh token) can't race.
-_CALL_LOCK = threading.Lock()
+
+class ConcurrencyGate:
+    """Admit up to ``concurrency`` ``claude`` calls at once — but keep the OAuth
+    token REFRESH serial, because concurrent refreshes invalidate each other's
+    single-use refresh token (the reason the old design serialized everything).
+
+    Reader/writer split: normal calls are readers (concurrent, bounded by a
+    semaphore); the first call of each *stale window* is promoted to a writer — it
+    runs EXCLUSIVELY (all peers drained, new ones held) so it refreshes the token
+    with no race, then the window is "warm" and the next N calls run concurrently
+    against the fresh token, so no concurrent call ever triggers a refresh.
+
+    ``concurrency == 1`` short-circuits to fully serial (byte-for-byte the prior
+    behaviour) — the safe, zero-risk default. See ADR-0057.
+    """
+
+    def __init__(self, concurrency: int, warm_interval: float) -> None:
+        self._concurrency = max(1, concurrency)
+        self._warm_interval = warm_interval
+        self._cond = threading.Condition()
+        self._slots = threading.Semaphore(self._concurrency)
+        self._warming = False
+        self._active = 0  # readers past the gate (running or queued on a slot)
+        self._warmed_once = False
+        self._last_warm = 0.0  # monotonic clock of the last successful warm-up
+
+    def run(self, fn: Callable[[], Any]) -> Any:
+        """Run ``fn()`` under the gate — exclusively when it is the warm-up call."""
+        if self._concurrency == 1:
+            with self._slots:  # exactly the old single-holder behaviour
+                return fn()
+        if self._claim_writer():
+            try:
+                return fn()  # exclusive: a real call that also refreshes the token
+            finally:
+                self._release_writer()
+        else:
+            try:
+                with self._slots:  # bounded concurrency among readers
+                    return fn()
+            finally:
+                self._release_reader()
+
+    def _claim_writer(self) -> bool:
+        """True ⇒ this call is the single-flight warm-up (run exclusive). False ⇒ a
+        reader (already admitted). Blocks until the chosen lane is safe to enter."""
+        with self._cond:
+            stale = (not self._warmed_once) or (
+                time.monotonic() - self._last_warm >= self._warm_interval
+            )
+            if stale and not self._warming:
+                self._warming = True
+                while self._active > 0:  # let in-flight readers drain
+                    self._cond.wait()
+                return True
+            while self._warming:  # a warm-up is in progress — wait it out
+                self._cond.wait()
+            self._active += 1
+            return False
+
+    def _release_writer(self) -> None:
+        with self._cond:
+            self._warming = False
+            self._warmed_once = True
+            self._last_warm = time.monotonic()
+            self._cond.notify_all()
+
+    def _release_reader(self) -> None:
+        with self._cond:
+            self._active -= 1
+            self._cond.notify_all()
+
+
+# One gate for the process, sized from the environment. Default 1 ⇒ serial (safe);
+# raise CLAUDE_BRIDGE_CONCURRENCY to fan out generation on your subscription.
+_GATE = ConcurrencyGate(
+    concurrency=int(os.environ.get("CLAUDE_BRIDGE_CONCURRENCY", "1")),
+    warm_interval=float(os.environ.get("CLAUDE_BRIDGE_WARM_INTERVAL", "600")),
+)
 
 
 def is_authorized(auth_header: str, token: str) -> bool:
@@ -70,7 +149,8 @@ def run_claude(
     stdin and return its ``{returncode, stdout, stderr}``. The argv is a LIST (no
     shell) built here from the validated model — never from caller-supplied tokens."""
     argv = [cli, "-p", "--output-format", "json", "--model", model]
-    with _CALL_LOCK:
+
+    def _invoke() -> dict[str, Any]:
         try:
             completed = subprocess.run(
                 argv,
@@ -88,11 +168,15 @@ def run_claude(
                 "stdout": "",
                 "stderr": f"claude CLI not found on the host PATH ({cli!r})",
             }
-    return {
-        "returncode": completed.returncode,
-        "stdout": completed.stdout,
-        "stderr": completed.stderr,
-    }
+        return {
+            "returncode": completed.returncode,
+            "stdout": completed.stdout,
+            "stderr": completed.stderr,
+        }
+
+    # The gate keeps N calls concurrent but the OAuth refresh serial (see its docs).
+    result: dict[str, Any] = _GATE.run(_invoke)
+    return result
 
 
 def handle_generate(

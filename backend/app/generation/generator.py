@@ -10,6 +10,7 @@ the tests (that is T1.5).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from collections import Counter
@@ -133,16 +134,27 @@ class TestGenerator:
         # Render every case, then reconcile the whole set through the merge engine
         # (create / update / propose) — never a blind write; human-edited cases
         # are protected. Scripts attach to whichever version the merge produced.
-        codes = [
-            render_script(
-                self._provider,
-                spec,
-                c,
-                self._budget,
-                factories_available=self._factories_available,
+        # Render the cases CONCURRENTLY: each `render_script` is a blocking, sync
+        # AI call (via the bridge), so run them off the event loop in threads and
+        # await them together. render_script is pure (no DB/session) and the usage
+        # collector's append is atomic under the GIL, so this is race-free; the AI
+        # calls fan out (bounded downstream by the bridge's own concurrency gate),
+        # while all DB work below stays on the one session, serial. Order preserved.
+        codes = list(
+            await asyncio.gather(
+                *(
+                    asyncio.to_thread(
+                        render_script,
+                        self._provider,
+                        spec,
+                        c,
+                        self._budget,
+                        factories_available=self._factories_available,
+                    )
+                    for c in cases
+                )
             )
-            for c in cases
-        ]
+        )
         candidates = [
             _to_test_case(project_id, spec, c, compute_case_key(spec, c)) for c in cases
         ]
