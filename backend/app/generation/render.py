@@ -40,12 +40,27 @@ _INSTRUCTION = (
     "$response->assertStatus(...) / assertJson... — do NOT use Pest's it()/test()/"
     "uses()/expect(). Use EXACTLY the HTTP request (method, URI, path values, "
     "payload) and the expected status given in the context below; do NOT invent or "
-    "change any payload value or the expected status. For a 'characterization' case, "
-    "assert ONLY the success status and that the response body is a JSON array "
-    "($this->assertIsArray($response->json())) — never assert specific body field "
-    "values. For a 'rule-derived' case, assert the exact expected status and, for "
-    "422s, that the validation error envelope reports the targeted field(s) "
-    "($response->assertJsonValidationErrors([...]))."
+    "change any payload value or the expected status.\n\n"
+    # Self-analysis in the SAME call: reason about the contract, record the intent as
+    # a PHP comment (valid code, so output stays code-only), then assert THAT
+    # behaviour — grounded only in the context, never an invented value.
+    "FIRST, analyse the contract from the context — the HTTP method's semantics, the "
+    "endpoint's validation rules, this case's intent/target field, the expected "
+    "status, and the response shape — and open the test method body with a concise "
+    "`// Intent:` comment (1-2 lines) stating WHAT behaviour this verifies and WHY it "
+    "matters for THIS endpoint. THEN write assertions that verify exactly that "
+    "behaviour, grounded ONLY in the context: never assert a specific body field "
+    "VALUE you cannot derive from the context — an ungrounded value is a false "
+    "failure.\n\n"
+    "For a 'characterization' / happy case: assert the success status, AND — when the "
+    "context's expected.shape lists keys — assert that structure with "
+    "$response->assertJsonStructure([...]); if no shape is given, assert the body is "
+    "JSON ($this->assertIsArray($response->json())). Never assert specific values. "
+    "For a 'rule-derived' / negative case: assert the EXACT expected status and, for "
+    "422s, that the validation error envelope reports the targeted field(s) — matching "
+    "the field's validation rule shown in the context — via "
+    "$response->assertJsonValidationErrors([...]); for an auth case, assert the "
+    "unauthenticated / forbidden status."
 )
 # Defense in depth: demand code-only output so there's nothing to strip. The
 # extractor (extract.py) is the belt; this is the suspenders.
@@ -87,7 +102,13 @@ _FACTORY_SKIP_REASON = (
 
 
 def build_context(spec: EndpointSpec, case: PlannedCase) -> Subgraph:
-    """Budget-capped grounding for the model — the plan, serialized."""
+    """Budget-capped grounding for the model — the plan + the real contract, serialized.
+
+    Beyond the fixed request/expected pair, this hands the model the endpoint's actual
+    validation rules and the case's intent/target field, so its self-analysis (and the
+    assertions it derives) are grounded in the contract — never guessed. Structural
+    only: rules and shape, never invented body values (ADR-0025 honesty stance).
+    """
     snippet = json.dumps(
         {
             "endpoint": {
@@ -95,11 +116,27 @@ def build_context(spec: EndpointSpec, case: PlannedCase) -> Subgraph:
                 "uri": spec.uri,
                 "route_name": spec.route_name,
                 "auth_required": spec.auth_required,
+                "path_params": spec.path_params,
+                "query_params": spec.query_params,
+                # The REAL validation contract — so a negative asserts the RIGHT field
+                # against the RIGHT rule, and a happy case knows what a valid request
+                # must satisfy. The model grounds assertions in these; it never invents.
+                "validation": [
+                    {
+                        "field": vf.name,
+                        "required": vf.required,
+                        "type": vf.type,
+                        "rules": vf.raw_rules,
+                    }
+                    for vf in spec.validation_fields
+                ],
             },
             "case": {
                 "name": case.name,
+                "description": case.description,
                 "type": case.case_type.value,
                 "rule": case.rule,
+                "target_field": case.target_field,
                 "oracle_source": case.oracle_source.value,
             },
             "request": {

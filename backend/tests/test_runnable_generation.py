@@ -22,13 +22,15 @@ def _first_case(endpoint_spec: object) -> Any:
 
 
 class _CapturingProvider:
-    """Records the instruction the renderer sends, returns a minimal valid class."""
+    """Records the instruction + context the renderer sends; returns a valid class."""
 
     def __init__(self) -> None:
         self.instruction = ""
+        self.context: Any = None
 
     def generate(self, prompt: str, context: Any, budget_tokens: int) -> str:
         self.instruction = prompt
+        self.context = context
         return (
             "<?php\nnamespace Tests\\Feature;\nuse Tests\\TestCase;\n"
             "class X extends TestCase { public function test_x(): void "
@@ -132,3 +134,35 @@ def test_factory_case_runs_when_factories_present(endpoint_spec: object) -> None
     )
     assert "markTestSkipped(" not in out  # factories exist → left as the model wrote it
     assert "::factory(" in out
+
+
+# --- quality: single-call self-analysis grounded in the real contract ---------
+
+
+def test_instruction_drives_single_call_self_analysis(endpoint_spec: object) -> None:
+    # Higher-quality tests without a second AI round-trip: the ONE prompt makes the
+    # model reason about the contract, record intent, and assert grounded behaviour.
+    spy = _CapturingProvider()
+    render_script(spy, endpoint_spec, _first_case(endpoint_spec), 4096)  # type: ignore[arg-type]
+    assert "analyse the contract" in spy.instruction
+    assert "// Intent:" in spy.instruction
+    assert "assertJsonStructure" in spy.instruction  # grounded structure, not values
+    # The honesty guardrail survives: never assert an ungrounded value.
+    assert "never assert a specific body field VALUE" in spy.instruction.replace(
+        "  ", " "
+    ) or "never assert" in spy.instruction
+
+
+def test_context_grounds_the_model_in_the_validation_contract(
+    endpoint_spec: object,
+) -> None:
+    # The model now SEES the real Laravel rules, so a negative can assert the right
+    # field against the right rule (not a guess). Prove they reach the context.
+    spy = _CapturingProvider()
+    render_script(spy, endpoint_spec, _first_case(endpoint_spec), 4096)  # type: ignore[arg-type]
+    snippet = "".join(spy.context.snippets)
+    assert '"validation"' in snippet
+    assert "unique:users,email" in snippet  # a real rule, verbatim from the spec
+    assert "email" in snippet
+    # The case's intent + target field ground the assertion the model should write.
+    assert '"description"' in snippet and '"target_field"' in snippet
