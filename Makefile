@@ -59,7 +59,11 @@ lint: artifacts-dir ## Lint + typecheck in Docker (ruff/black/mypy, eslint/prett
 test: artifacts-dir ## Run all suites in Docker (pytest + vitest + playwright) + coverage gate
 	$(COMPOSE_TEST) up -d --build --wait db backend frontend
 	$(COMPOSE_TEST) run --rm --build backend-tests
-	$(COMPOSE_TEST) run --rm --build frontend-tests
+	# Typecheck (tsc -b, the production build's check) BEFORE vitest — vitest doesn't
+	# type-check, so without this a type error that breaks `npm run build` / `make
+	# up-real` sails through the gate. Fail fast on it here.
+	$(COMPOSE_TEST) run --rm --build --no-deps frontend-tests \
+		sh -c "npm run typecheck && npx vitest run --reporter=default --reporter=junit --outputFile=.artifacts/junit.xml"
 	$(COMPOSE_TEST) run --rm --build e2e
 
 # Real-tooling tests run in the dedicated Laravel runner image (PHP + Composer +
