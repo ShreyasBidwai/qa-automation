@@ -12,6 +12,7 @@ session-scoped Brain resolver and the AI-backed target generator. Plus the
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,8 +30,12 @@ from app.core.config import Settings
 from app.embeddings.stub import StubEmbeddingProvider
 from app.generation.e2e_generator import E2EGenerator
 from app.generation.generator import TestGenerator
+from app.git.types import CheckoutHandle
 from app.models.enums import NodeKind
 from app.models.model_node import ModelNode
+from tests.factories import make_project
+
+_LARAVEL_FIXTURE = str(Path(__file__).parent / "fixtures" / "laravel-app")
 
 
 def _orchestrator_settings(**overrides: object) -> Settings:
@@ -139,3 +144,67 @@ def test_build_auth_strategy_selects_totp_when_a_secret_is_present() -> None:
     assert isinstance(_build_auth_strategy("/tmp/crawl", use_totp=True), TotpStrategy)
     manual = _build_auth_strategy("/tmp/crawl", use_totp=False)
     assert isinstance(manual, ManualOtpStrategy) and not isinstance(manual, TotpStrategy)
+
+
+class _FakeGitProvider:
+    """Records checkout/cleanup and hands back a fixed local tree — so the git
+    ingest path is exercised without a real remote (READ-ONLY: no push method)."""
+
+    def __init__(self, path: str) -> None:
+        self._path = path
+        self.checked_out: list[tuple[str, str]] = []
+        self.cleaned = 0
+
+    def checkout(self, repo_url: str, ref: str) -> CheckoutHandle:
+        self.checked_out.append((repo_url, ref))
+        return CheckoutHandle(path=self._path, sha="a" * 40, ref=ref)
+
+    def cleanup(self, handle: CheckoutHandle) -> None:
+        self.cleaned += 1
+
+
+async def _project_with_repo(session: AsyncSession, repo_url: str) -> uuid.UUID:
+    project = make_project(settings={"repo_url": repo_url, "stack": "laravel"})
+    session.add(project)
+    await session.flush()
+    return project.id
+
+
+async def test_ingest_clones_a_git_url_read_only_then_ingests(
+    db_session: AsyncSession,
+) -> None:
+    # A project whose repo_url is a git remote → the adapter CLONES it (read-only),
+    # builds the Brain from the checkout, and cleans up the temp tree.
+    provider = _FakeGitProvider(_LARAVEL_FIXTURE)
+    adapter = LaravelIngestorAdapter(
+        settings=_orchestrator_settings(),
+        embedding_provider=StubEmbeddingProvider(),
+        git_provider=provider,
+    )
+    pid = await _project_with_repo(db_session, "https://git.example/acme/app.git")
+
+    result = await adapter.ingest(session=db_session, project_id=pid)
+
+    assert provider.checked_out == [("https://git.example/acme/app.git", "HEAD")]
+    assert provider.cleaned == 1  # the temp clone is always removed
+    assert result["mode"] == "laravel"
+    assert result["source_sha"] == "a" * 40  # the clone's resolved SHA flowed through
+    assert result["nodes"]  # the Brain was built from the checkout
+
+
+async def test_ingest_reads_a_local_checkout_without_cloning(
+    db_session: AsyncSession,
+) -> None:
+    # A project whose repo_url is a local path → NO clone; the path is read directly.
+    provider = _FakeGitProvider(_LARAVEL_FIXTURE)
+    adapter = LaravelIngestorAdapter(
+        settings=_orchestrator_settings(),
+        embedding_provider=StubEmbeddingProvider(),
+        git_provider=provider,
+    )
+    pid = await _project_with_repo(db_session, _LARAVEL_FIXTURE)
+
+    result = await adapter.ingest(session=db_session, project_id=pid)
+
+    assert provider.checked_out == []  # a local path is never cloned
+    assert result["mode"] == "laravel" and result["nodes"]

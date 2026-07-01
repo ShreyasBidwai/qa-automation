@@ -127,9 +127,12 @@ echo "run=$RID"
 
 ## Remaining gaps / things that may need a fix-up on the first real run
 
-1. **Clone-at-ingest not wired** — you provide the checkout (step 3). When per-project
-   clone lands, `GIT_TOKEN` (already plumbed to the runner) will be used + the repo
-   token should move to the encrypted credentials vault (ADR-0053/0054).
+1. **Clone-at-ingest IS wired now** — set a project's `repo_url` to a **git URL** and
+   ingest clones it **read-only** (shallow, temp dir, cleaned up; `GIT_TOKEN` injected
+   at fetch time, redacted from logs; no push path, ever). The local checkout (step 3)
+   is now only needed for **Pest execution**, which needs `vendor/` (composer install).
+   So ingest can run straight from the Gitea URL; executing the generated tests still
+   wants the composer-installed checkout at `/targets/app`.
 2. **`claude -p` runs on the host via the bridge** (`make bridge`) — the container
    never mounts `~/.claude`, so it can't corrupt/rotate your host login. Keep the
    bridge process running for the duration of the stack; it serializes calls (one

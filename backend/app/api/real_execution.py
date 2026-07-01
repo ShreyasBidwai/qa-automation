@@ -28,6 +28,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,7 +42,10 @@ from app.execution.playwright_runner import PlaywrightRunner
 from app.execution.types import DbHandle, DbRole, ExecutionRunner, PestScript, TargetEnv
 from app.generation.e2e_generator import E2EGenerator
 from app.generation.generator import TestGenerator
+from app.git.cli import GitCliProvider
+from app.git.types import GitProvider
 from app.incidents import capturing_ai_provider
+from app.ingestion.git_ingest import ingest_from_git
 from app.ingestion.laravel.ingester import LaravelIngester
 from app.ingestion.laravel.normalize import normalize_rules
 from app.ingestion.laravel.route_list import path_params_from_uri
@@ -231,20 +235,47 @@ class OrchestratorTargetGenerator:
 # --- the real Laravel ingestor behind the Ingestor port ----------------------
 
 
+# A project's ``repo_url`` is a git remote to clone (read-only) when it carries one
+# of these schemes; anything else (``/targets/app``, ``./x``) is an already-present
+# local checkout. So an operator can paste a Gitea URL in the UI OR point at a mount.
+_GIT_URL_SCHEMES = frozenset({"http", "https", "git", "ssh"})
+
+
+def _looks_like_git_url(value: str) -> bool:
+    return urlsplit(value).scheme in _GIT_URL_SCHEMES
+
+
 class LaravelIngestorAdapter:
     """Real Laravel ingestion behind the ``Ingestor`` port (ingest → Brain).
 
-    Reads the repo location FROM THE PROJECT (ADR-0054) — ``repo_url`` on the project,
-    with ``TARGET_REPO_PATH`` only as a deprecated env fallback — and builds the Brain
-    via ``LaravelIngester``. (Per-project git checkout from a git URL is the next step;
-    today the resolved repo is a local path.)
+    Reads the repo location FROM THE PROJECT (ADR-0054). ``repo_url`` may be a **git
+    remote** — cloned READ-ONLY (shallow, into a temp dir, cleaned up; the token is
+    injected at fetch time and redacted from every log; there is no push path, ever) —
+    OR an already-present local checkout path. Either way the Brain is built by
+    ``LaravelIngester`` (static source reading, ADR-0055: no ``vendor/``, no boot).
     """
 
     def __init__(
-        self, *, settings: Settings, embedding_provider: EmbeddingProvider
+        self,
+        *,
+        settings: Settings,
+        embedding_provider: EmbeddingProvider,
+        git_provider: GitProvider | None = None,
     ) -> None:
         self._settings = settings
         self._ingester = LaravelIngester(embedding_provider=embedding_provider)
+        # Injectable so tests exercise the git path without a real remote; the default
+        # is the read-only CLI provider, credentialed from the read-only GIT_TOKEN.
+        self._git_provider = git_provider
+
+    def _resolve_git_provider(self) -> GitProvider:
+        if self._git_provider is not None:
+            return self._git_provider
+        return GitCliProvider(
+            token=self._settings.git_token,
+            token_username=self._settings.git_token_username,
+            timeout=self._settings.git_clone_timeout_seconds,
+        )
 
     async def ingest(
         self, *, session: AsyncSession, project_id: uuid.UUID
@@ -258,9 +289,22 @@ class LaravelIngestorAdapter:
                 "project has no repo configured — set repo_url on the project "
                 "(ingestor_mode=laravel needs the Laravel source)"
             )
-        result = await self._ingester.ingest(
-            session=session, project_id=project_id, repo_path=cfg.repo_path
-        )
+        # The ref to check out — a project may pin a branch/tag/SHA; default to the
+        # remote's default branch.
+        ref = str((project.settings or {}).get("repo_ref") or "HEAD")
+        if _looks_like_git_url(cfg.repo_path):
+            result = await ingest_from_git(
+                session=session,
+                project_id=project_id,
+                repo_url=cfg.repo_path,
+                ref=ref,
+                provider=self._resolve_git_provider(),
+                ingester=self._ingester,
+            )
+        else:
+            result = await self._ingester.ingest(
+                session=session, project_id=project_id, repo_path=cfg.repo_path
+            )
         return {
             "mode": "laravel",
             "source_sha": result.source_sha,
