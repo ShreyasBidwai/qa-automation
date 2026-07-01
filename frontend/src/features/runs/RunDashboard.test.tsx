@@ -16,7 +16,7 @@ function summaryResult(summary: Record<string, unknown>) {
   return {
     ok: true,
     status: 200,
-    data: { run_id: "r1", mode: "mode_b", status, summary },
+    data: { run_id: "r1", project_id: "p1", mode: "mode_b", status, summary },
   };
 }
 

@@ -216,7 +216,13 @@ describe("LiveRunView", () => {
       vi.mocked(runApi.get).mockResolvedValue({
         ok: true,
         status: 200,
-        data: { run_id: "r1", mode: "mode_b", status: "running", summary: null },
+        data: {
+          run_id: "r1",
+          project_id: "p1",
+          mode: "mode_b",
+          status: "running",
+          summary: null,
+        },
       });
 
       render(<LiveRunView runId="r1" />);

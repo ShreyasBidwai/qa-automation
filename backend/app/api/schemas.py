@@ -362,6 +362,7 @@ class RunResponse(BaseModel):
 
 class RunStatusResponse(BaseModel):
     run_id: uuid.UUID
+    project_id: uuid.UUID  # so a run view can link back to the project (tests, config)
     mode: str
     status: str
     summary: dict[str, Any] | None = None
@@ -668,6 +669,29 @@ class DocumentResponse(BaseModel):
 
 class DocumentListResponse(BaseModel):
     items: list[DocumentResponse]
+    total: int
+
+
+class TestCaseSummary(BaseModel):
+    """One generated test as the operator sees it (the Tests viewer, GET /tests).
+
+    ``target`` is the human-readable Brain node the case tests (e.g.
+    ``GET api/orders``), resolved from ``target_node``; ``code`` is the runnable
+    Pest/PHPUnit source. Read-only — the viewer never mutates a case.
+    """
+
+    id: uuid.UUID
+    target: str
+    type: str  # happy | negative
+    layer: str  # api | ui | db
+    oracle_source: str  # characterization | rule-derived
+    framework: str  # pest
+    code: str
+    created_at: datetime
+
+
+class TestCaseListResponse(BaseModel):
+    items: list[TestCaseSummary]
     total: int
 
 

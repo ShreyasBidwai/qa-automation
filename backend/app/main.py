@@ -13,6 +13,7 @@ from .api.auth_config import router as auth_config_router
 from .api.credentials import router as credentials_router
 from .api.documents import router as documents_router
 from .api.findings import router as findings_router
+from .api.generated_tests import router as tests_router
 from .api.heals import router as heals_router
 from .api.health import router as health_router
 from .api.incidents import router as incidents_router
@@ -68,5 +69,6 @@ def create_app() -> FastAPI:
     app.include_router(auth_config_router)
     app.include_router(incidents_router)
     app.include_router(heals_router)
+    app.include_router(tests_router)
 
     return app

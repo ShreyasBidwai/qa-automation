@@ -40,6 +40,7 @@ import type {
   RunStatus,
   SignInBody,
   SignUpBody,
+  TestCaseListResponse,
   TriagePatchBody,
 } from "./types";
 
@@ -271,6 +272,9 @@ export const projectApi = {
   /** POST /projects/{id}/ingest — kick off Brain build (background job). */
   ingest: (id: string) =>
     postJson<IngestResponse>(`${API_BASE}/projects/${id}/ingest`, {}),
+  /** GET /projects/{id}/tests — the generated test cases + their code (VIEW). */
+  tests: (id: string) =>
+    getJson<TestCaseListResponse>(`${API_BASE}/projects/${id}/tests`),
   /** GET /projects/{id}/db-state-tier — the DB-state testing tier (needs VIEW). */
   getDbStateTier: (id: string) =>
     getJson<DbStateTierResponse>(`${API_BASE}/projects/${id}/db-state-tier`),

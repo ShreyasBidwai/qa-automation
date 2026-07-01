@@ -16,6 +16,7 @@ import { CreateProjectPage } from "@/features/projects/CreateProjectPage";
 import { EditProjectPage } from "@/features/projects/EditProjectPage";
 import { ProjectPage } from "@/features/projects/ProjectPage";
 import { ProjectsListPage } from "@/features/projects/ProjectsListPage";
+import { ProjectTestsPage } from "@/features/projects/ProjectTestsPage";
 import { StartRunPage } from "@/features/projects/StartRunPage";
 import { LiveRunView } from "@/features/runs/LiveRunView";
 import { RunDashboard } from "@/features/runs/RunDashboard";
@@ -55,6 +56,9 @@ function renderRoute(pathname: string): ReactElement {
     }
     if (segments.length === 3 && segments[2] === "run") {
       return <StartRunPage projectId={segments[1]} />;
+    }
+    if (segments.length === 3 && segments[2] === "tests") {
+      return <ProjectTestsPage projectId={segments[1]} />;
     }
   }
 

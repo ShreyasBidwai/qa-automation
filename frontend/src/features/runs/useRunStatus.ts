@@ -9,6 +9,7 @@ export const POLL_INTERVAL_MS = 1500;
 
 export interface RunState {
   status: JobStatusValue | null;
+  projectId: string | null;
   mode: string;
   summary: Record<string, unknown> | null;
   error: string | null;
@@ -17,6 +18,7 @@ export interface RunState {
 
 const INITIAL: RunState = {
   status: null,
+  projectId: null,
   mode: "",
   summary: null,
   error: null,
@@ -41,8 +43,15 @@ export function useRunStatus(runId: string): RunState {
       if (cancelled) return;
 
       if (result.ok && result.data) {
-        const { status, mode, summary } = result.data;
-        setState({ status, mode, summary, error: null, loading: false });
+        const { status, mode, summary, project_id } = result.data;
+        setState({
+          status,
+          projectId: project_id,
+          mode,
+          summary,
+          error: null,
+          loading: false,
+        });
         if (!isTerminal(status)) {
           timer.current = setTimeout(() => void poll(), POLL_INTERVAL_MS);
         }

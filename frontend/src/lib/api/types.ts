@@ -223,6 +223,7 @@ export interface RunResponse {
 
 export interface RunStatus {
   run_id: string;
+  project_id: string;
   mode: string;
   status: JobStatusValue;
   summary: Record<string, unknown> | null;
@@ -273,6 +274,27 @@ export interface ProjectDocument {
 
 export interface DocumentListResponse {
   items: ProjectDocument[];
+  total: number;
+}
+
+// --- generated tests (the Tests viewer) -------------------------------------
+
+/** One generated test as the operator sees it (GET /projects/{id}/tests).
+ *  `target` is the human-readable Brain node (e.g. "GET api/orders"); `code` is
+ *  the runnable Pest/PHPUnit source. Read-only. */
+export interface TestCaseSummary {
+  id: string;
+  target: string;
+  type: string; // happy | negative
+  layer: string; // api | ui | db
+  oracle_source: string; // characterization | rule-derived
+  framework: string; // pest
+  code: string;
+  created_at: string;
+}
+
+export interface TestCaseListResponse {
+  items: TestCaseSummary[];
   total: number;
 }
 

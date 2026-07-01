@@ -42,13 +42,24 @@ export function RunStatusView({ runId }: { runId: string }) {
 
       {/* The live, step-by-step journey (live for an in-progress run, replay for a
        *  finished one) — the run status here is intentionally coarse. */}
-      <Link
-        to={`/runs/${runId}/live`}
-        className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline"
-      >
-        {done ? "Replay the run journey" : "Watch the live run"}
-        <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-      </Link>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        <Link
+          to={`/runs/${runId}/live`}
+          className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline"
+        >
+          {done ? "Replay the run journey" : "Watch the live run"}
+          <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+        </Link>
+        {run.projectId ? (
+          <Link
+            to={`/projects/${run.projectId}/tests`}
+            className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline"
+          >
+            View generated tests
+            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </Link>
+        ) : null}
+      </div>
 
       <ol className="space-y-2.5" aria-label="Run progress">
         {PHASES.map((phase) => (

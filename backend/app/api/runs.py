@@ -192,6 +192,7 @@ async def get_run(
     )
     return RunStatusResponse(
         run_id=job.id,
+        project_id=job.project_id,
         mode=job.mode or "",
         status=job.status.value,
         summary=job.summary,

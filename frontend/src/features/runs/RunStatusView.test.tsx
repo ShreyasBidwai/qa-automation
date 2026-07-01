@@ -14,7 +14,13 @@ function runStatus(status: JobStatusValue) {
   return {
     ok: true,
     status: 200,
-    data: { run_id: "r1", mode: "mode_b", status, summary: null },
+    data: {
+      run_id: "r1",
+      project_id: "p1",
+      mode: "mode_b",
+      status,
+      summary: null,
+    },
   };
 }
 

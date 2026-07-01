@@ -336,10 +336,21 @@ function ModelCard({ projectId }: { projectId: string }) {
   const ingest = useIngest(projectId);
   return (
     <section className="rounded-xl border border-border bg-surface p-5 shadow-card">
-      <h2 className="text-sm font-semibold text-foreground">Model</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Build the system model from the repository before running tests.
-      </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">Model</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Build the system model from the repository before running tests.
+          </p>
+        </div>
+        {/* See the tests Polaris generated from the model (empty until a run). */}
+        <Link
+          to={`/projects/${projectId}/tests`}
+          className="shrink-0 text-[13px] font-medium text-accent hover:underline"
+        >
+          View generated tests →
+        </Link>
+      </div>
       <div className="mt-3 flex items-center gap-3">
         <Button variant="outline" onClick={ingest.start} disabled={ingest.busy}>
           {ingest.busy ? "Building model…" : "Build model"}

@@ -6,7 +6,7 @@ import uuid
 from collections.abc import Iterable
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.models.enums import CaseOrigin, ProposalStatus, TestType
 from app.models.test_case import TestCase
@@ -16,6 +16,32 @@ from .base import ProjectScopedRepository
 
 class TestCaseRepository(ProjectScopedRepository[TestCase]):
     model = TestCase
+
+    async def list_current(
+        self, project_id: uuid.UUID, *, limit: int = 200, offset: int = 0
+    ) -> list[TestCase]:
+        """The project's CURRENT test cases (the viewer surface), newest first.
+
+        Only ``is_current`` rows — never superseded versions — so the operator sees
+        exactly the tests a run would use. Bounded by limit/offset for paging.
+        """
+        stmt = (
+            select(TestCase)
+            .where(TestCase.project_id == project_id, TestCase.is_current.is_(True))
+            .order_by(TestCase.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list((await self.session.scalars(stmt)).all())
+
+    async def count_current(self, project_id: uuid.UUID) -> int:
+        """Total current test cases for the project (for the viewer's paging total)."""
+        stmt = (
+            select(func.count())
+            .select_from(TestCase)
+            .where(TestCase.project_id == project_id, TestCase.is_current.is_(True))
+        )
+        return int(await self.session.scalar(stmt) or 0)
 
     async def get_many(
         self, project_id: uuid.UUID, case_ids: Iterable[uuid.UUID]
