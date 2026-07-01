@@ -82,13 +82,13 @@ describe("LiveRunView", () => {
 
     render(<LiveRunView runId="r1" />);
 
-    // The phase spine (all four phases) and the real steps.
-    expect(await screen.findByText("Understand")).toBeInTheDocument();
-    expect(screen.getByText("Generate")).toBeInTheDocument();
-    expect(screen.getByText("Execute")).toBeInTheDocument();
-    expect(screen.getByText("Review")).toBeInTheDocument();
+    // Each phase appears in the progress strip AND its spine column (so >= 1).
+    expect((await screen.findAllByText("Understand")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Generate").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Execute").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
     expect(screen.getByText("POST api/orders returns 201")).toBeInTheDocument();
-    // Terminal run event drives the outcome banner + the findings affordance.
+    // Terminal run event drives the outcome summary + the findings affordance.
     expect(screen.getByText("Run failed")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "View findings" })).toBeInTheDocument();
     // A finished run needs no stream — replay is the whole story.
@@ -178,7 +178,9 @@ describe("LiveRunView", () => {
 
     render(<LiveRunView runId="r1" />);
 
-    expect(await screen.findByText("Running — watching live")).toBeInTheDocument();
+    // Live status: "Running" + the "watching live" indicator in the summary.
+    expect(await screen.findByText("Running")).toBeInTheDocument();
+    expect(screen.getByText(/watching live/)).toBeInTheDocument();
     // The in-flight step is shown under Execute.
     expect(screen.getByText("Execute 1 test")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "View findings" })).toBeNull();

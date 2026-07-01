@@ -127,3 +127,31 @@ export function frameLabel(event: RunProgressEvent): string {
   const url = event.detail?.url;
   return typeof url === "string" && url ? url : event.step;
 }
+
+/**
+ * Wall time the run has spanned so far — first event → last event, in ms. It grows
+ * as events stream in (a live "elapsed"), and freezes at the terminal event. Null
+ * when there's nothing to measure yet or a timestamp is unparseable. Pure: derived
+ * from the events, never `Date.now()`, so it's deterministic + testable.
+ */
+export function runElapsedMs(events: RunProgressEvent[]): number | null {
+  if (events.length === 0) return null;
+  const first = Date.parse(events[0].timestamp);
+  const last = Date.parse(events[events.length - 1].timestamp);
+  if (Number.isNaN(first) || Number.isNaN(last)) return null;
+  return Math.max(0, last - first);
+}
+
+/** Compact human duration for the run summary: "45s", "1m 23s", "1h 4m". */
+export function formatDuration(ms: number): string {
+  const total = Math.round(ms / 1000);
+  if (total < 60) return `${total}s`;
+  const minutes = Math.floor(total / 60);
+  if (minutes < 60) {
+    const seconds = total % 60;
+    return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remMinutes = minutes % 60;
+  return remMinutes ? `${hours}h ${remMinutes}m` : `${hours}h`;
+}

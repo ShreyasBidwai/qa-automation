@@ -23,10 +23,12 @@ import { cn } from "@/lib/utils";
 import {
   currentStepSeq,
   detailEntries,
+  formatDuration,
   frameLabel,
   groupByPhase,
   latestScreenshotEvent,
   type PhaseGroup,
+  runElapsedMs,
   runOutcome,
 } from "./runEvents";
 import { useRunEvents, type RunEventsConnection } from "./useRunEvents";
@@ -92,10 +94,12 @@ export function LiveRunView({ runId }: { runId: string }) {
             />
           ) : (
             <>
-              <ConnectionBanner
+              <RunSummary
                 connection={connection}
                 outcome={outcome}
-                stepCount={events.length}
+                events={events}
+                groups={groups}
+                currentSeq={currentSeq}
                 onReconnect={reconnect}
               />
               {liveFrame ? (
@@ -110,77 +114,153 @@ export function LiveRunView({ runId }: { runId: string }) {
   );
 }
 
-// --- overall status banner ---------------------------------------------------
+// --- run summary (status · elapsed · steps + the phase progress strip) -------
 
-function ConnectionBanner({
+type SummaryTone = "accent" | "pass" | "fail" | "neutral";
+
+const TONE_TEXT: Record<SummaryTone, string> = {
+  accent: "text-foreground",
+  pass: "text-status-pass-fg",
+  fail: "text-status-fail-fg",
+  neutral: "text-foreground",
+};
+
+const TONE_DOT: Record<SummaryTone, string> = {
+  accent: "bg-accent",
+  pass: "bg-status-pass-solid",
+  fail: "bg-status-fail-solid",
+  neutral: "bg-status-neutral-solid",
+};
+
+/** The run's headline: what's happening, for how long, how many steps — plus the
+ *  phase progress strip beneath it. Replaces the flat status banner so a long
+ *  generation reads as "Running · 2m · 34 steps" with a live phase readout. */
+function RunSummary({
   connection,
   outcome,
-  stepCount,
+  events,
+  groups,
+  currentSeq,
   onReconnect,
 }: {
   connection: RunEventsConnection;
   outcome: "passed" | "failed" | "skipped" | null;
-  stepCount: number;
+  events: RunProgressEvent[];
+  groups: PhaseGroup[];
+  currentSeq: number | null;
   onReconnect: () => void;
 }) {
   const live = connection === "live" || connection === "connecting";
+  const elapsed = runElapsedMs(events);
+  const { label, tone }: { label: string; tone: SummaryTone } = live
+    ? { label: "Running", tone: "accent" }
+    : outcome === "failed"
+      ? { label: "Run failed", tone: "fail" }
+      : outcome === "passed"
+        ? { label: "Run passed", tone: "pass" }
+        : { label: "Run ended", tone: "neutral" };
+
   return (
-    <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-3">
-      <div className="flex items-center gap-2.5">
-        {live ? (
-          <>
-            <span
-              aria-hidden="true"
-              className="h-2 w-2 rounded-full bg-accent motion-safe:animate-pulse"
-            />
-            <span className="text-sm font-medium text-foreground">
-              Running — watching live
+    <section className="mb-6 overflow-hidden rounded-xl border border-border bg-surface shadow-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
+        <div className="flex items-center gap-2.5">
+          <span
+            aria-hidden="true"
+            className={cn(
+              "h-2 w-2 rounded-full",
+              TONE_DOT[tone],
+              live && "motion-safe:animate-pulse",
+            )}
+          />
+          <span className={cn("text-sm font-semibold", TONE_TEXT[tone])}>{label}</span>
+          {live ? (
+            <span className="text-[13px] text-muted-foreground">— watching live</span>
+          ) : null}
+          {elapsed !== null ? (
+            <span className="text-[13px] tabular-nums text-muted-foreground">
+              · {formatDuration(elapsed)}
             </span>
-          </>
-        ) : outcome === "failed" ? (
-          <>
-            <span
-              aria-hidden="true"
-              className="h-2 w-2 rounded-full bg-status-fail-solid"
-            />
-            <span className="text-sm font-medium text-status-fail-fg">Run failed</span>
-          </>
-        ) : outcome === "passed" ? (
-          <>
-            <span
-              aria-hidden="true"
-              className="h-2 w-2 rounded-full bg-status-pass-solid"
-            />
-            <span className="text-sm font-medium text-status-pass-fg">Run passed</span>
-          </>
-        ) : (
-          <>
-            <span
-              aria-hidden="true"
-              className="h-2 w-2 rounded-full bg-status-neutral-solid"
-            />
-            <span className="text-sm font-medium text-foreground">Run ended</span>
-          </>
-        )}
-        <span className="text-[13px] text-muted-foreground">
-          · {stepCount} {stepCount === 1 ? "step" : "steps"}
-        </span>
+          ) : null}
+          <span className="text-[13px] text-muted-foreground">
+            · {events.length} {events.length === 1 ? "step" : "steps"}
+          </span>
+        </div>
+
+        {/* The journey ended without a terminal event, or the stream dropped — let a
+         *  long run resume rather than stranding the viewer on a partial journey. */}
+        {connection === "done" && outcome === null ? (
+          <Button variant="ghost" size="sm" onClick={onReconnect}>
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+            Resume
+          </Button>
+        ) : connection === "error" ? (
+          <Button variant="ghost" size="sm" onClick={onReconnect}>
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+            Reconnect
+          </Button>
+        ) : null}
       </div>
 
-      {/* The journey ended without a terminal event, or the stream dropped — let a
-       *  long run resume rather than stranding the viewer on a partial journey. */}
-      {connection === "done" && outcome === null ? (
-        <Button variant="ghost" size="sm" onClick={onReconnect}>
-          <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-          Resume
-        </Button>
-      ) : connection === "error" ? (
-        <Button variant="ghost" size="sm" onClick={onReconnect}>
-          <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-          Reconnect
-        </Button>
-      ) : null}
+      <PhaseStrip groups={groups} currentSeq={currentSeq} />
+    </section>
+  );
+}
+
+/** A compact left-to-right readout of the phase pipeline, each phase showing its
+ *  state (done ✓ · running spinner · pending dot) and how many steps it holds. */
+function PhaseStrip({
+  groups,
+  currentSeq,
+}: {
+  groups: PhaseGroup[];
+  currentSeq: number | null;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-1 gap-y-2 border-t border-border-subtle bg-background px-5 py-2.5">
+      {groups.map((group, index) => (
+        <div key={group.spec.key} className="flex items-center">
+          {index > 0 ? (
+            <span aria-hidden="true" className="px-1 text-marker">
+              ›
+            </span>
+          ) : null}
+          <PhaseChip group={group} state={phaseState(group, currentSeq)} />
+        </div>
+      ))}
     </div>
+  );
+}
+
+function PhaseChip({ group, state }: { group: PhaseGroup; state: PhaseState }) {
+  const count = group.events.length;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-medium",
+        state === "failed"
+          ? "bg-status-fail-bg text-status-fail-fg"
+          : state === "running"
+            ? "bg-accent-subtle text-accent"
+            : state === "passed"
+              ? "bg-status-pass-bg text-status-pass-fg"
+              : "text-status-neutral-solid",
+      )}
+    >
+      {state === "running" ? (
+        <Loader2 className="h-3 w-3 motion-safe:animate-spin" aria-hidden="true" />
+      ) : state === "passed" ? (
+        <Check className="h-3 w-3" aria-hidden="true" />
+      ) : state === "failed" ? (
+        <X className="h-3 w-3" aria-hidden="true" />
+      ) : (
+        <span
+          aria-hidden="true"
+          className="h-1.5 w-1.5 rounded-full border border-current"
+        />
+      )}
+      {group.spec.label}
+      {count > 0 ? <span className="tabular-nums opacity-70">{count}</span> : null}
+    </span>
   );
 }
 
@@ -226,6 +306,10 @@ function phaseState(group: PhaseGroup, currentSeq: number | null): PhaseState {
   return "passed";
 }
 
+// A phase with a long tail (e.g. generation over 50 targets) folds its older steps
+// so the view stays scannable — the most recent + the active step always show.
+const STEP_FOLD_LIMIT = 8;
+
 function PhaseColumn({
   group,
   currentSeq,
@@ -237,6 +321,12 @@ function PhaseColumn({
 }) {
   const state = phaseState(group, currentSeq);
   const pending = state === "pending";
+  const [showAll, setShowAll] = useState(false);
+  const total = group.events.length;
+  const folded = !showAll && total > STEP_FOLD_LIMIT;
+  const shown = folded ? group.events.slice(total - STEP_FOLD_LIMIT) : group.events;
+  const hidden = total - shown.length;
+
   return (
     <li>
       <div className="mb-2.5 flex items-baseline gap-2">
@@ -255,27 +345,44 @@ function PhaseColumn({
         ) : null}
         {pending ? (
           <span className="text-[11.5px] italic text-status-neutral-solid">
-            · waiting
+            · up next
+          </span>
+        ) : total > 0 ? (
+          <span className="text-[11.5px] tabular-nums text-status-neutral-solid">
+            · {total} {total === 1 ? "step" : "steps"}
           </span>
         ) : null}
       </div>
 
       <div className="ml-1 border-l border-border-subtle pl-4">
-        {group.events.length === 0 ? (
+        {total === 0 ? (
           <p className="py-1 text-[13px] text-muted-foreground">
-            No steps in this phase yet.
+            {pending
+              ? "Waiting for the earlier phases to finish."
+              : "Nothing to show here."}
           </p>
         ) : (
-          <ul className="space-y-2">
-            {group.events.map((event) => (
-              <StepRow
-                key={event.seq}
-                event={event}
-                current={event.seq === currentSeq}
-                runId={runId}
-              />
-            ))}
-          </ul>
+          <>
+            {folded ? (
+              <button
+                type="button"
+                onClick={() => setShowAll(true)}
+                className="mb-2 text-[12px] font-medium text-accent hover:underline"
+              >
+                Show {hidden} earlier {hidden === 1 ? "step" : "steps"}
+              </button>
+            ) : null}
+            <ul className="space-y-2">
+              {shown.map((event) => (
+                <StepRow
+                  key={event.seq}
+                  event={event}
+                  current={event.seq === currentSeq}
+                  runId={runId}
+                />
+              ))}
+            </ul>
+          </>
         )}
       </div>
     </li>

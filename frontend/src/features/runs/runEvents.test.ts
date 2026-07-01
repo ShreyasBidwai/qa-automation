@@ -6,10 +6,12 @@ import {
   collapseSteps,
   currentStepSeq,
   detailEntries,
+  formatDuration,
   frameLabel,
   groupByPhase,
   isTerminalEvent,
   latestScreenshotEvent,
+  runElapsedMs,
   runOutcome,
 } from "./runEvents";
 
@@ -126,5 +128,24 @@ describe("runEvents helpers", () => {
       event({ seq: 1, phase: "generate", step: "Generate GET /a", status: "passed" }),
     ]).find((g) => g.spec.key === "generate");
     expect(gen?.events).toHaveLength(1); // not two near-identical rows
+  });
+
+  it("measures elapsed wall time from the first to the last event", () => {
+    expect(runElapsedMs([])).toBeNull();
+    expect(
+      runElapsedMs([
+        event({ seq: 0, timestamp: "2026-01-01T00:00:00Z" }),
+        event({ seq: 1, timestamp: "2026-01-01T00:01:23Z" }),
+      ]),
+    ).toBe(83_000);
+    // An unparseable timestamp degrades to null (never a NaN duration).
+    expect(runElapsedMs([event({ seq: 0, timestamp: "not-a-date" })])).toBeNull();
+  });
+
+  it("formats a duration compactly (s / m s / h m)", () => {
+    expect(formatDuration(45_000)).toBe("45s");
+    expect(formatDuration(83_000)).toBe("1m 23s");
+    expect(formatDuration(120_000)).toBe("2m");
+    expect(formatDuration(3_840_000)).toBe("1h 4m");
   });
 });
