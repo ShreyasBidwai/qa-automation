@@ -462,6 +462,31 @@ def test_playwright_fetcher_parses_and_passes_storage_state() -> None:
     assert "storageState" in captured["stdin"]
 
 
+def test_playwright_fetcher_passes_interaction_config_to_the_driver() -> None:
+    import json
+
+    captured: dict[str, str] = {}
+
+    def _runner(argv, cwd, stdin, timeout):  # type: ignore[no-untyped-def]
+        captured["stdin"] = stdin
+        return 0, '{"url":"http://app.test/p","title":"P"}', ""
+
+    # Interaction on by default, with the configured cap.
+    fetcher = PlaywrightPageFetcher(
+        base_url="http://app.test", max_interactions=7, runner=_runner
+    )
+    fetcher.fetch("http://app.test/p")
+    config = json.loads(captured["stdin"])
+    assert config["interact"] is True and config["maxInteractions"] == 7
+
+    # And it can be turned off (a purely passive crawl).
+    off = PlaywrightPageFetcher(
+        base_url="http://app.test", interact=False, runner=_runner
+    )
+    off.fetch("http://app.test/p")
+    assert json.loads(captured["stdin"])["interact"] is False
+
+
 def test_playwright_fetcher_raises_on_driver_failure() -> None:
     def _bad_runner(argv, cwd, stdin, timeout):  # type: ignore[no-untyped-def]
         return 1, "", "boom: chromium crashed"

@@ -26,6 +26,12 @@ ADR-0016.
 
 ## Crawler depth (T4.2)
 
-The runtime frontend crawler loads pages and captures their calls, but does not
-yet submit forms or click through multi-step flows. Driving interactions would
-observe more endpoints. Unpark when endpoint coverage from passive loads plateaus.
+✅ **Partially unparked — safe interaction crawling.** The driver now clicks a few
+SAFE in-page controls (tabs/filters/"load more") after load to surface endpoints
+that only fire on interaction. It is bounded (`crawl_max_interactions`) and
+denylisted: it NEVER submits a form or clicks a destructive control (delete/pay/
+save/logout/…), so nothing mutating fires. Config: `crawl_interactions_enabled`.
+
+Still parked: multi-step FORM submission (would need synthetic data + is
+mutation-prone). Unpark when passive + safe-interaction coverage plateaus and a
+safe form-fill strategy (e.g. GET-only search forms) is warranted.

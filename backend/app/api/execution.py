@@ -58,11 +58,15 @@ def _build_crawler(
     TotpStrategy (unattended 2FA); otherwise manual-OTP semantics. No config ⇒
     unauthenticated (the default).
     """
-    driver_dir = get_settings().crawl_driver_dir
+    settings = get_settings()
+    driver_dir = settings.crawl_driver_dir
     if not driver_dir or not target_env.base_url:
         return None
     fetcher = PlaywrightPageFetcher(
-        base_url=target_env.base_url, node_project_dir=driver_dir
+        base_url=target_env.base_url,
+        node_project_dir=driver_dir,
+        interact=settings.crawl_interactions_enabled,
+        max_interactions=settings.crawl_max_interactions,
     )
     auth_strategy = (
         _build_auth_strategy(driver_dir, use_totp=bool(auth_config.totp_secret))

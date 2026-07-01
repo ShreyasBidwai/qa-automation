@@ -88,6 +88,12 @@ class Settings(BaseSettings):
     # ``crawl_page.mjs`` driver (+ a resolvable node_modules). Empty ⇒ a mode_b run
     # skips the crawl phase. Set it to make one run cover backend + DB + frontend.
     crawl_driver_dir: str = ""
+    # Interaction crawling (T4.2 "crawler depth"): the driver clicks a few SAFE in-page
+    # controls (tabs/filters/"load more") to surface endpoints that only fire on
+    # interaction. Bounded + denylisted in the driver — it NEVER submits a form or
+    # clicks a destructive control. Disable, or cap per page, here.
+    crawl_interactions_enabled: bool = True
+    crawl_max_interactions: int = 5
     # The target app the runner executes in (Pest: the Laravel app dir; Playwright:
     # the node project dir) and the repo the Laravel ingestor reads.
     target_app_path: str = ""
