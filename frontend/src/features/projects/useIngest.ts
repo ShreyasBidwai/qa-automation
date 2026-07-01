@@ -57,7 +57,9 @@ export function useIngest(projectId: string): IngestState {
 
   const start = useCallback(() => {
     setError(null);
-    setStatus("pending");
+    // Optimistic initial state mirrors the server's first status ("queued"), so the
+    // badge matches what the first poll returns — no flicker, no unmodeled value.
+    setStatus("queued");
     void projectApi.ingest(projectId).then((result) => {
       if (result.ok && result.data) {
         void pollJob(result.data.job_id);
@@ -78,7 +80,7 @@ export function useIngest(projectId: string): IngestState {
   return {
     status,
     error,
-    busy: status === "pending" || status === "running",
+    busy: status === "queued" || status === "running",
     start,
   };
 }

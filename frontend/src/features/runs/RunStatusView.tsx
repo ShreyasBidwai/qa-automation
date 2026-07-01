@@ -27,7 +27,7 @@ export function RunStatusView({ runId }: { runId: string }) {
     return <p className="text-sm text-muted-foreground">Loading run…</p>;
   }
 
-  const status = run.status ?? "pending";
+  const status = run.status ?? "queued";
   const descriptor = runStatusDescriptor(status);
   const done = isTerminal(status);
   const succeeded = status === "succeeded";

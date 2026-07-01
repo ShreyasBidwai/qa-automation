@@ -168,7 +168,16 @@ export interface DbStateTierUpdateBody {
 
 // --- jobs / ingest ----------------------------------------------------------
 
-export type JobStatusValue = "pending" | "running" | "succeeded" | "failed";
+// Mirrors the backend ``JobStatus`` enum (app/models/enums.py): the durable job
+// queue emits ``queued`` (NOT ``pending``) and can end ``cancelled``. Keeping this
+// in lockstep matters — a status the UI doesn't model used to crash the app (a
+// non-total status→badge map returned ``undefined``, and StatusBadge threw on it).
+export type JobStatusValue =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
 
 export interface IngestResponse {
   job_id: string;

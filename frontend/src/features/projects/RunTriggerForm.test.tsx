@@ -16,7 +16,7 @@ describe("RunTriggerForm", () => {
     vi.mocked(runApi.create).mockResolvedValue({
       ok: true,
       status: 202,
-      data: { run_id: "r1", status: "pending" },
+      data: { run_id: "r1", status: "queued" },
     });
   });
 
