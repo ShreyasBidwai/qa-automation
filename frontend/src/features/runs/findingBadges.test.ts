@@ -1,6 +1,29 @@
 import { describe, expect, it } from "vitest";
 
-import { oracleTrustSpec } from "./findingBadges";
+import { aiTriageSpec, oracleTrustSpec } from "./findingBadges";
+
+describe("aiTriageSpec", () => {
+  // The model's read: real bug pops (fail/red), flaky is amber, and the
+  // not-the-app buckets go quiet; unknown/absent renders no chip.
+  it("maps real-bug to the fail (red) level with an AI-prefixed label", () => {
+    expect(aiTriageSpec("real-bug")).toEqual({ level: "fail", label: "AI: Real bug" });
+  });
+
+  it("maps flaky to the amber (flaky) level", () => {
+    expect(aiTriageSpec("flaky")).toEqual({ level: "flaky", label: "AI: Flaky" });
+  });
+
+  it("keeps the not-the-app buckets quiet (neutral)", () => {
+    expect(aiTriageSpec("bad-test")?.level).toBe("neutral");
+    expect(aiTriageSpec("infra")?.level).toBe("neutral");
+  });
+
+  it("renders no chip for unknown / absent", () => {
+    expect(aiTriageSpec("unknown")).toBeNull();
+    expect(aiTriageSpec(null)).toBeNull();
+    expect(aiTriageSpec(undefined)).toBeNull();
+  });
+});
 
 describe("oracleTrustSpec", () => {
   // The trust signal per failing assertion (design-direction semantic colours):

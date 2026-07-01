@@ -475,11 +475,14 @@ function LiveBrowserFrame({
       </div>
 
       <div className="relative flex aspect-[16/10] items-center justify-center bg-background">
-        {state === "ready" && url ? (
+        {url ? (
+          // Keep the current frame up even while the next one is loading (no blink);
+          // a subtle fade eases the swap between pages.
           <img
+            key={url}
             src={url}
             alt={`What Polaris saw at ${label}`}
-            className="h-full w-full object-contain"
+            className="h-full w-full animate-fade-in object-contain"
           />
         ) : state === "error" ? (
           <div className="flex flex-col items-center gap-1.5 text-muted-foreground">

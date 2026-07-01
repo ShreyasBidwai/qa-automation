@@ -390,6 +390,10 @@ export interface Finding {
   history?: FindingHistory | null;
   evidence_ref?: string | null;
   triage?: Triage | null;
+  // The AI's root-cause classification of the failure (real-bug / bad-test / flaky /
+  // infra / unknown), or null if triage didn't run. Distinct from `triage` (the human
+  // disposition) — this is the model's read: signal vs. noise, at a glance.
+  ai_triage?: string | null;
 }
 
 export interface FindingsResponse {

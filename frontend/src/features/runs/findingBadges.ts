@@ -104,3 +104,25 @@ export function statusSpec(status: string): BadgeSpec {
       return { level: "neutral", label: status };
   }
 }
+
+/**
+ * The AI triage classification — the model's read on WHY a test failed, so signal
+ * pops and noise recedes: real-bug → red (fail, look here), flaky → amber, and the
+ * "not the app's fault" buckets (bad-test / infra) go quiet neutral. ``unknown`` /
+ * absent renders no badge (an unclassified failure shouldn't add chrome). Prefixed
+ * "AI:" so it reads as the model's opinion, distinct from the human disposition.
+ */
+export function aiTriageSpec(value: string | null | undefined): BadgeSpec | null {
+  switch (value) {
+    case "real-bug":
+      return { level: "fail", label: "AI: Real bug" };
+    case "flaky":
+      return { level: "flaky", label: "AI: Flaky" };
+    case "bad-test":
+      return { level: "neutral", label: "AI: Bad test" };
+    case "infra":
+      return { level: "neutral", label: "AI: Infra" };
+    default:
+      return null; // unknown / null → no chip
+  }
+}

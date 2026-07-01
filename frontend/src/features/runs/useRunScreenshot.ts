@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { API_BASE } from "@/lib/api/client";
 import { getToken } from "@/lib/auth/session";
@@ -9,9 +9,13 @@ import { getToken } from "@/lib/auth/session";
  * The bytes are served only through the AUTHORIZED endpoint
  * `GET /runs/{id}/events/screenshot?seq=N`, which needs the bearer token — an
  * `<img src>` can't send headers, so we `fetch` the blob with the token and hand
- * back a `URL.createObjectURL` reference, revoked on cleanup. Refetches when `seq`
- * changes (so the top frame animates as the crawl advances) and only while
- * `enabled` (a collapsed per-step panel does no work).
+ * back a `URL.createObjectURL` reference, revoked on cleanup.
+ *
+ * Smooth advance: when `seq` changes (the crawl moved to the next page) we keep the
+ * PREVIOUS frame on screen and only swap once the next one has loaded — so the live
+ * view reads like a screen, not a slideshow that blinks to a spinner between frames.
+ * The spinner shows only for the very first load; a transient fetch error keeps the
+ * last good frame rather than blanking it.
  */
 type ShotState = "loading" | "ready" | "error";
 
@@ -22,13 +26,14 @@ export function useRunScreenshot(
 ): { url: string | null; state: ShotState } {
   const [url, setUrl] = useState<string | null>(null);
   const [state, setState] = useState<ShotState>("loading");
+  // The currently-displayed object URL, tracked so we revoke it only AFTER the next
+  // frame has replaced it (and on unmount) — never while the <img> still shows it.
+  const currentUrl = useRef<string | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
-    let objectUrl: string | null = null;
     let cancelled = false;
     const controller = new AbortController();
-    setState("loading");
 
     void (async () => {
       try {
@@ -43,20 +48,34 @@ export function useRunScreenshot(
         if (!response.ok) throw new Error(String(response.status));
         const blob = await response.blob();
         if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob);
-        setUrl(objectUrl);
+        const next = URL.createObjectURL(blob);
+        const previous = currentUrl.current;
+        currentUrl.current = next;
+        setUrl(next);
         setState("ready");
+        // The <img> now points at `next`; the old frame is no longer referenced.
+        if (previous) URL.revokeObjectURL(previous);
       } catch {
-        if (!cancelled) setState("error");
+        if (cancelled) return;
+        // Keep the last good frame on a transient error; only surface "error" when
+        // there's nothing to show yet (the first frame failed).
+        setState(currentUrl.current ? "ready" : "error");
       }
     })();
 
     return () => {
       cancelled = true;
       controller.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [runId, seq, enabled]);
+
+  // Revoke the final frame when the component goes away.
+  useEffect(
+    () => () => {
+      if (currentUrl.current) URL.revokeObjectURL(currentUrl.current);
+    },
+    [],
+  );
 
   return { url, state };
 }
