@@ -23,7 +23,7 @@ export function ProjectPage({ projectId }: { projectId: string }) {
     useProjectOverview(projectId);
 
   return (
-    <div className="mx-auto max-w-[1400px] px-6 py-8">
+    <div className="mx-auto max-w-[1760px] px-6 py-8 lg:px-8">
       <Link
         to="/projects"
         className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"

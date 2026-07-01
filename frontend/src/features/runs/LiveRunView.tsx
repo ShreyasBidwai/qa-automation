@@ -64,8 +64,8 @@ export function LiveRunView({ runId }: { runId: string }) {
           ) : undefined
         }
       />
-      <main className="flex-1 px-6 py-8">
-        <div className="mx-auto max-w-[820px]">
+      <main className="flex-1 px-6 py-8 lg:px-8">
+        <div className="mx-auto max-w-[1200px]">
           <div className="mb-6">
             <Link
               to={`/runs/${runId}`}
