@@ -208,3 +208,36 @@ async def test_ingest_reads_a_local_checkout_without_cloning(
 
     assert provider.checked_out == []  # a local path is never cloned
     assert result["mode"] == "laravel" and result["nodes"]
+
+
+def test_build_crawler_gates_on_driver_dir_and_base_url(monkeypatch) -> None:
+    # The crawl phase engages ONLY when the runner has a crawl driver dir configured
+    # (the real image sets CRAWL_DRIVER_DIR=/opt/crawl) AND the project has an app_url.
+    from types import SimpleNamespace
+
+    from app.api import execution as ex
+    from app.execution.types import DbHandle, DbRole, TargetEnv
+
+    def _env(base_url: str | None) -> TargetEnv:
+        return TargetEnv(
+            app_path="/x",
+            execution_db=DbHandle("sqlite::memory:", DbRole.WRITABLE_TEST, True),
+            evidence_dir="/e",
+            base_url=base_url,
+        )
+
+    def _settings(driver_dir: str) -> object:
+        return SimpleNamespace(
+            crawl_driver_dir=driver_dir,
+            crawl_interactions_enabled=True,
+            crawl_max_interactions=5,
+        )
+
+    # Driver dir + app_url → a real crawler is built.
+    monkeypatch.setattr(ex, "get_settings", lambda: _settings("/opt/crawl"))
+    assert ex._build_crawler(_env("https://app.qa")) is not None
+    # No app_url → skipped (nothing to crawl).
+    assert ex._build_crawler(_env(None)) is None
+    # No driver dir → skipped (the toolchain isn't wired).
+    monkeypatch.setattr(ex, "get_settings", lambda: _settings(""))
+    assert ex._build_crawler(_env("https://app.qa")) is None
