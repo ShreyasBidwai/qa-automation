@@ -2,6 +2,7 @@ import { ArrowUpRight, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { Link } from "@/components/Link";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TrustMark } from "@/components/ui/TrustMark";
 import { runApi } from "@/lib/api/client";
@@ -14,7 +15,7 @@ import type {
   TriageStatusValue,
 } from "@/lib/api/types";
 
-import { triageSpec } from "./findingBadges";
+import { aiTriageSpec, triageSpec } from "./findingBadges";
 import { failureLine, statusMeaning } from "./findingDetail";
 import { historyViz, severityViz } from "./findingViz";
 import { BlastPathRibbon } from "./BlastPathRibbon";
@@ -148,6 +149,7 @@ function FieldGrid({ finding }: { finding: Finding }) {
   const severity = severityViz(finding.severity);
   const triageStatus = finding.triage?.status ?? "open";
   const triage = triageSpec(triageStatus);
+  const aiTriage = aiTriageSpec(finding.ai_triage);
   const history = finding.history ?? null;
   return (
     <dl className="grid grid-cols-3 gap-px border-b border-border-subtle bg-border-subtle">
@@ -166,6 +168,15 @@ function FieldGrid({ finding }: { finding: Finding }) {
       </FieldCell>
       <FieldCell label="Status">
         <span className="text-foreground-secondary">{triage.label}</span>
+      </FieldCell>
+      {/* The model's root-cause read (real bug vs. noise) — distinct from the human
+       *  disposition above; a quiet em-dash when triage didn't classify it. */}
+      <FieldCell label="AI triage">
+        {aiTriage ? (
+          <Badge level={aiTriage.level}>{aiTriage.label.replace("AI: ", "")}</Badge>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
       </FieldCell>
       <FieldCell label="First seen">
         <span className="break-all font-mono text-xs text-foreground-secondary">

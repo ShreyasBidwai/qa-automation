@@ -41,9 +41,14 @@ services:
       # bridge daemon running on it (Docker 20.10+ on Linux).
       - "host.docker.internal:host-gateway"
     volumes:
-      # The checked-out + composer-installed target repo. Ingest reads a LOCAL
-      # checkout (clone-at-ingest is NOT yet wired), and Pest needs vendor/ present.
-      # Clone it on the host, then set the project's repo_url to the in-container
-      # path /targets/app (read-write: the runner writes vendor/ + generated tests).
+      # The target repo checkout. Ingest can instead clone a git repo_url read-only
+      # (clone-at-ingest is wired); this mount is for Pest EXECUTION, which needs
+      # vendor/ (composer install). Set the project's repo_url to a git URL (cloned)
+      # or to the in-container path /targets/app (a local checkout).
       # NOTE: no ~/.claude mount — credentials stay on the host behind the bridge.
       - ${TARGET_REPO_HOST_PATH:-./targets/app}:/targets/app
+      # The frontend-crawl drivers, single-sourced from runners/playwright (read-only)
+      # into the image's CRAWL_DRIVER_DIR (/opt/crawl, which carries the node_modules
+      # symlink). This lights up the live browser crawl against the project's app_url.
+      - ./runners/playwright/crawl_page.mjs:/opt/crawl/crawl_page.mjs:ro
+      - ./runners/playwright/auth_login.mjs:/opt/crawl/auth_login.mjs:ro

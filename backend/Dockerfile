@@ -138,6 +138,18 @@ RUN npm install -g @playwright/test@1.48.2 \
     && npx --yes playwright@1.48.2 install --with-deps chromium \
     && chmod -R a+rX /ms-playwright
 
+# Frontend-crawl driver dir (T4.2). ESM `import "@playwright/test"` ignores NODE_PATH
+# and only walks `node_modules` up-tree, so the drivers need a `node_modules` next to
+# them — symlinked to the global install (verified: chromium resolves). The .mjs
+# drivers themselves are bind-mounted here from runners/playwright at run time
+# (docker-compose.real.yml), single-sourced with the e2e-runner lane. Setting
+# CRAWL_DRIVER_DIR turns the crawl phase ON for a run whose scope includes the UI
+# layer (and whose project has an app_url) — so a run can drive the live app.
+RUN mkdir -p /opt/crawl \
+    && ln -s /usr/lib/node_modules /opt/crawl/node_modules \
+    && chmod -R a+rX /opt/crawl
+ENV CRAWL_DRIVER_DIR=/opt/crawl
+
 # Composer cache + the app working dir must be writable by `app` at run time
 # (composer install of the target + generated test files).
 RUN mkdir -p /tmp/composer && chmod 0777 /tmp/composer

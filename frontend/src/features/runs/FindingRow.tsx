@@ -3,7 +3,7 @@ import { TrustMark } from "@/components/ui/TrustMark";
 import type { Finding } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
-import { isMutedTriage, triageSpec } from "./findingBadges";
+import { aiTriageSpec, isMutedTriage, triageSpec } from "./findingBadges";
 import { historyViz, severityViz } from "./findingViz";
 
 /**
@@ -25,6 +25,7 @@ export function FindingRow({
   const history = historyViz(finding.status);
   const triageStatus = finding.triage?.status ?? "open";
   const triage = triageSpec(triageStatus);
+  const aiTriage = aiTriageSpec(finding.ai_triage);
   // Muted dispositions (wont_fix / false_positive) are intentionally silenced.
   const muted = isMutedTriage(triageStatus);
   return (
@@ -73,6 +74,7 @@ export function FindingRow({
             />
             {history.label}
           </span>
+          {aiTriage ? <Badge level={aiTriage.level}>{aiTriage.label}</Badge> : null}
           {triageStatus !== "open" ? (
             <Badge level={triage.level}>{triage.label}</Badge>
           ) : null}
