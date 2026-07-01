@@ -18,8 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.types import AIProvider
 from app.auth.browser import PlaywrightLoginBrowser
 from app.auth.otp import autonomous_otp_unavailable
-from app.auth.strategy import ManualOtpStrategy
-from app.auth.types import AuthStrategy
+from app.auth.strategy import ManualOtpStrategy, TotpStrategy
+from app.auth.types import AuthConfig, AuthStrategy
 from app.core.config import get_settings
 from app.crawler.crawler import FrontendCrawler
 from app.crawler.playwright_fetcher import PlaywrightPageFetcher
@@ -43,7 +43,7 @@ from .ports import RunExecution, RunRequest
 
 
 def _build_crawler(
-    target_env: TargetEnv, *, authenticate: bool = False
+    target_env: TargetEnv, *, auth_config: AuthConfig | None = None
 ) -> FrontendCrawler | None:
     """A frontend crawler for the run, or None to skip the crawl phase.
 
@@ -51,10 +51,12 @@ def _build_crawler(
     there) AND the project has a frontend ``base_url`` to crawl. Keeps the crawl
     opt-in and infra-gated, exactly like the DB-state phase is tier-gated.
 
-    When ``authenticate`` is set (the project has a target login + login config), the
-    crawler is given a real login strategy: it logs in once via the Playwright login
-    driver and replays that session on every page, so the crawl reaches behind-the-
-    gate journeys. Otherwise it crawls unauthenticated (the default).
+    When ``auth_config`` is present (the project has a target login + login config),
+    the crawler is given a real login strategy: it logs in once via the Playwright
+    login driver and replays that session on every page, so the crawl reaches
+    behind-the-gate journeys. A TOTP secret in the config selects the automated
+    TotpStrategy (unattended 2FA); otherwise manual-OTP semantics. No config ⇒
+    unauthenticated (the default).
     """
     driver_dir = get_settings().crawl_driver_dir
     if not driver_dir or not target_env.base_url:
@@ -62,19 +64,26 @@ def _build_crawler(
     fetcher = PlaywrightPageFetcher(
         base_url=target_env.base_url, node_project_dir=driver_dir
     )
-    auth_strategy = _build_auth_strategy(driver_dir) if authenticate else None
+    auth_strategy = (
+        _build_auth_strategy(driver_dir, use_totp=bool(auth_config.totp_secret))
+        if auth_config is not None
+        else None
+    )
     return FrontendCrawler(fetcher, auth_strategy=auth_strategy)
 
 
-def _build_auth_strategy(driver_dir: str) -> AuthStrategy:
+def _build_auth_strategy(driver_dir: str, *, use_totp: bool) -> AuthStrategy:
     """A login strategy that drives the real Playwright login driver.
 
-    Manual-OTP semantics with an autonomous OtpProvider: a plain form login completes
-    headless; a login that hits an OTP/2FA challenge fails fast (no operator to enter
-    a code) and the crawl phase degrades to an unauthenticated crawl rather than
-    hanging. The browser layer takes credentials over stdin, never argv (ADR-0053).
+    With a TOTP secret configured, the automated TotpStrategy generates the 2FA code
+    (pyotp) so the login completes unattended. Otherwise manual-OTP semantics with an
+    autonomous OtpProvider: a plain form login completes headless; an unexpected OTP
+    challenge fails fast (no operator) and the crawl phase degrades to an
+    unauthenticated crawl rather than hanging. Credentials go over stdin, never argv.
     """
     browser = PlaywrightLoginBrowser(node_project_dir=driver_dir)
+    if use_totp:
+        return TotpStrategy(browser=browser)
     return ManualOtpStrategy(browser=browser, otp_provider=autonomous_otp_unavailable)
 
 
@@ -214,7 +223,7 @@ class OrchestratorRunExecutor:
             # configured AND the project has a frontend URL. One run then covers
             # backend + DB + frontend; otherwise the phase is simply skipped. With a
             # login config present, the crawler authenticates to reach gated pages.
-            crawler=_build_crawler(target_env, authenticate=auth_config is not None),
+            crawler=_build_crawler(target_env, auth_config=auth_config),
             # The login config the crawl authenticates with (None ⇒ unauthenticated);
             # its secret is masked and never logged/summarised.
             auth_config=auth_config,

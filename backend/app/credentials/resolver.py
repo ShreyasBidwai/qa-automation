@@ -46,12 +46,14 @@ _SELECTOR_KEYS = (
 class ResolvedTargetLogin:
     """A decrypted, in-memory target login. NEVER log or persist this.
 
-    ``secret`` is plaintext and is deliberately excluded from ``repr``/``str`` — the
-    only safe rendering is the redacted identifier.
+    ``secret`` (password) and ``totp_secret`` (authenticator seed) are plaintext and
+    deliberately excluded from ``repr``/``str`` — the only safe rendering is the
+    redacted identifier.
     """
 
     identifier: str
     secret: str = field(repr=False)  # excluded from the dataclass repr (defense)
+    totp_secret: str | None = field(default=None, repr=False)
 
     def __repr__(self) -> str:  # belt and braces over field(repr=False)
         label = redact_label(self.identifier)
@@ -81,6 +83,12 @@ async def resolve_target_login(
     return ResolvedTargetLogin(
         identifier=record.identifier,
         secret=decrypt_secret(record.encrypted_secret),
+        # The TOTP seed is optional; present ⇒ the run can authenticate 2FA unattended.
+        totp_secret=(
+            decrypt_secret(record.encrypted_totp_secret)
+            if record.encrypted_totp_secret is not None
+            else None
+        ),
     )
 
 
@@ -117,5 +125,7 @@ async def resolve_target_auth_config(
         username=login.identifier,
         password=login.secret,
         account=login.identifier,
+        # Present ⇒ the run auto-selects the automated TotpStrategy over manual OTP.
+        totp_secret=login.totp_secret,
         **overrides,
     )

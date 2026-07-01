@@ -33,9 +33,11 @@ class TargetCredentialsRepository:
         mode: str,
         identifier: str | None,
         encrypted_secret: bytes | None,
+        encrypted_totp_secret: bytes | None = None,
     ) -> TargetCredentials:
-        """Set (or replace) a project's credentials. ``encrypted_secret`` is already
-        ciphertext — this repository never sees plaintext."""
+        """Set (or replace) a project's credentials. ``encrypted_secret`` /
+        ``encrypted_totp_secret`` are already ciphertext — this repo never sees
+        plaintext."""
         record = await self.get(project_id)
         if record is None:
             record = TargetCredentials(project_id=project_id)
@@ -43,6 +45,7 @@ class TargetCredentialsRepository:
         record.mode = mode
         record.identifier = identifier
         record.encrypted_secret = encrypted_secret
+        record.encrypted_totp_secret = encrypted_totp_secret
         await self.session.flush()
         return record
 

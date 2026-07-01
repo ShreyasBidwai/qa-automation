@@ -702,6 +702,10 @@ class CredentialUpsert(BaseModel):
     mode: CredentialModeLiteral
     identifier: str | None = Field(default=None, max_length=512)
     secret: SecretStr | None = Field(default=None)
+    # Optional TOTP (authenticator-app) seed for unattended 2FA — write-only, encrypted
+    # at rest, never returned. Omitting it on a specific_account update PRESERVES any
+    # stored seed; switching to polaris_creates clears it.
+    totp_secret: SecretStr | None = Field(default=None)
 
     @model_validator(mode="after")
     def _require_for_specific_account(self) -> CredentialUpsert:
@@ -714,12 +718,14 @@ class CredentialUpsert(BaseModel):
 
 
 class CredentialStatusResponse(BaseModel):
-    """The safe view of a project's credentials — NEVER the secret. ``has_credentials``
-    is true iff an encrypted account secret is stored (ADR-0053)."""
+    """The safe view of a project's credentials — NEVER a secret. ``has_credentials``
+    is true iff an encrypted account secret is stored; ``has_totp`` iff an encrypted
+    TOTP seed is stored (so runs can do unattended 2FA). (ADR-0053)."""
 
     mode: str
     identifier: str | None = None
     has_credentials: bool = False
+    has_totp: bool = False
 
 
 # --- self-healing (B8, ADR-0040) --------------------------------------------

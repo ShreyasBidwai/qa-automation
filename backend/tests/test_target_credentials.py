@@ -138,6 +138,33 @@ async def test_resolve_returns_none_for_polaris_or_missing(
     assert await resolve_target_login(db_session, project_id) is None
 
 
+async def test_resolve_login_decrypts_the_totp_secret_when_present(
+    db_session: AsyncSession,
+) -> None:
+    # The TOTP seed round-trips through the vault (encrypted at rest) and is decrypted
+    # only via the accessor — and never leaks through the login's repr.
+    project_id = await _project(db_session)
+    await TargetCredentialsRepository(db_session).upsert(
+        project_id,
+        mode="specific_account",
+        identifier="a@b.test",
+        encrypted_secret=encrypt_secret("pw"),
+        encrypted_totp_secret=encrypt_secret("JBSWY3DPEHPK3PXP"),
+    )
+    login = await resolve_target_login(db_session, project_id)
+    assert login is not None
+    assert login.totp_secret == "JBSWY3DPEHPK3PXP"  # decrypted only here
+    assert "JBSWY3DPEHPK3PXP" not in repr(login)  # never in the repr
+    # Absent seed ⇒ None (the common no-2FA case).
+    other = await _project(db_session)
+    await TargetCredentialsRepository(db_session).upsert(
+        other, mode="specific_account", identifier="x@y.test",
+        encrypted_secret=encrypt_secret("pw"),
+    )
+    login2 = await resolve_target_login(db_session, other)
+    assert login2 is not None and login2.totp_secret is None
+
+
 # --- the crawl's AuthConfig: needs BOTH a credential and a login config ------
 
 
@@ -206,6 +233,27 @@ async def test_resolve_auth_config_builds_from_credentials_and_settings(
     assert cfg.password_selector == "input[type=password], input[name=password]"
     # The secret never leaks through the AuthConfig's repr (defence in depth).
     assert "run-secret-1234" not in repr(cfg)
+    assert cfg.totp_secret is None  # no TOTP stored ⇒ manual/plain login
+
+
+async def test_resolve_auth_config_carries_the_totp_secret(
+    db_session: AsyncSession,
+) -> None:
+    # A stored TOTP seed flows into the AuthConfig (so the run auto-selects
+    # TotpStrategy) without leaking through the repr.
+    project_id = await _project_with_settings(
+        db_session, {"auth_config": {"login_url": "https://t/login"}}
+    )
+    await TargetCredentialsRepository(db_session).upsert(
+        project_id,
+        mode="specific_account",
+        identifier="runner@acme.test",
+        encrypted_secret=encrypt_secret("pw"),
+        encrypted_totp_secret=encrypt_secret("JBSWY3DPEHPK3PXP"),
+    )
+    cfg = await resolve_target_auth_config(db_session, project_id)
+    assert cfg is not None and cfg.totp_secret == "JBSWY3DPEHPK3PXP"
+    assert "JBSWY3DPEHPK3PXP" not in repr(cfg)
 
 
 # --- run-path selection: mode drives the path, no secret in the summary ------
@@ -325,6 +373,7 @@ async def test_get_returns_status_but_never_the_secret(
         "mode": "specific_account",
         "identifier": "x@y.test",
         "has_credentials": True,
+        "has_totp": False,
     }
     assert "secret" not in body
     assert secret not in got.text  # plaintext absent from the whole response
@@ -342,6 +391,7 @@ async def test_has_credentials_reflects_reality_across_lifecycle(
         "mode": "polaris_creates",
         "identifier": None,
         "has_credentials": False,
+        "has_totp": False,
     }
 
     await client.put(
@@ -371,6 +421,45 @@ async def test_has_credentials_reflects_reality_across_lifecycle(
     assert (await client.delete(base)).status_code == 204
     assert (await client.get(base)).json()["has_credentials"] is False
     assert (await client.delete(base)).status_code == 404
+
+
+async def test_totp_secret_is_encrypted_write_only_and_preserved_across_updates(
+    authed_client: tuple[AsyncClient, FastAPI],
+) -> None:
+    client, app = authed_client
+    project_id = await _create_project(client)
+    base = f"/api/v1/projects/{project_id}/credentials"
+    totp = "JBSWY3DPEHPK3PXP"
+
+    # Set an account WITH a TOTP seed → has_totp; the seed is encrypted at rest and
+    # never echoed.
+    resp = await client.put(
+        base,
+        json={
+            "mode": "specific_account",
+            "identifier": "a@b.test",
+            "secret": "pw12345",
+            "totp_secret": totp,
+        },
+    )
+    assert resp.status_code == 200 and totp not in resp.text
+    assert resp.json()["has_totp"] is True
+    async with app.state.sessionmaker() as session:
+        record = await TargetCredentialsRepository(session).get(uuid.UUID(project_id))
+    assert record is not None and record.encrypted_totp_secret is not None
+    assert totp.encode() not in record.encrypted_totp_secret  # never stored in clear
+    assert decrypt_secret(record.encrypted_totp_secret) == totp
+
+    # A password-only update (no totp_secret) PRESERVES the stored seed.
+    await client.put(
+        base,
+        json={"mode": "specific_account", "identifier": "a@b.test", "secret": "new-pw"},
+    )
+    assert (await client.get(base)).json()["has_totp"] is True
+
+    # Switching to polaris_creates clears the seed with everything else.
+    await client.put(base, json={"mode": "polaris_creates"})
+    assert (await client.get(base)).json()["has_totp"] is False
 
 
 async def test_specific_account_requires_identifier_and_secret(

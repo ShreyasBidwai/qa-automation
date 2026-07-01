@@ -62,7 +62,7 @@ async def test_migration_at_head(db_session: AsyncSession) -> None:
     revision = (
         await db_session.execute(text("SELECT version_num FROM alembic_version"))
     ).scalar_one()
-    assert revision == "0032_run_event_screenshot"
+    assert revision == "0033_target_totp_secret"
 
 
 async def test_projects_has_app_url_and_soft_delete_columns(
