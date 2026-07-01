@@ -112,9 +112,10 @@ export interface ReadyzResponse {
 
 // --- projects ---------------------------------------------------------------
 
-/** Which AI backend a project's runs use for generation. Null ⇒ the instance
- * default. The UI never sends an API key — keys are server-side env only. */
-export type AiProvider = "claude_cli" | "gemini";
+/** Which AI backend a project's runs use for generation + triage. Null ⇒ the
+ * instance default. The UI never sends an API key — each provider's key is
+ * server-side env only (ANTHROPIC_API_KEY / GEMINI_API_KEY). */
+export type AiProvider = "anthropic_api" | "claude_cli" | "gemini";
 
 export interface ProjectCreateBody {
   name: string;

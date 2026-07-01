@@ -83,7 +83,9 @@ function EditForm({
   const [appUrl, setAppUrl] = useState(project.app_url ?? "");
   const [stack, setStack] = useState(project.stack ?? "");
   const [aiProvider, setAiProvider] = useState<AiProvider>(
-    project.ai_provider === "gemini" ? "gemini" : "claude_cli",
+    project.ai_provider === "gemini" || project.ai_provider === "anthropic_api"
+      ? project.ai_provider
+      : "claude_cli",
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -147,6 +149,7 @@ function EditForm({
           value={aiProvider}
           onChange={(value) => setAiProvider(value as AiProvider)}
           options={[
+            ["anthropic_api", "Claude (Anthropic API)"],
             ["claude_cli", "Claude (claude -p)"],
             ["gemini", "Gemini"],
           ]}

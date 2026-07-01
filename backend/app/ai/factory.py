@@ -1,15 +1,17 @@
 """Config-driven provider selection (TRD §6).
 
-``claude_cli`` shells to `claude -p`; ``gemini`` calls the Gemini API; ``stub`` is the
-deterministic test fake. The mode defaults to ``settings.ai_provider_mode`` but can be
-overridden per call — runs resolve it PER PROJECT (project.settings['ai_provider'])
-so a project can pick Claude or Gemini from the UI without changing instance config.
+``anthropic_api`` calls Anthropic's Messages API (the PRODUCTION Claude backend);
+``claude_cli`` shells to `claude -p` (dev); ``gemini`` calls the Gemini API; ``stub``
+is the deterministic test fake. The mode defaults to ``settings.ai_provider_mode`` but
+can be overridden per call — runs resolve it PER PROJECT (``settings['ai_provider']``)
+so a project can pick a backend from the UI without changing instance config.
 """
 
 from __future__ import annotations
 
 from app.core.config import Settings
 
+from .anthropic_api import AnthropicApiProvider
 from .claude_bridge import make_bridge_runner
 from .claude_cli import ClaudeCliProvider
 from .gemini import GeminiProvider
@@ -18,12 +20,14 @@ from .types import AIProvider
 
 # The only provider modes the factory will build. Any caller-supplied mode (e.g. a
 # value stored on a project) MUST be validated against this before it reaches here.
-PROVIDER_MODES = frozenset({"claude_cli", "gemini", "stub"})
+PROVIDER_MODES = frozenset({"anthropic_api", "claude_cli", "gemini", "stub"})
 
 
 def build_ai_provider(settings: Settings, *, mode: str | None = None) -> AIProvider:
     """Build the AI provider for ``mode`` (default ``settings.ai_provider_mode``)."""
     mode = mode or settings.ai_provider_mode
+    if mode == "anthropic_api":
+        return AnthropicApiProvider(settings)
     if mode == "claude_cli":
         # When a bridge URL is configured, `claude -p` runs on the HOST (via the
         # bridge daemon) so the container never touches the host's ~/.claude login;

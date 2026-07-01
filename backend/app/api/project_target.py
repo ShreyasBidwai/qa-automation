@@ -29,9 +29,12 @@ logger = logging.getLogger("app.api.project_target")
 # stack falls back to the configured ``runner_framework`` (the env default).
 _FRAMEWORK_BY_STACK: dict[str, str] = {"laravel": "pest"}
 
-# AI provider modes a project may CHOOSE from the UI. ``stub`` is test-only and is
-# deliberately NOT selectable; an instance can still default to it via env.
-SELECTABLE_AI_PROVIDERS = frozenset({"claude_cli", "gemini"})
+# AI provider modes a project may CHOOSE from the UI. ``anthropic_api`` (Messages
+# API) and ``gemini`` are the production API backends (each reads its own env key);
+# ``claude_cli`` is the dev CLI. ``stub`` is test-only and deliberately NOT selectable
+# (an instance can still default to it via env). The layer is provider-agnostic: pick
+# a backend, set its key, and runs use it — no code change per provider.
+SELECTABLE_AI_PROVIDERS = frozenset({"anthropic_api", "claude_cli", "gemini"})
 
 
 def resolve_ai_provider_mode(project: Project, settings: Settings) -> str:
