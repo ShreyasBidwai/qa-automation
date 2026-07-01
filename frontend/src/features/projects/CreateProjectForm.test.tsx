@@ -24,7 +24,12 @@ describe("CreateProjectForm", () => {
     vi.mocked(credentialApi.get).mockResolvedValue({
       ok: true,
       status: 200,
-      data: { mode: "polaris_creates", identifier: null, has_credentials: false },
+      data: {
+        mode: "polaris_creates",
+        identifier: null,
+        has_credentials: false,
+        has_totp: false,
+      },
     });
   });
 
