@@ -7,7 +7,7 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.execution.errors import RunnerProcessError
+from app.execution.errors import MissingTestRunnerError, RunnerProcessError
 from app.execution.lifecycle import (
     STATUS_ERRORED,
     STATUS_FAILED,
@@ -38,15 +38,22 @@ class _FakeRunner:
     framework = "fake"
 
     def __init__(
-        self, *, results: list[ExecutionResult] | None = None, boom: bool = False
+        self,
+        *,
+        results: list[ExecutionResult] | None = None,
+        boom: bool = False,
+        missing: bool = False,
     ) -> None:
         self._results = results or []
         self._boom = boom
+        self._missing = missing
         self.teardown_called = 0
 
     def run(
         self, scripts: list[PestScript], target_env: TargetEnv
     ) -> list[ExecutionResult]:
+        if self._missing:
+            raise MissingTestRunnerError("no vendor/bin/pest in the target")
         if self._boom:
             raise RunnerProcessError("runner exploded")
         return self._results
@@ -158,6 +165,34 @@ async def test_lifecycle_completes_as_failed_when_a_result_errored(
     assert runner.teardown_called == 1
     rows = await ResultRepository(db_session).list_for_run(project.id, run.id)
     assert {r.outcome for r in rows} == {Outcome.PASS, Outcome.ERROR}
+
+
+async def test_lifecycle_skips_api_layer_when_no_test_runner(
+    db_session: AsyncSession,
+) -> None:
+    # No local composer-installed checkout (no vendor/bin/pest) → the API layer has
+    # nothing runnable. The run must NOT error out; it SKIPS API execution (so the
+    # caller can still run the UI crawl) and completes with zero results. Contrast
+    # with a genuine runner crash below, which DOES error the run.
+    project = make_project()
+    db_session.add(project)
+    await db_session.flush()
+
+    runner = _FakeRunner(missing=True)
+    run = await RunLifecycle(runner=runner).execute(
+        session=db_session,
+        project_id=project.id,
+        scripts=[],
+        target_env=_ENV,
+        trigger=RunTrigger.MANUAL,
+        mode=RunMode.B,
+    )
+
+    assert run.status == STATUS_PASSED  # skipped, not errored — the run completes
+    assert run.finished_at is not None
+    assert runner.teardown_called == 1  # teardown still runs
+    rows = await ResultRepository(db_session).list_for_run(project.id, run.id)
+    assert rows == []  # nothing executed, so no results
 
 
 async def test_lifecycle_errors_and_tears_down_on_runner_failure(

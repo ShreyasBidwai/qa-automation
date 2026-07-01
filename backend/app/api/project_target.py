@@ -19,11 +19,23 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from app.core.config import Settings
 from app.models.project import Project
 
 logger = logging.getLogger("app.api.project_target")
+
+# Schemes that mark a ``repo_url`` as a git REMOTE (cloned read-only for INGEST)
+# rather than a local checkout path. Kept local to this module — mirrors the same
+# check in app/api/real_execution.py — because real_execution imports this module,
+# so importing the helper the other way would be a circular import.
+_GIT_URL_SCHEMES = frozenset({"http", "https", "git", "ssh"})
+
+
+def _is_git_url(value: str) -> bool:
+    return urlsplit(value).scheme in _GIT_URL_SCHEMES
+
 
 # A project's stack selects the execution framework (the runner). An unknown/absent
 # stack falls back to the configured ``runner_framework`` (the env default).
@@ -88,8 +100,15 @@ def resolve_target_config(project: Project, settings: Settings) -> ResolvedTarge
         )
         or ""
     )
-    # The app working dir is the repo checkout; keep the env app-path as a last resort.
-    app_path = repo or settings.target_app_path or ""
+    # Where the runner EXECUTES tests: normally the repo checkout. But ``repo_url``
+    # may be a git URL (cloned read-only for INGEST) — a URL is not a runnable app
+    # dir, and Pest needs a local checkout with ``vendor/``. So when repo is a git
+    # URL, the app working dir is the LOCAL checkout (TARGET_APP_PATH / the mounted
+    # /targets/app), never the URL; a local repo path is itself the working dir.
+    if _is_git_url(repo):
+        app_path = settings.target_app_path or settings.target_repo_path or ""
+    else:
+        app_path = repo or settings.target_app_path or ""
     base_url = _coalesce(
         project.app_url,
         settings.target_base_url,

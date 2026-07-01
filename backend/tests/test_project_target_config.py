@@ -127,6 +127,38 @@ def test_resolve_falls_back_to_env_with_a_deprecation_warning(
     assert "env_fallback_deprecated" in caplog.text
 
 
+# --- git-URL repo: execute from the LOCAL checkout, never the URL -----------
+
+
+def test_git_url_repo_runs_pest_from_the_local_checkout_not_the_url() -> None:
+    # repo_url is a git REMOTE (cloned read-only for ingest) — a URL is not a runnable
+    # app dir. Execution must use the LOCAL checkout (TARGET_APP_PATH), not the URL, or
+    # Pest looks for vendor/ AT the URL and the whole run dies (RunnerProcessError).
+    project = make_project(
+        settings={"repo_url": "https://git.example/org/app.git", "stack": "laravel"},
+    )
+    settings = _settings(target_app_path="/targets/app")
+    cfg = resolve_target_config(project, settings)
+    assert cfg.repo_path == "https://git.example/org/app.git"  # ingest clones this
+    assert cfg.app_path == "/targets/app"  # …but Pest runs HERE, not at the URL
+    assert cfg.framework == "pest"
+
+
+def test_git_url_falls_back_to_target_repo_path_for_the_app_dir() -> None:
+    # With no TARGET_APP_PATH, the local checkout can still come from TARGET_REPO_PATH.
+    project = make_project(settings={"repo_url": "ssh://git@git.example/org/app.git"})
+    settings = _settings(target_app_path="", target_repo_path="/targets/app")
+    cfg = resolve_target_config(project, settings)
+    assert cfg.app_path == "/targets/app"
+
+
+def test_local_repo_path_is_itself_the_app_dir() -> None:
+    # A plain local path (no URL scheme) stays the working dir — unchanged behaviour.
+    project = make_project(settings={"repo_url": "/targets/app"})
+    cfg = resolve_target_config(project, _settings(target_app_path="/should/not/win"))
+    assert cfg.app_path == "/targets/app"
+
+
 # --- honest errors when a required value is missing -------------------------
 
 

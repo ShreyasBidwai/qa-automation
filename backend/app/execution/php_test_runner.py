@@ -25,7 +25,7 @@ from pathlib import Path
 from app.models.enums import Outcome
 
 from .dual_db import ensure_safe_target, subprocess_db_env
-from .errors import JUnitParseError, RunnerProcessError
+from .errors import JUnitParseError, MissingTestRunnerError
 from .junit import JUnitCase, parse_junit
 from .process import Process, ProcessResult, run_process
 from .types import ExecutionResult, PestScript, TargetEnv
@@ -53,7 +53,7 @@ def detect_test_binary(app_path: str) -> str:
     for rel in (_PEST_BIN, _PHPUNIT_BIN):
         if (app / rel).exists():
             return rel
-    raise RunnerProcessError(
+    raise MissingTestRunnerError(
         f"no PHP test runner found: neither {_PEST_BIN} nor {_PHPUNIT_BIN} exists "
         f"in {app_path} — run `composer install` in the target app"
     )

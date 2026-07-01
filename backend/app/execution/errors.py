@@ -20,6 +20,18 @@ class RunnerTimeout(RunnerProcessError):
     """A runner subprocess exceeded its bounded timeout (Standards §12)."""
 
 
+class MissingTestRunnerError(RunnerProcessError):
+    """The target ships no runnable PHP test binary (no ``vendor/`` present).
+
+    This means the API/Pest layer has no local composer-installed checkout to run
+    against — e.g. the project's ``repo_url`` is a git URL used for INGEST, and no
+    local checkout is mounted. It is DISTINCT from a test process that ran and
+    failed: the run degrades by SKIPPING the API layer (the UI crawl needs only the
+    app URL), rather than failing the whole run. A subclass of RunnerProcessError so
+    existing ``except RunnerProcessError`` handlers still treat it as a runner fault.
+    """
+
+
 class JUnitParseError(ExecutionError):
     """A JUnit evidence artifact could not be parsed."""
 

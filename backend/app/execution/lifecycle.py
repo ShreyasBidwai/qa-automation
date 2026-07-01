@@ -24,7 +24,7 @@ from app.repositories.run_repository import RunRepository
 from app.screenshots import store_screenshot
 
 from .dual_db import ensure_safe_target
-from .errors import ExecutionError
+from .errors import ExecutionError, MissingTestRunnerError
 from .types import ExecutionResult, ExecutionRunner, PestScript, TargetEnv
 
 logger = logging.getLogger("app.execution")
@@ -127,7 +127,31 @@ class RunLifecycle:
                 status=progress.STATUS_STARTED,
                 detail={"tests": len(scripts)},
             )
-            exec_results = self._runner.run(scripts, target_env)
+            try:
+                exec_results = self._runner.run(scripts, target_env)
+            except MissingTestRunnerError as exc:
+                # No local composer-installed checkout → the API/Pest layer has
+                # nothing runnable (e.g. the project's repo_url is a git URL used for
+                # INGEST, with no /targets/app mounted). SKIP the API layer honestly
+                # and let the run CONTINUE (the UI crawl needs only the app URL),
+                # rather than failing the whole run. The generated cases persist and
+                # re-run once a checkout is present.
+                logger.info(
+                    "execution.api_skipped_no_runner",
+                    extra={"run_id": str(run.id), "reason": str(exc)},
+                )
+                await progress.emit(
+                    phase=progress.PHASE_EXECUTE,
+                    step=f"Execute {len(scripts)} tests",
+                    status=progress.STATUS_SKIPPED,
+                    detail={
+                        "skipped": (
+                            "no local checkout for the API runner — run "
+                            "`composer install` in the target, or run the UI layer"
+                        )
+                    },
+                )
+                exec_results = []
             for er in exec_results:
                 # Capture once: the row carries it (the assembler copies it onto the
                 # finding) AND the live view serves it as the step's frame, so a

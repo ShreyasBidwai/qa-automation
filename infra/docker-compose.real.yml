@@ -35,6 +35,11 @@ services:
       CLAUDE_BRIDGE_TOKEN: ${CLAUDE_BRIDGE_TOKEN:-}
       GIT_TOKEN: ${GIT_TOKEN:-}
       TARGET_CREDENTIALS_KEY: ${TARGET_CREDENTIALS_KEY:-}
+      # Local composer-installed checkout for API/Pest EXECUTION (the mount below at
+      # /targets/app). When a project's repo_url is a git URL (cloned ONLY for ingest,
+      # never a runnable app dir), execution uses THIS path for Pest. Absent/empty ⇒
+      # the API layer is skipped and the run still crawls the UI against app_url.
+      TARGET_APP_PATH: ${TARGET_APP_PATH:-/targets/app}
       HOME: /app # writable home for tool caches (fastembed, git)
     extra_hosts:
       # Resolve host.docker.internal to the host so the container can reach the
