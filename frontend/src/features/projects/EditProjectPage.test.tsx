@@ -11,10 +11,16 @@ vi.mock("@/lib/api/client", () => ({
   },
   documentApi: { list: vi.fn(), upload: vi.fn(), remove: vi.fn() },
   credentialApi: { get: vi.fn(), put: vi.fn(), remove: vi.fn() },
+  authConfigApi: { get: vi.fn(), put: vi.fn(), remove: vi.fn() },
 }));
 vi.mock("@/lib/router", () => ({ navigate: vi.fn() }));
 
-import { credentialApi, documentApi, projectApi } from "@/lib/api/client";
+import {
+  authConfigApi,
+  credentialApi,
+  documentApi,
+  projectApi,
+} from "@/lib/api/client";
 import { navigate } from "@/lib/router";
 import type { Project } from "@/lib/api/types";
 
@@ -58,7 +64,26 @@ describe("EditProjectPage", () => {
     vi.mocked(credentialApi.get).mockResolvedValue({
       ok: true,
       status: 200,
-      data: { mode: "polaris_creates", identifier: null, has_credentials: false },
+      data: {
+        mode: "polaris_creates",
+        identifier: null,
+        has_credentials: false,
+        has_totp: false,
+      },
+    });
+    vi.mocked(authConfigApi.get).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: {
+        configured: false,
+        login_url: null,
+        username_selector: null,
+        password_selector: null,
+        submit_selector: null,
+        otp_selector: null,
+        otp_submit_selector: null,
+        success_selector: null,
+      },
     });
   });
 

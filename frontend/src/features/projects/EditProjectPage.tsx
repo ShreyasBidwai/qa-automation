@@ -14,6 +14,7 @@ import { navigate } from "@/lib/router";
 
 import { DbStateTierCard } from "./DbStateTierCard";
 import { ProjectCredentialsCard } from "./ProjectCredentialsCard";
+import { ProjectLoginConfigCard } from "./ProjectLoginConfigCard";
 import { ProjectDocumentsCard } from "./ProjectDocumentsCard";
 import { useProject } from "./useProject";
 
@@ -56,6 +57,7 @@ export function EditProjectPage({ projectId }: { projectId: string }) {
         <div className="space-y-7">
           <EditForm key={project.id} projectId={projectId} project={project} />
           <ProjectCredentialsCard key={`cred-${project.id}`} projectId={projectId} />
+          <ProjectLoginConfigCard key={`login-${project.id}`} projectId={projectId} />
           <ProjectDocumentsCard key={`docs-${project.id}`} projectId={projectId} />
           <DbStateTierCard key={`tier-${project.id}`} projectId={projectId} />
           <DangerZone projectId={projectId} name={project.name} />

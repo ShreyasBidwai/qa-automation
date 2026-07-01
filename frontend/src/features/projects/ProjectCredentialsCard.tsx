@@ -20,7 +20,9 @@ export function ProjectCredentialsCard({ projectId }: { projectId: string }) {
   const [mode, setMode] = useState<CredentialMode>("polaris_creates");
   const [identifier, setIdentifier] = useState("");
   const [secret, setSecret] = useState(""); // write-only; never seeded from GET
+  const [totpSecret, setTotpSecret] = useState(""); // write-only; never seeded
   const [hasCredentials, setHasCredentials] = useState(false);
+  const [hasTotp, setHasTotp] = useState(false);
   const [editing, setEditing] = useState(false);
 
   const [loading, setLoading] = useState(true);
@@ -42,6 +44,7 @@ export function ProjectCredentialsCard({ projectId }: { projectId: string }) {
         );
         setIdentifier(result.data.identifier ?? "");
         setHasCredentials(result.data.has_credentials);
+        setHasTotp(result.data.has_totp);
         setEditing(false);
       } else if (result.status === 403) {
         setForbidden(true);
@@ -60,6 +63,7 @@ export function ProjectCredentialsCard({ projectId }: { projectId: string }) {
     setError(null);
     setSaved(false);
     setSecret(""); // never carry a typed secret across a mode switch
+    setTotpSecret("");
     // A specific account with nothing stored opens straight into the edit fields.
     setEditing(next === "specific_account" && !hasCredentials);
   }
@@ -74,6 +78,7 @@ export function ProjectCredentialsCard({ projectId }: { projectId: string }) {
       );
       setIdentifier(result.data.identifier ?? "");
       setHasCredentials(result.data.has_credentials);
+      setHasTotp(result.data.has_totp);
     }
   }
 
@@ -93,9 +98,18 @@ export function ProjectCredentialsCard({ projectId }: { projectId: string }) {
     setSaving(true);
     const result = await credentialApi.put(projectId, {
       mode,
-      ...(mode === "specific_account" ? { identifier: identifier.trim(), secret } : {}),
+      ...(mode === "specific_account"
+        ? {
+            identifier: identifier.trim(),
+            secret,
+            // Only send the TOTP seed when the operator typed one; omitting it
+            // PRESERVES any stored seed (the backend replace-preserves it).
+            ...(totpSecret.trim() ? { totp_secret: totpSecret.trim() } : {}),
+          }
+        : {}),
     });
     setSecret(""); // drop the plaintext as soon as it's been sent
+    setTotpSecret("");
     setSaving(false);
     if (result.ok) {
       setEditing(false);
@@ -120,7 +134,9 @@ export function ProjectCredentialsCard({ projectId }: { projectId: string }) {
       setMode("polaris_creates");
       setIdentifier("");
       setSecret("");
+      setTotpSecret("");
       setHasCredentials(false);
+      setHasTotp(false);
       setEditing(false);
       return;
     }
@@ -192,6 +208,7 @@ export function ProjectCredentialsCard({ projectId }: { projectId: string }) {
           </div>
           <p className="mt-1 pl-6 text-[11.5px] text-muted-foreground">
             The password is stored securely and never shown.
+            {hasTotp ? " 2FA (TOTP) is configured — runs sign in unattended." : ""}
           </p>
           <div className="mt-2.5 flex flex-wrap gap-2 pl-6">
             <Button
@@ -244,6 +261,32 @@ export function ProjectCredentialsCard({ projectId }: { projectId: string }) {
             />
             <p className="text-[11.5px] text-muted-foreground">
               Write-only — it&rsquo;s encrypted on save and never displayed again.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="cred-totp">
+              TOTP secret{" "}
+              <span className="font-normal text-muted-foreground">
+                (optional — for 2FA)
+              </span>
+            </Label>
+            <Input
+              id="cred-totp"
+              type="password"
+              autoComplete="off"
+              value={totpSecret}
+              onChange={(event) => setTotpSecret(event.target.value)}
+              placeholder={
+                hasTotp
+                  ? "2FA configured — enter to replace"
+                  : "Authenticator seed (base32)"
+              }
+              className="font-mono"
+            />
+            <p className="text-[11.5px] text-muted-foreground">
+              The authenticator-app shared secret. Runs generate the 2FA code
+              automatically so login is unattended. Encrypted; leave blank to keep the
+              stored one.
             </p>
           </div>
         </div>

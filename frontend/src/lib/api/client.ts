@@ -4,6 +4,8 @@ import type {
   AuthTokenResponse,
   AuthUser,
   ChangePasswordBody,
+  AuthConfigStatus,
+  AuthConfigUpsertBody,
   CredentialStatus,
   CredentialUpsertBody,
   DbStateTierResponse,
@@ -357,4 +359,18 @@ export const credentialApi = {
     putJson<CredentialStatus>(`${API_BASE}/projects/${projectId}/credentials`, body),
   /** DELETE /projects/{id}/credentials — clear stored credentials. */
   remove: (projectId: string) => del(`${API_BASE}/projects/${projectId}/credentials`),
+};
+
+/** Login config for the authenticated crawl (ADR-0056) — where/how runs sign in.
+ *  Carries NO secret (those go to credentialApi); PUT/DELETE are MANAGE_PROJECT. */
+export const authConfigApi = {
+  /** GET /projects/{id}/auth-config — the stored login config, or configured=false. */
+  get: (projectId: string) =>
+    getJson<AuthConfigStatus>(`${API_BASE}/projects/${projectId}/auth-config`),
+  /** PUT /projects/{id}/auth-config — set/replace the login config. */
+  put: (projectId: string, body: AuthConfigUpsertBody) =>
+    putJson<AuthConfigStatus>(`${API_BASE}/projects/${projectId}/auth-config`, body),
+  /** DELETE /projects/{id}/auth-config — clear it (crawl reverts to unauthenticated). */
+  remove: (projectId: string) =>
+    del(`${API_BASE}/projects/${projectId}/auth-config`),
 };

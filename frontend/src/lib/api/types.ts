@@ -272,19 +272,46 @@ export interface DocumentListResponse {
 /** How a project's runs obtain a target-app account. */
 export type CredentialMode = "specific_account" | "polaris_creates";
 
-/** The SAFE credential view — the secret is write-only and NEVER returned. */
+/** The SAFE credential view — the secret is write-only and NEVER returned.
+ *  `has_totp` is true when an authenticator seed is stored (unattended 2FA). */
 export interface CredentialStatus {
   mode: string;
   identifier: string | null;
   has_credentials: boolean;
+  has_totp: boolean;
 }
 
-/** PUT body. `secret` is write-only; required (with `identifier`) for a specific
- *  account, omitted for polaris_creates (which clears any stored secret). */
+/** PUT body. `secret` + `totp_secret` are write-only; `secret` (with `identifier`)
+ *  is required for a specific account. Omitting `totp_secret` on a specific-account
+ *  update preserves any stored seed; polaris_creates clears everything. */
 export interface CredentialUpsertBody {
   mode: CredentialMode;
   identifier?: string | null;
   secret?: string | null;
+  totp_secret?: string | null;
+}
+
+/** The stored login config for the authenticated crawl (ADR-0056). No secret. */
+export interface AuthConfigStatus {
+  configured: boolean;
+  login_url: string | null;
+  username_selector: string | null;
+  password_selector: string | null;
+  submit_selector: string | null;
+  otp_selector: string | null;
+  otp_submit_selector: string | null;
+  success_selector: string | null;
+}
+
+/** PUT body for the login config — `login_url` required, selectors optional. */
+export interface AuthConfigUpsertBody {
+  login_url: string;
+  username_selector?: string | null;
+  password_selector?: string | null;
+  submit_selector?: string | null;
+  otp_selector?: string | null;
+  otp_submit_selector?: string | null;
+  success_selector?: string | null;
 }
 
 // --- findings ---------------------------------------------------------------

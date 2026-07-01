@@ -728,6 +728,35 @@ class CredentialStatusResponse(BaseModel):
     has_totp: bool = False
 
 
+class AuthConfigUpsert(BaseModel):
+    """Set a project's login config for the authenticated crawl (ADR-0056), stored in
+    ``settings['auth_config']``. ``login_url`` is required; the DOM selectors are
+    optional overrides (the cross-stack defaults on AuthConfig cover most apps). This
+    carries NO secret — the account + password + TOTP seed live in the vault."""
+
+    login_url: str = Field(min_length=1, max_length=2048)
+    username_selector: str | None = Field(default=None, max_length=512)
+    password_selector: str | None = Field(default=None, max_length=512)
+    submit_selector: str | None = Field(default=None, max_length=512)
+    otp_selector: str | None = Field(default=None, max_length=512)
+    otp_submit_selector: str | None = Field(default=None, max_length=512)
+    success_selector: str | None = Field(default=None, max_length=512)
+
+
+class AuthConfigResponse(BaseModel):
+    """A project's stored login config (never a secret). ``configured`` is false when
+    no ``auth_config`` is set (the crawl runs unauthenticated)."""
+
+    configured: bool = False
+    login_url: str | None = None
+    username_selector: str | None = None
+    password_selector: str | None = None
+    submit_selector: str | None = None
+    otp_selector: str | None = None
+    otp_submit_selector: str | None = None
+    success_selector: str | None = None
+
+
 # --- self-healing (B8, ADR-0040) --------------------------------------------
 
 
