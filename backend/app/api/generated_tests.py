@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import Permission
+from app.models.test_case import TestCase
 from app.repositories.node_repository import NodeRepository
 from app.repositories.test_case_repository import TestCaseRepository
 from app.repositories.test_script_repository import TestScriptRepository
@@ -24,6 +25,23 @@ from .deps import CurrentUser, get_session
 from .schemas import TestCaseListResponse, TestCaseSummary
 
 router = APIRouter(prefix="/api/v1", tags=["tests"])
+
+
+def _target_label(case: TestCase, names: dict[uuid.UUID, str]) -> str:
+    """The human-readable target a case tests.
+
+    Prefer the resolved Brain node name; else the target the generator recorded in
+    ``case_key`` ("METHOD path::type::…" → the part before the first "::"); else a
+    dash. Generated cases carry their target in ``case_key`` (``target_node`` is
+    frequently unset), so the key fallback is what makes the viewer readable at all.
+    """
+    if case.target_node is not None:
+        name = names.get(case.target_node)
+        if name:
+            return name
+    if case.case_key:
+        return case.case_key.split("::", 1)[0]
+    return "—"
 
 
 @router.get("/projects/{project_id}/tests", response_model=TestCaseListResponse)
@@ -54,15 +72,10 @@ async def list_project_tests(
     items: list[TestCaseSummary] = []
     for case in cases:
         script = scripts.get(case.id)
-        target = (
-            (names.get(case.target_node) or "—")
-            if case.target_node is not None
-            else "—"
-        )
         items.append(
             TestCaseSummary(
                 id=case.id,
-                target=target,
+                target=_target_label(case, names),
                 type=case.type.value,
                 layer=case.layer.value,
                 oracle_source=case.oracle_source.value,

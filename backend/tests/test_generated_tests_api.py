@@ -68,15 +68,35 @@ async def test_lists_current_tests_with_code_target_and_facets(
     assert "class Happy_x" in item["code"]
 
 
-async def test_a_case_without_a_target_node_reads_as_a_dash(
+async def test_target_falls_back_to_case_key_when_the_node_is_unset(
     authed_client: tuple[AsyncClient, FastAPI],
     db_session: AsyncSession,
 ) -> None:
-    # A case with no target_node (or a since-removed node) must not 500 — it degrades
-    # to a dash, and a case with no script yet returns empty code.
+    # Generated cases usually carry their target in case_key ("METHOD path::type::…"),
+    # not target_node — so the viewer must read the target from the key, else every
+    # row would show a useless dash.
     client, _ = authed_client
     project_id = await _new_project(client)
-    case = make_test_case(project_id, target_node=None)
+    case = make_test_case(
+        project_id, target_node=None, case_key="GET /orders::happy::happy"
+    )
+    db_session.add(case)
+    await db_session.flush()
+
+    resp = await client.get(f"/api/v1/projects/{project_id}/tests")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["items"][0]["target"] == "GET /orders"
+
+
+async def test_a_case_with_no_target_at_all_reads_as_a_dash(
+    authed_client: tuple[AsyncClient, FastAPI],
+    db_session: AsyncSession,
+) -> None:
+    # No node AND no case_key must not 500 — it degrades to a dash, and a case with
+    # no script yet returns empty code.
+    client, _ = authed_client
+    project_id = await _new_project(client)
+    case = make_test_case(project_id, target_node=None, case_key=None)
     db_session.add(case)
     await db_session.flush()
 
