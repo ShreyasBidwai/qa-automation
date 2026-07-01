@@ -106,8 +106,9 @@ describe("LiveRunView", () => {
     render(<LiveRunView runId="r1" />);
     await screen.findByText("Run failed");
 
-    // The failing step auto-reveals → its screenshot image is shown.
-    expect(screen.getByText("Hide screenshot")).toBeInTheDocument();
+    // The failing step auto-reveals → its screenshot image is shown. The reveal is a
+    // useEffect, so await it (findBy) — a sync getBy races it under full-suite load.
+    expect(await screen.findByText("Hide screenshot")).toBeInTheDocument();
     expect(
       screen.getByRole("img", { name: /Screenshot for step #3/ }),
     ).toBeInTheDocument();
