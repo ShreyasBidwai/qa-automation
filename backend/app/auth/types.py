@@ -51,6 +51,11 @@ class AuthConfig:
     )
     otp_submit_selector: str = "button[type=submit], input[type=submit]"
     success_selector: str | None = None
+    # The target account's TOTP (authenticator-app) shared secret, base32. Present ⇒
+    # the run can use the automated TotpStrategy (generate the code via pyotp) instead
+    # of prompting a human. A SECRET: excluded from the repr, never logged/persisted in
+    # the clear (it comes decrypted from the vault only at use, ADR-0053).
+    totp_secret: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)

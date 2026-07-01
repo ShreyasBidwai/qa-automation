@@ -1,9 +1,8 @@
 """Config-driven AuthStrategy selection (mirrors build_ai_provider, T4.2a).
 
-Resolves an ``AuthVariant`` to a strategy. ``none``/``test_bypass``/``manual``
-are built ready-to-use; the automated variants resolve to a parked strategy
-whose ``login`` raises ``NotImplementedError`` (so the registry stays complete
-while only the interim manual path actually runs).
+Resolves an ``AuthVariant`` to a strategy. ``none``/``test_bypass``/``manual``/``totp``
+are built ready-to-use (``totp`` computes the authenticator code via pyotp from the
+target's TOTP secret); ``email_otp``/``sms_otp`` remain parked (docs/parking-lot.md).
 """
 
 from __future__ import annotations
@@ -55,7 +54,9 @@ def build_auth_strategy(
             session_ttl_s=session_ttl_s,
         )
     if variant is AuthVariant.TOTP:
-        return TotpStrategy()
+        if browser is None:
+            raise AuthConfigError("totp auth requires a browser")
+        return TotpStrategy(browser=browser, clock=clock, session_ttl_s=session_ttl_s)
     if variant is AuthVariant.EMAIL_OTP:
         return EmailOtpStrategy()
     if variant is AuthVariant.SMS_OTP:

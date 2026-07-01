@@ -14,7 +14,7 @@ raise `NotImplementedError` pointing here:
 
 | Variant | Intended approach | Why parked | Unpark when |
 |---|---|---|---|
-| `totp` | Generate the code from a shared secret via `pyotp`. | Needs the target to expose/seed a TOTP secret to the tester; only some targets use TOTP. | The challenge log shows `totp`/authenticator challenges dominate. |
+| ~~`totp`~~ | ✅ **IMPLEMENTED** — `TotpStrategy` generates the code from the target's TOTP secret (encrypted in the credentials vault) via `pyotp`, so the run authenticates unattended. | — | Done. |
 | `email_otp` | Read the code from a dedicated test inbox (IMAP/API). | Needs a provisioned test mailbox + parsing per template. | Email OTP is the common challenge and a test inbox is available. |
 | `sms_otp` | Read the code via a programmable-number provider (e.g. Twilio). | Costs money + a real number per account; provider integration. | SMS OTP dominates and a number provider is approved. |
 

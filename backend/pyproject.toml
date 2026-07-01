@@ -29,6 +29,11 @@ ignore_missing_imports = true
 module = ["boto3.*", "botocore.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# pyotp ships no inline types; the TOTP auth strategy uses it behind AuthStrategy.
+module = ["pyotp.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

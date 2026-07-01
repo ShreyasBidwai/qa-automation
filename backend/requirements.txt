@@ -27,3 +27,7 @@ cryptography==43.0.3
 # or any S3 API). Credentials come from boto3's standard env/IAM chain — never our
 # config, never a URL, never logged. Local disk stays the default (single-box/dev).
 boto3==1.35.36
+# TOTP code generation for the automated authenticator-app auth strategy (RFC 6238).
+# Pure-Python, no native deps. OTP is CONFIGURED (a per-target TOTP secret from the
+# vault), never cracked; the secret is never logged (ADR-0053).
+pyotp==2.9.0
