@@ -46,10 +46,16 @@ from .errors import (
     AITransientError,
     AllModelsExhausted,
 )
-from .prompts import GENERATE_INSTRUCTION
+from .prompts import GENERATE_INSTRUCTION, TRIAGE_INSTRUCTION
 from .retry import with_retries
+from .triage import parse_triage_label, render_failure
 from .types import FailureEvidence, Subgraph, TriageLabel
-from .usage import PHASE_GENERATION, CliUsage, record_usage
+from .usage import PHASE_GENERATION, PHASE_TRIAGE, CliUsage, record_usage
+
+# Triage prompts are tiny; a small budget keeps the call cheap (build_within_budget
+# trims a giant trace). Triage uses the primary model with a bounded retry — no
+# day-fallback chain (a transient quota failure surfaces retryable, then best-effort).
+_TRIAGE_BUDGET_TOKENS = 8000
 
 logger = logging.getLogger("app.ai")
 
@@ -388,7 +394,9 @@ class GeminiProvider:
                     ) from exc
                 self._sleep(_bounded_minute_delay(exc.retry_delay, self._minute_cap))
 
-    def _invoke_model(self, model: str, assembled: str) -> str:
+    def _invoke_model(
+        self, model: str, assembled: str, *, phase: str = PHASE_GENERATION
+    ) -> str:
         url = f"{self._base_url}/models/{model}:generateContent"
         headers = {
             "Content-Type": "application/json",
@@ -421,11 +429,47 @@ class GeminiProvider:
             raise AITransientError(f"gemini API returned HTTP {status}")
 
         text, usage = parse_gemini_response(response_text, model=model)
-        record_usage(usage, phase=PHASE_GENERATION)
+        record_usage(usage, phase=phase)
         text = text.strip()
         if not text:
             raise AITransientError("gemini API returned empty output")
         return text
 
     def triage(self, failure: FailureEvidence) -> TriageLabel:
-        raise NotImplementedError("triage lands in Sprint 7")
+        """Classify a failing result via the primary model (ADR-0049 usage capture).
+
+        Single model + bounded retry (no day-fallback chain): a 429 is converted to a
+        retryable transient error, so triage stays simple and, on a hard failure,
+        raises the same bounded AI errors as generate for the caller to treat
+        best-effort.
+        """
+        if not self._api_key:
+            raise AIInvocationError(
+                "GEMINI_API_KEY is not set — required for the gemini provider"
+            )
+        parts = PromptParts(
+            instruction=TRIAGE_INSTRUCTION,
+            user_prompt=render_failure(failure),
+            context_text="",
+        )
+        assembled = build_within_budget(
+            parts, _TRIAGE_BUDGET_TOKENS, strategy=self._strategy
+        )
+        model = self._model_chain[0]
+        output = with_retries(
+            lambda: self._triage_invoke(model, assembled),
+            max_attempts=self._max_attempts,
+            base_delay=self._base_delay,
+            max_delay=self._max_delay,
+            retry_on=(AITimeout, AITransientError),
+            sleep=self._sleep,
+        )
+        return parse_triage_label(output)
+
+    def _triage_invoke(self, model: str, assembled: str) -> str:
+        # Reuse the one HTTP path; a 429 (either quota scope) becomes a retryable
+        # transient error — triage doesn't carry the generate path's day registry.
+        try:
+            return self._invoke_model(model, assembled, phase=PHASE_TRIAGE)
+        except (_DayExhausted, _MinuteRateLimited) as exc:
+            raise AITransientError("gemini triage was rate-limited") from exc

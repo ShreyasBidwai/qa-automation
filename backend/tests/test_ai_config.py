@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from app.ai.anthropic_api import AnthropicApiProvider
 from app.ai.claude_cli import ClaudeCliProvider
 from app.ai.factory import build_ai_provider
 from app.ai.gemini import GeminiProvider
@@ -37,6 +38,20 @@ def test_factory_selects_claude_cli_with_configured_model() -> None:
 def test_factory_selects_gemini() -> None:
     provider = build_ai_provider(_settings(ai_provider_mode="gemini"))
     assert isinstance(provider, GeminiProvider)
+
+
+def test_factory_selects_anthropic_api_with_tier_models() -> None:
+    provider = build_ai_provider(
+        _settings(
+            ai_provider_mode="anthropic_api",
+            ai_generate_model="claude-opus-4-8",
+            ai_triage_model="claude-haiku-4-5",
+        )
+    )
+    assert isinstance(provider, AnthropicApiProvider)
+    # Frontier model for generate, cheap model for triage (tier routing).
+    assert provider._generate_model == "claude-opus-4-8"
+    assert provider._triage_model == "claude-haiku-4-5"
 
 
 def test_factory_mode_override_wins_over_the_instance_default() -> None:

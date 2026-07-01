@@ -14,6 +14,7 @@ import { navigate } from "@/lib/router";
 
 import { DbStateTierCard } from "./DbStateTierCard";
 import { ProjectCredentialsCard } from "./ProjectCredentialsCard";
+import { ProjectLoginConfigCard } from "./ProjectLoginConfigCard";
 import { ProjectDocumentsCard } from "./ProjectDocumentsCard";
 import { useProject } from "./useProject";
 
@@ -56,6 +57,7 @@ export function EditProjectPage({ projectId }: { projectId: string }) {
         <div className="space-y-7">
           <EditForm key={project.id} projectId={projectId} project={project} />
           <ProjectCredentialsCard key={`cred-${project.id}`} projectId={projectId} />
+          <ProjectLoginConfigCard key={`login-${project.id}`} projectId={projectId} />
           <ProjectDocumentsCard key={`docs-${project.id}`} projectId={projectId} />
           <DbStateTierCard key={`tier-${project.id}`} projectId={projectId} />
           <DangerZone projectId={projectId} name={project.name} />
@@ -83,7 +85,9 @@ function EditForm({
   const [appUrl, setAppUrl] = useState(project.app_url ?? "");
   const [stack, setStack] = useState(project.stack ?? "");
   const [aiProvider, setAiProvider] = useState<AiProvider>(
-    project.ai_provider === "gemini" ? "gemini" : "claude_cli",
+    project.ai_provider === "gemini" || project.ai_provider === "anthropic_api"
+      ? project.ai_provider
+      : "claude_cli",
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -147,6 +151,7 @@ function EditForm({
           value={aiProvider}
           onChange={(value) => setAiProvider(value as AiProvider)}
           options={[
+            ["anthropic_api", "Claude (Anthropic API)"],
             ["claude_cli", "Claude (claude -p)"],
             ["gemini", "Gemini"],
           ]}

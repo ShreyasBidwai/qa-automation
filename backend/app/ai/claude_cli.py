@@ -27,14 +27,18 @@ from .budget import (
     estimate_tokens,
 )
 from .errors import AIInvocationError, AITimeout, AITransientError
-from .prompts import GENERATE_INSTRUCTION
+from .prompts import GENERATE_INSTRUCTION, TRIAGE_INSTRUCTION
 from .retry import with_retries
+from .triage import parse_triage_label, render_failure
 from .types import FailureEvidence, Subgraph, TriageLabel
-from .usage import PHASE_GENERATION, parse_envelope, record_usage
+from .usage import PHASE_GENERATION, PHASE_TRIAGE, parse_envelope, record_usage
 
 logger = logging.getLogger("app.ai")
 
 _GENERATE_INSTRUCTION = GENERATE_INSTRUCTION
+# Triage prompts are tiny (an instruction + one failure message); a small budget
+# keeps the cheap-model call cheap while build_within_budget trims a giant trace.
+_TRIAGE_BUDGET_TOKENS = 8000
 
 
 @dataclass(frozen=True)
@@ -109,7 +113,7 @@ class ClaudeCliProvider:
             },
         )
         output = with_retries(
-            lambda: self._invoke(assembled),
+            lambda: self._invoke(assembled, model=self._model, phase=PHASE_GENERATION),
             max_attempts=self._max_attempts,
             base_delay=self._base_delay,
             max_delay=self._max_delay,
@@ -122,27 +126,52 @@ class ClaudeCliProvider:
         )
         return output
 
-    def _invoke(self, assembled: str) -> str:
+    def _invoke(self, assembled: str, *, model: str, phase: str) -> str:
         # ``--output-format json`` returns a single envelope carrying the model text
         # (``result``) plus the actual billed usage; parsing is internal — callers
-        # still receive only the output text (ADR-0049).
-        argv = [self._cli_path, "-p", "--output-format", "json", "--model", self._model]
+        # still receive only the output text (ADR-0049). ``model``/``phase`` let
+        # generate (frontier) and triage (cheap tier) share this one invocation path.
+        argv = [self._cli_path, "-p", "--output-format", "json", "--model", model]
         result = self._runner(argv, assembled, self._timeout)
         if result.returncode != 0:
             # stderr may echo prompt content — log the code only, not the body.
             logger.warning(
-                "ai.generate.nonzero_exit",
-                extra={"model": self._model, "returncode": result.returncode},
+                "ai.invoke.nonzero_exit",
+                extra={"model": model, "phase": phase, "returncode": result.returncode},
             )
             raise AITransientError(f"claude CLI exited with code {result.returncode}")
         # Best-effort capture: malformed/non-JSON output falls back to the raw stdout
-        # as the text and flags usage unavailable — never breaks or alters generation.
-        output, usage = parse_envelope(result.stdout, model=self._model)
-        record_usage(usage, phase=PHASE_GENERATION)
+        # as the text and flags usage unavailable — never breaks or alters the call.
+        output, usage = parse_envelope(result.stdout, model=model)
+        record_usage(usage, phase=phase)
         output = output.strip()
         if not output:
             raise AITransientError("claude CLI returned empty output")
         return output
 
     def triage(self, failure: FailureEvidence) -> TriageLabel:
-        raise NotImplementedError("triage lands in Sprint 7")
+        """Classify a failing result via the cheap-tier model (ADR-0049 usage capture).
+
+        Runs the shared triage prompt through the ``ai_triage_model`` and parses the
+        reply to a label. Raises the same bounded AI errors as generate on a hard
+        failure; the caller (the run's triage phase) treats that best-effort.
+        """
+        parts = PromptParts(
+            instruction=TRIAGE_INSTRUCTION,
+            user_prompt=render_failure(failure),
+            context_text="",
+        )
+        assembled = build_within_budget(
+            parts, _TRIAGE_BUDGET_TOKENS, strategy=self._strategy
+        )
+        output = with_retries(
+            lambda: self._invoke(
+                assembled, model=self._triage_model, phase=PHASE_TRIAGE
+            ),
+            max_attempts=self._max_attempts,
+            base_delay=self._base_delay,
+            max_delay=self._max_delay,
+            retry_on=(AITimeout, AITransientError),
+            sleep=self._sleep,
+        )
+        return parse_triage_label(output)

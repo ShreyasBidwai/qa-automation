@@ -48,10 +48,11 @@ class ProjectCreate(BaseModel):
     app_url: str | None = Field(default=None, max_length=2048)
     auth_config_ref: str | None = Field(default=None, max_length=512)
     stack: str | None = Field(default=None, max_length=64)
-    # Which AI backend this project's runs use for generation. Allow-listed at the
-    # boundary (defense in depth alongside the resolver); null ⇒ the instance default
-    # (AI_PROVIDER_MODE). The API NEVER accepts an API key — keys are env-only.
-    ai_provider: Literal["claude_cli", "gemini"] | None = None
+    # Which AI backend this project's runs use for generation + triage. Allow-listed
+    # at the boundary (defense in depth alongside the resolver); null ⇒ the instance
+    # default (AI_PROVIDER_MODE). The API NEVER accepts an API key — keys are env-only
+    # (each provider reads its own: ANTHROPIC_API_KEY / GEMINI_API_KEY).
+    ai_provider: Literal["anthropic_api", "claude_cli", "gemini"] | None = None
     org_id: uuid.UUID | None = None
 
 
@@ -66,9 +67,9 @@ class ProjectUpdate(BaseModel):
     repo_url: str | None = Field(default=None, min_length=1, max_length=2048)
     app_url: str | None = Field(default=None, max_length=2048)
     stack: str | None = Field(default=None, max_length=64)
-    # Switch the project's AI backend (claude_cli | gemini); null clears it back to
-    # the instance default. Allow-listed; never a key.
-    ai_provider: Literal["claude_cli", "gemini"] | None = None
+    # Switch the project's AI backend (anthropic_api | claude_cli | gemini); null
+    # clears it back to the instance default. Allow-listed; never a key.
+    ai_provider: Literal["anthropic_api", "claude_cli", "gemini"] | None = None
 
 
 class ProjectResponse(BaseModel):
@@ -454,6 +455,10 @@ class FindingResponse(BaseModel):
     evidence_ref: str | None = None
     # Triage disposition, keyed by root_cause_key (ADR-0027); absent record = open.
     triage: TriageInfo
+    # The AI's root-cause classification of the failure (real-bug / bad-test / flaky /
+    # infra / unknown), or None if triage didn't run. Distinct from ``triage`` above,
+    # which is the human disposition; this is the model's read (signal vs noise).
+    ai_triage: str | None = None
     # True when an active heal masks this finding (B8): a LOCATION failure that's
     # addressing drift ("test needs re-addressing"), not a broken app. Dropped from
     # the default inbox; reachable via the heals list or ``include_superseded``.
@@ -628,6 +633,9 @@ class RunEventItem(BaseModel):
     status: str
     detail: dict[str, Any] | None = None
     timestamp: datetime
+    # Whether this step has a stored screenshot, fetched via the authorized
+    # ``GET /runs/{run_id}/events/screenshot?seq=N`` — the opaque ref is never exposed.
+    has_screenshot: bool = False
 
 
 class RunEventsResponse(BaseModel):
@@ -694,6 +702,10 @@ class CredentialUpsert(BaseModel):
     mode: CredentialModeLiteral
     identifier: str | None = Field(default=None, max_length=512)
     secret: SecretStr | None = Field(default=None)
+    # Optional TOTP (authenticator-app) seed for unattended 2FA — write-only, encrypted
+    # at rest, never returned. Omitting it on a specific_account update PRESERVES any
+    # stored seed; switching to polaris_creates clears it.
+    totp_secret: SecretStr | None = Field(default=None)
 
     @model_validator(mode="after")
     def _require_for_specific_account(self) -> CredentialUpsert:
@@ -706,12 +718,43 @@ class CredentialUpsert(BaseModel):
 
 
 class CredentialStatusResponse(BaseModel):
-    """The safe view of a project's credentials — NEVER the secret. ``has_credentials``
-    is true iff an encrypted account secret is stored (ADR-0053)."""
+    """The safe view of a project's credentials — NEVER a secret. ``has_credentials``
+    is true iff an encrypted account secret is stored; ``has_totp`` iff an encrypted
+    TOTP seed is stored (so runs can do unattended 2FA). (ADR-0053)."""
 
     mode: str
     identifier: str | None = None
     has_credentials: bool = False
+    has_totp: bool = False
+
+
+class AuthConfigUpsert(BaseModel):
+    """Set a project's login config for the authenticated crawl (ADR-0056), stored in
+    ``settings['auth_config']``. ``login_url`` is required; the DOM selectors are
+    optional overrides (the cross-stack defaults on AuthConfig cover most apps). This
+    carries NO secret — the account + password + TOTP seed live in the vault."""
+
+    login_url: str = Field(min_length=1, max_length=2048)
+    username_selector: str | None = Field(default=None, max_length=512)
+    password_selector: str | None = Field(default=None, max_length=512)
+    submit_selector: str | None = Field(default=None, max_length=512)
+    otp_selector: str | None = Field(default=None, max_length=512)
+    otp_submit_selector: str | None = Field(default=None, max_length=512)
+    success_selector: str | None = Field(default=None, max_length=512)
+
+
+class AuthConfigResponse(BaseModel):
+    """A project's stored login config (never a secret). ``configured`` is false when
+    no ``auth_config`` is set (the crawl runs unauthenticated)."""
+
+    configured: bool = False
+    login_url: str | None = None
+    username_selector: str | None = None
+    password_selector: str | None = None
+    submit_selector: str | None = None
+    otp_selector: str | None = None
+    otp_submit_selector: str | None = None
+    success_selector: str | None = None
 
 
 # --- self-healing (B8, ADR-0040) --------------------------------------------

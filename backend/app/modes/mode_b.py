@@ -24,17 +24,22 @@ from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.types import AIProvider, FailureEvidence
 from app.ai.usage import UsageCollector, install_collector, reset_collector
+from app.auth.types import AuthConfig
 from app.brain.cross_layer import Impact, Subgraph
+from app.crawler.crawler import FrontendCrawler
+from app.crawler.types import CrawlConfig, CrawlResult
 from app.db_state.run_phase import DbStatePhaseReport, DbStateRunPhase
 from app.execution.lifecycle import STATUS_PASSED as RUN_STATUS_PASSED
 from app.execution.lifecycle import RunLifecycle
 from app.execution.types import ExecutionRunner, PestScript, TargetEnv
 from app.models.ai_usage import AiUsage
-from app.models.enums import RunMode, RunTrigger
+from app.models.enums import Outcome, RunMode, RunTrigger, Triage
 from app.models.finding import Finding
 from app.models.result import Result
 from app.progress import (
+    PHASE_CRAWL,
     PHASE_GENERATE,
     PHASE_REVIEW,
     PHASE_RUN,
@@ -124,6 +129,9 @@ class ModeBRunReport:
     # (default) or the project is ``off``; carries the refusal reason when the
     # non-prod gate refused the target. Additive — internal report only.
     db_state: DbStatePhaseReport | None = None
+    # Frontend crawl outcome (T4.2): None when no crawler is wired or the UI layer is
+    # out of scope; carries page/edge counts when the run crawled the target frontend.
+    crawl: CrawlResult | None = None
 
 
 def _trigger_for(kind: SelectionStrategyKind) -> RunTrigger:
@@ -142,6 +150,9 @@ class ModeBOrchestrator:
         resolver: BrainResolver,
         generator: TargetGenerator,
         db_state: DbStateRunPhase | None = None,
+        crawler: FrontendCrawler | None = None,
+        auth_config: AuthConfig | None = None,
+        ai_provider: AIProvider | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._session = session
@@ -150,6 +161,12 @@ class ModeBOrchestrator:
         self._resolver = resolver
         self._generator = generator
         self._db_state = db_state
+        self._crawler = crawler
+        # The login config the crawl authenticates with (None ⇒ unauthenticated). Its
+        # repr masks the secret; it is never logged or put in the run summary/events.
+        self._auth_config = auth_config
+        # The AI provider used to triage failures (None ⇒ triage phase skipped).
+        self._ai_provider = ai_provider
         self._clock = clock
         self._cases = TestCaseRepository(session)
         self._scripts = TestScriptRepository(session)
@@ -243,6 +260,10 @@ class ModeBOrchestrator:
         await self._flush_usage(project_id, run.id, usage)
         results = await ResultRepository(self._session).list_for_run(project_id, run.id)
 
+        # AI triage (ADR-0049 usage-captured): classify WHY each failure happened
+        # (real-bug / bad-test / flaky / infra) so the operator sees signal vs noise.
+        await self._triage_failures(results)
+
         # Reporting pipeline (reused): assemble → DB-state phase → score → classify
         # → rank. DB-state findings (layer=db) land before scoring so they flow
         # through the rest of the pipeline like any other finding.
@@ -258,6 +279,11 @@ class ModeBOrchestrator:
             if db_in_scope
             else None
         )
+        # Frontend crawl phase (T4.2): when a crawler is wired and the UI layer is in
+        # scope, crawl the target frontend and write page nodes/edges into the Brain —
+        # so a single run exercises backend + DB + frontend. Tier-free; defensive.
+        ui_in_scope = bounds.layers is None or "ui" in bounds.layers
+        crawl_result = await self._run_crawl_phase(project_id) if ui_in_scope else None
 
         scorer = SeverityScorer(self._session, impact_resolver=self._resolver)
         await scorer.score_run(project_id, run.id)
@@ -280,6 +306,7 @@ class ModeBOrchestrator:
             status=run.status,
             ranked_findings=tuple(ranked),
             db_state=db_state_report,
+            crawl=crawl_result,
         )
         logger.info(
             "modes.mode_b.completed",
@@ -367,6 +394,117 @@ class ModeBOrchestrator:
             logger.exception(
                 "modes.mode_b.db_state_phase_failed",
                 extra={"project_id": str(project_id), "run_id": str(run_id)},
+            )
+            return None
+
+    async def _triage_failures(self, results: Sequence[Result]) -> None:
+        """Classify each failing result with the AI provider; best-effort (ADR-0049).
+
+        No provider ⇒ skipped. Only FAIL/ERROR results are triaged (a pass has no
+        root cause). Each classification is persisted on the result's ``triage`` and
+        surfaces on the finding. A per-result triage failure is logged and left
+        ``None`` — triage must never break or fail a run.
+        """
+        if self._ai_provider is None:
+            return
+        failing = [r for r in results if r.outcome in (Outcome.FAIL, Outcome.ERROR)]
+        if not failing:
+            return
+        await emit(
+            phase=PHASE_REVIEW,
+            step=f"Triage {len(failing)} failures",
+            status=STATUS_STARTED,
+            detail={"failures": len(failing)},
+        )
+        classified = 0
+        for result in failing:
+            label = self._classify(result)
+            if label is not None:
+                result.triage = label
+                classified += 1
+        await self._session.flush()
+        await emit(
+            phase=PHASE_REVIEW,
+            step="Triage complete",
+            status=STATUS_PASSED,
+            detail={"triaged": classified, "failures": len(failing)},
+        )
+
+    def _classify(self, result: Result) -> Triage | None:
+        """One result → an AI triage label, or None if the provider errors."""
+        try:
+            return self._ai_provider.triage(  # type: ignore[union-attr]
+                FailureEvidence(
+                    test_case_id=str(result.test_case_id),
+                    outcome=result.outcome.value,
+                    message=result.message or "",
+                    evidence_ref=result.evidence_ref,
+                )
+            )
+        except Exception:  # noqa: BLE001 — triage is best-effort, never breaks a run
+            logger.warning(
+                "modes.mode_b.triage_failed",
+                extra={"result_id": str(result.id)},
+            )
+            return None
+
+    async def _run_crawl_phase(self, project_id: uuid.UUID) -> CrawlResult | None:
+        """Crawl the target frontend if a crawler is wired; NEVER crash the run.
+
+        Bounded BFS from the project's ``base_url`` (the served frontend), writing
+        page nodes + navigates/calls edges into the Brain so one run covers backend +
+        DB + frontend. No crawler or no ``base_url`` ⇒ skipped. Defensive like the
+        DB-state phase: any failure is logged and the rest of the run is unaffected.
+        """
+        if self._crawler is None or not self._target_env.base_url:
+            return None
+        # Frame the phase so the live view shows "Explore live site" even before the
+        # first page lands; the crawler emits a watchable frame per page in between.
+        await emit(
+            phase=PHASE_CRAWL,
+            step="Explore live site",
+            status=STATUS_STARTED,
+            detail={"base_url": self._target_env.base_url},
+        )
+        try:
+            result = await self._crawler.crawl(
+                session=self._session,
+                project_id=project_id,
+                config=CrawlConfig(
+                    base_url=self._target_env.base_url,
+                    max_pages=10,
+                    max_depth=2,
+                    time_budget_s=60.0,
+                    # Log in + crawl behind the gate when a login config is present;
+                    # the crawler delegates the single login to its AuthStrategy.
+                    auth=self._auth_config,
+                ),
+            )
+            logger.info(
+                "modes.mode_b.crawl_phase",
+                extra={"project_id": str(project_id), "pages": result.pages},
+            )
+            await emit(
+                phase=PHASE_CRAWL,
+                step=f"Explored {result.pages} pages",
+                status=STATUS_PASSED,
+                detail={
+                    "pages": result.pages,
+                    "nav_edges": result.nav_edges,
+                    "call_edges": result.call_edges,
+                },
+            )
+            return result
+        except Exception:  # noqa: BLE001 — the crawl must never crash the rest of a run
+            logger.exception(
+                "modes.mode_b.crawl_phase_failed",
+                extra={"project_id": str(project_id)},
+            )
+            await emit(
+                phase=PHASE_CRAWL,
+                step="Explore live site",
+                status=STATUS_FAILED,
+                detail={"base_url": self._target_env.base_url},
             )
             return None
 

@@ -133,6 +133,11 @@ class FindingDetail:
     location: dict[str, Any]
     evidence: list[dict[str, Any]]
     history: dict[str, Any]
+    # The AI's root-cause classification of the representative failure (a Triage
+    # value: real-bug / bad-test / flaky / infra / unknown), or None if triage did
+    # not run / classify. This is the model's read, distinct from the human triage
+    # DISPOSITION (open/resolved/…) carried separately.
+    ai_triage: str | None = None
 
 
 class FindingDetailReader:
@@ -177,6 +182,12 @@ class FindingDetailReader:
             evidence = self._evidence_for(
                 members_by_finding.get(finding.id, []), results, cases, finding
             )
+            representative = results.get(finding.result_id)
+            ai_triage = (
+                representative.triage.value
+                if representative is not None and representative.triage is not None
+                else None
+            )
             detail[finding.id] = FindingDetail(
                 location=location_payload(finding.location),
                 evidence=evidence,
@@ -186,6 +197,7 @@ class FindingDetailReader:
                     runs_by_key.get(finding.root_cause_key, set()),
                     run_id,
                 ),
+                ai_triage=ai_triage,
             )
         return detail
 

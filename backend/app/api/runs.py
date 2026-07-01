@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.permissions import Permission
@@ -39,6 +39,7 @@ from app.repositories.finding_triage_repository import FindingTriageRepository
 from app.repositories.result_repository import ResultRepository
 from app.repositories.run_event_repository import RunEventRepository
 from app.repositories.run_repository import RunRepository
+from app.screenshots import get_screenshot
 from app.services.job_queue import JobQueue
 
 from .authz import authorize_project
@@ -282,6 +283,7 @@ def _event_item(event: RunEvent) -> RunEventItem:
         status=event.status,
         detail=event.detail,
         timestamp=event.created_at,
+        has_screenshot=event.screenshot_ref is not None,
     )
 
 
@@ -295,6 +297,7 @@ def _sse_frame(event: RunEvent) -> str:
             "status": event.status,
             "detail": event.detail,
             "timestamp": event.created_at.isoformat(),
+            "has_screenshot": event.screenshot_ref is not None,
         }
     )
     return f"id: {event.seq}\nevent: progress\ndata: {payload}\n\n"
@@ -380,6 +383,35 @@ async def stream_run_events(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/runs/{run_id}/events/screenshot")
+async def get_run_event_screenshot(
+    run_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    seq: Annotated[int, Query(ge=0)],
+) -> Response:
+    """Serve the screenshot bytes for one progress step — the live "browser frame".
+
+    Authorized (VIEW) like every ``/runs`` route; the opaque ref never leaves the
+    server (the client addresses a frame by its ``seq``). 404 for an unknown run /
+    seq, a step with no screenshot, or bytes the runner wrote on a filesystem this
+    node can't reach (ADR-0051) — existence is not leaked (ADR-0033).
+    """
+    job = await _authorized_run_job(
+        run_id,
+        session=session,
+        user=current_user,
+        permission=Permission.VIEW,
+    )
+    event = await RunEventRepository(session).get(job.project_id, run_id, seq)
+    if event is None or event.screenshot_ref is None:
+        raise HTTPException(status_code=404, detail="no screenshot for this step")
+    data = get_screenshot(event.screenshot_ref)
+    if data is None:
+        raise HTTPException(status_code=404, detail="screenshot not available")
+    return Response(content=data, media_type="image/png")
 
 
 @router.get("/runs/{run_id}/findings", response_model=FindingsResponse)

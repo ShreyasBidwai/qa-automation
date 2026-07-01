@@ -1,18 +1,20 @@
 """Screenshot storage — the SINGLE indirection over where bytes live (ADR-0051).
 
 Every screenshot write/read goes through ``store_screenshot`` / ``get_screenshot``
-so call sites never touch a filesystem path. The implementation is local disk
-tonight (a gitignored directory); the ref returned by ``store_screenshot`` is an
-OPAQUE key (never a path), so swapping the backend out is a one-module change.
+so call sites never touch a path or a bucket. The ref returned is an OPAQUE key
+(never a path), so the backend is a config choice, not a code change:
 
-# TODO: swap to object storage at deploy. Local disk only works while capture and
-# serve share a filesystem (the in-process stub/demo path). Real multi-container
-# Playwright runs write on the runner and serve from the control plane, which need
-# object storage — implement these two functions against it; nothing else changes.
+- ``local`` — a gitignored on-disk directory. Only valid single-box, where capture
+  (the runner) and serve (the control plane) share a filesystem — the dev/demo path.
+- ``s3`` — an S3-compatible bucket (AWS S3, MinIO, any S3 API). The decoupled
+  topology (ADR-0036) requires this: the runner writes a page/finding screenshot on
+  its host and the control plane serves it from another; a shared bucket is the only
+  place both can reach. Credentials come from boto3's standard env/IAM chain — never
+  from our config, never in a URL, never logged.
 
 Screenshots may contain sensitive app state (logged-in screens, real records), so
-they are NEVER served from a static/public path: bytes are read here and streamed
-only through the authorized ``GET /findings/{id}/screenshot`` endpoint.
+they are NEVER served from a static/public path (no public-read objects): bytes are
+read here and streamed only through the authorized finding/run screenshot endpoints.
 """
 
 from __future__ import annotations
@@ -22,48 +24,174 @@ import re
 import struct
 import uuid
 import zlib
+from functools import lru_cache
 from pathlib import Path
+from typing import Protocol
 
 from app.core.config import get_settings
 
 logger = logging.getLogger("app.screenshots")
 
-# A ref is an opaque 32-hex-char key (a stored file is ``<dir>/<ref>.png``). The
-# strict shape also forbids any path-traversal input reaching the filesystem.
+# A ref is an opaque 32-hex-char key (stored object is ``<ref>.png``). The strict
+# shape also forbids any path-traversal input reaching the filesystem/bucket.
 _REF = re.compile(r"\A[0-9a-f]{32}\Z")
+# A PROJECT-scoped ref groups screenshots per project (ADR-0051): the ref is
+# ``<project_uuid>/<hex>`` and the object is ``<project_uuid>/<hex>.png``. Both
+# segments are strictly validated, so a ref can never traverse the backend.
+_PROJECT_REF = re.compile(
+    r"\A([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})/([0-9a-f]{32})\Z"
+)
 _SUFFIX = ".png"
 
 
-def _base_dir(base_dir: str | Path | None) -> Path:
-    """The storage directory — the override (tests) or the configured default."""
+class ScreenshotBackend(Protocol):
+    """Where the bytes actually live. ``ref`` is an already-validated opaque key
+    (``<hex>`` or ``<project_id>/<hex>``); the backend owns the ``.png`` layout."""
+
+    def put(self, ref: str, data: bytes) -> None: ...
+
+    def get(self, ref: str) -> bytes | None: ...
+
+
+class LocalDiskStore:
+    """On-disk backend: ``<base_dir>/<ref>.png`` (a project ref nests a subdir)."""
+
+    def __init__(self, base_dir: str | Path) -> None:
+        self._base = Path(base_dir)
+
+    def put(self, ref: str, data: bytes) -> None:
+        path = self._base / f"{ref}{_SUFFIX}"
+        path.parent.mkdir(parents=True, exist_ok=True)  # project subdir when nested
+        path.write_bytes(data)
+
+    def get(self, ref: str) -> bytes | None:
+        try:
+            return (self._base / f"{ref}{_SUFFIX}").read_bytes()
+        except OSError:
+            return None
+
+
+class S3Store:
+    """S3-compatible backend: object key ``<prefix>/<ref>.png`` in one bucket.
+
+    Credentials/region resolution is boto3's job (env vars, shared config, or an
+    instance/IRSA role) — we pass none here, so no secret touches our config or logs.
+    A missing object reads as ``None``; other errors propagate to the best-effort
+    capture seam (which logs and never breaks a run).
+    """
+
+    def __init__(
+        self,
+        *,
+        bucket: str,
+        prefix: str,
+        endpoint_url: str | None,
+        region: str,
+    ) -> None:
+        if not bucket:
+            raise ValueError("screenshot_s3_bucket must be set when storage=s3")
+        # Lazy import so the (default) local path never pays boto3's import cost, and
+        # a dev clone without boto3 still boots for the local backend.
+        import boto3  # noqa: PLC0415 — intentionally lazy
+
+        self._bucket = bucket
+        self._prefix = prefix.strip("/")
+        self._client = boto3.client(
+            "s3", endpoint_url=endpoint_url or None, region_name=region
+        )
+
+    def _key(self, ref: str) -> str:
+        name = f"{ref}{_SUFFIX}"
+        return f"{self._prefix}/{name}" if self._prefix else name
+
+    def put(self, ref: str, data: bytes) -> None:
+        self._client.put_object(
+            Bucket=self._bucket,
+            Key=self._key(ref),
+            Body=data,
+            ContentType="image/png",
+        )
+
+    def get(self, ref: str) -> bytes | None:
+        from botocore.exceptions import ClientError  # noqa: PLC0415 — lazy
+
+        try:
+            obj = self._client.get_object(Bucket=self._bucket, Key=self._key(ref))
+        except ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code")
+            if code in {"NoSuchKey", "404", "NoSuchBucket"}:
+                return None
+            raise
+        data = obj["Body"].read()
+        return bytes(data)
+
+
+@lru_cache(maxsize=1)
+def _cached_s3_store(
+    bucket: str, endpoint_url: str | None, region: str, prefix: str
+) -> S3Store:
+    return S3Store(
+        bucket=bucket, prefix=prefix, endpoint_url=endpoint_url, region=region
+    )
+
+
+def reset_backend_cache() -> None:
+    """Drop the cached S3 client. For tests that swap backends between cases (so each
+    builds a fresh client inside its own mock context)."""
+    _cached_s3_store.cache_clear()
+
+
+def _backend(base_dir: str | Path | None) -> ScreenshotBackend:
+    """The active backend: an explicit ``base_dir`` (tests) forces local disk;
+    otherwise the configured backend (``local`` on-disk, or ``s3``)."""
     if base_dir is not None:
-        return Path(base_dir)
-    return Path(get_settings().screenshot_dir)
+        return LocalDiskStore(base_dir)
+    settings = get_settings()
+    if getattr(settings, "screenshot_storage", "local") == "s3":
+        return _cached_s3_store(
+            settings.screenshot_s3_bucket,
+            settings.screenshot_s3_endpoint_url,
+            settings.screenshot_s3_region,
+            settings.screenshot_s3_prefix,
+        )
+    return LocalDiskStore(settings.screenshot_dir)
 
 
 def store_screenshot(data: bytes, *, base_dir: str | Path | None = None) -> str:
-    """Persist screenshot ``data`` and return an opaque ref (never a path).
+    """Persist screenshot ``data`` and return an opaque ref (never a path/bucket key).
 
     The caller stores the ref on the row; reading goes back through
-    ``get_screenshot(ref)``. Raises on an I/O failure — the capture seam wraps this
-    best-effort so a storage failure can never break a run (ADR-0051).
+    ``get_screenshot(ref)``. Raises on a storage failure — the capture seam wraps this
+    best-effort so a failure can never break a run (ADR-0051).
     """
     ref = uuid.uuid4().hex
-    directory = _base_dir(base_dir)
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / f"{ref}{_SUFFIX}").write_bytes(data)
+    _backend(base_dir).put(ref, data)
+    return ref
+
+
+def store_project_screenshot(
+    project_id: uuid.UUID, data: bytes, *, base_dir: str | Path | None = None
+) -> str:
+    """Persist screenshot ``data`` under a per-PROJECT namespace; ref is ``<id>/<hex>``.
+
+    The user-facing organisation the operator asked for: every project's testing
+    screenshots live together (a folder on disk, a key prefix in S3). The returned ref
+    is still opaque (no absolute path) and round-trips through ``get_screenshot``.
+    """
+    ref = f"{project_id}/{uuid.uuid4().hex}"
+    _backend(base_dir).put(ref, data)
     return ref
 
 
 def get_screenshot(ref: str, *, base_dir: str | Path | None = None) -> bytes | None:
-    """The bytes for ``ref``, or None if the ref is malformed or has no stored file."""
-    if not _REF.match(ref):
+    """The bytes for ``ref``, or None if the ref is malformed or has no stored object.
+
+    Accepts both a flat ref (``<hex>``) and a project-scoped ref (``<id>/<hex>``);
+    both segments are strictly validated, so a ref can never escape its namespace.
+    """
+    if not (_REF.match(ref) or _PROJECT_REF.match(ref)):
         return None
-    path = _base_dir(base_dir) / f"{ref}{_SUFFIX}"
-    try:
-        return path.read_bytes()
-    except OSError:
-        return None
+    return _backend(base_dir).get(ref)
 
 
 def placeholder_screenshot(

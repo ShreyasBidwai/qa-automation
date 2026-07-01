@@ -14,7 +14,7 @@ raise `NotImplementedError` pointing here:
 
 | Variant | Intended approach | Why parked | Unpark when |
 |---|---|---|---|
-| `totp` | Generate the code from a shared secret via `pyotp`. | Needs the target to expose/seed a TOTP secret to the tester; only some targets use TOTP. | The challenge log shows `totp`/authenticator challenges dominate. |
+| ~~`totp`~~ | ✅ **IMPLEMENTED** — `TotpStrategy` generates the code from the target's TOTP secret (encrypted in the credentials vault) via `pyotp`, so the run authenticates unattended. | — | Done. |
 | `email_otp` | Read the code from a dedicated test inbox (IMAP/API). | Needs a provisioned test mailbox + parsing per template. | Email OTP is the common challenge and a test inbox is available. |
 | `sms_otp` | Read the code via a programmable-number provider (e.g. Twilio). | Costs money + a real number per account; provider integration. | SMS OTP dominates and a number provider is approved. |
 
@@ -26,6 +26,12 @@ ADR-0016.
 
 ## Crawler depth (T4.2)
 
-The runtime frontend crawler loads pages and captures their calls, but does not
-yet submit forms or click through multi-step flows. Driving interactions would
-observe more endpoints. Unpark when endpoint coverage from passive loads plateaus.
+✅ **Partially unparked — safe interaction crawling.** The driver now clicks a few
+SAFE in-page controls (tabs/filters/"load more") after load to surface endpoints
+that only fire on interaction. It is bounded (`crawl_max_interactions`) and
+denylisted: it NEVER submits a form or clicks a destructive control (delete/pay/
+save/logout/…), so nothing mutating fires. Config: `crawl_interactions_enabled`.
+
+Still parked: multi-step FORM submission (would need synthetic data + is
+mutation-prone). Unpark when passive + safe-interaction coverage plateaus and a
+safe form-fill strategy (e.g. GET-only search forms) is warranted.

@@ -19,6 +19,7 @@ Repositories do the project-scoped writes (Standards §5).
 
 from __future__ import annotations
 
+import base64
 import logging
 import time
 import uuid
@@ -37,8 +38,10 @@ from app.embeddings.types import EmbeddingProvider
 from app.models.enums import EdgeKind, NodeKind
 from app.models.model_edge import ModelEdge
 from app.models.model_node import EMBEDDING_DIM, ModelNode
+from app.progress import PHASE_CRAWL, STATUS_PASSED, emit
 from app.repositories.edge_repository import EdgeRepository
 from app.repositories.node_repository import NodeRepository
+from app.screenshots.storage import store_project_screenshot
 
 from .errors import CrawlConfigError
 from .matching import EndpointMatcher
@@ -49,6 +52,23 @@ logger = logging.getLogger("app.crawler")
 
 # A rendered <a href> is direct DOM evidence of navigation — high confidence.
 _CONFIDENCE_NAV = 0.9
+
+
+def _store_page_screenshot(project_id: uuid.UUID, b64: str | None) -> str | None:
+    """Persist a page's screenshot under the project's folder; return the ref.
+
+    Best-effort (ADR-0051): no screenshot, bad base64, or a storage failure returns
+    None and is logged — a screenshot must NEVER break a crawl/run.
+    """
+    if not b64:
+        return None
+    try:
+        return store_project_screenshot(project_id, base64.b64decode(b64))
+    except Exception:  # noqa: BLE001 — a screenshot failure must not break the crawl
+        logger.warning(
+            "crawl.screenshot_store_failed", extra={"project_id": str(project_id)}
+        )
+        return None
 
 
 def _page_attributes(snapshot: PageSnapshot, page_identity: str) -> dict[str, Any]:
@@ -148,13 +168,19 @@ class FrontendCrawler:
             page_id = identity(snapshot.url)
             attributes = _page_attributes(snapshot, page_id)
             document = build_node_document(NodeKind.PAGE, page_id, attributes)
+            # Cache key is the page's CONTENT — computed before the (random) screenshot
+            # ref is attached, so a fresh screenshot each crawl never busts the cache.
             new_sha = content_sha(NodeKind.PAGE, page_id, attributes, document)
+            node_attributes = dict(attributes)
+            ref = _store_page_screenshot(project_id, snapshot.screenshot_b64)
+            if ref is not None:
+                node_attributes["screenshot_ref"] = ref
             node = await nodes.upsert(
                 ModelNode(
                     project_id=project_id,
                     kind=NodeKind.PAGE,
                     name=page_id,
-                    attributes=attributes,
+                    attributes=node_attributes,
                     source_sha=source_sha,
                 )
             )
@@ -163,6 +189,23 @@ class FrontendCrawler:
             if not cache_hit:
                 changed.append((node, document))
             pages[page_id] = node
+
+            # Live "browser frame" (ADR-0050): each visited page is a watchable step
+            # carrying its screenshot, so the operator sees the crawl page-by-page in
+            # the live view. Best-effort no-op off the run path (no emitter installed).
+            await emit(
+                phase=PHASE_CRAWL,
+                step=f"Visited {page_id}",
+                status=STATUS_PASSED,
+                detail={
+                    "url": snapshot.url,
+                    "title": snapshot.title,
+                    "forms": len(snapshot.forms),
+                    "links": len(snapshot.links),
+                    "calls": len(snapshot.network),
+                },
+                screenshot_ref=ref,
+            )
 
         # --- page -> page (navigates) + page -> endpoint (calls) edges -------
         nav_edges = 0

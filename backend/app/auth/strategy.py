@@ -1,11 +1,12 @@
 """AuthStrategy implementations (T4.2a).
 
-Implemented now: ``NoAuthStrategy`` (no login), ``StubAuthStrategy`` (tests), and
-``ManualOtpStrategy`` (the interim one — drives login in a browser, gets the OTP
-from an injected provider, caches/reuses the session). The automated variants
-(``totp`` / ``email_otp`` / ``sms_otp``) are declared behind the same contract
-but parked: their ``login`` raises ``NotImplementedError`` pointing at
-docs/parking-lot.md. OTP/2FA is configured, never cracked.
+Implemented: ``NoAuthStrategy`` (no login), ``StubAuthStrategy`` (tests),
+``ManualOtpStrategy`` (drives login in a browser, gets the OTP from an injected
+provider, caches/reuses the session), and ``TotpStrategy`` (the same flow but the
+authenticator code is generated via pyotp from the target's TOTP secret — automated,
+unattended). ``email_otp`` / ``sms_otp`` remain declared-but-parked behind the same
+contract (``login`` raises ``NotImplementedError``, docs/parking-lot.md). OTP/2FA is
+configured, never cracked.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pyotp
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.auth_challenge_log import AuthChallengeLog
@@ -119,7 +121,7 @@ class ManualOtpStrategy(AuthStrategy):
         self,
         *,
         browser: LoginBrowser,
-        otp_provider: OtpProvider,
+        otp_provider: OtpProvider | None = None,
         clock: Clock = _utcnow,
         session_ttl_s: float = 3600.0,
     ) -> None:
@@ -128,6 +130,13 @@ class ManualOtpStrategy(AuthStrategy):
         self._clock = clock
         self._ttl = session_ttl_s
         self._cache: dict[tuple[uuid.UUID, str], AuthSession] = {}
+
+    def _otp_provider_for(self, config: AuthConfig) -> OtpProvider:
+        """The OtpProvider for this login. Manual returns the injected provider;
+        automated variants (TOTP) override this to compute the code themselves."""
+        if self._otp_provider is None:
+            raise AuthConfigError("manual auth requires an OtpProvider")
+        return self._otp_provider
 
     async def login(
         self,
@@ -146,7 +155,8 @@ class ManualOtpStrategy(AuthStrategy):
             return cached  # reuse — no second browser drive, no second OTP prompt
 
         request = OtpRequest(project_id=project_id, account=config.account)
-        outcome = self._browser.run_login(config, self._otp_provider, request)
+        provider = self._otp_provider_for(config)
+        outcome = self._browser.run_login(config, provider, request)
 
         # Record the encounter (redacted) BEFORE raising on failure, so failures
         # are still captured for analysis. Never log the code/password/number.
@@ -199,10 +209,47 @@ class _ParkedStrategy(AuthStrategy):
         raise NotImplementedError(f"{self.variant.value} {_PARKED}")
 
 
-class TotpStrategy(_ParkedStrategy):
-    """Automated TOTP (e.g. pyotp) — parked (docs/parking-lot.md)."""
+class TotpStrategy(ManualOtpStrategy):
+    """Automated TOTP: generate the authenticator-app code via pyotp (RFC 6238).
+
+    The SAME login flow as ManualOtpStrategy — drive the browser, cache + reuse the
+    session, append the redacted challenge-log record — but the OTP code is COMPUTED
+    from the target account's TOTP shared secret (``AuthConfig.totp_secret``) instead
+    of prompting a human, so a run authenticates unattended. OTP is configured, never
+    cracked; the secret is never logged or persisted in the clear (ADR-0053).
+    """
 
     variant = AuthVariant.TOTP
+
+    def __init__(
+        self,
+        *,
+        browser: LoginBrowser,
+        clock: Clock = _utcnow,
+        session_ttl_s: float = 3600.0,
+    ) -> None:
+        # No human OtpProvider — the code is computed per-login from the secret.
+        super().__init__(
+            browser=browser,
+            otp_provider=None,
+            clock=clock,
+            session_ttl_s=session_ttl_s,
+        )
+
+    def _otp_provider_for(self, config: AuthConfig) -> OtpProvider:
+        secret = config.totp_secret
+        if not secret:
+            raise AuthConfigError(
+                "TOTP strategy requires a totp_secret in the AuthConfig"
+            )
+        totp = pyotp.TOTP(secret)
+
+        # The browser calls this when it detects the challenge; return the code valid
+        # right now. The secret stays in the closure — never in the request or a log.
+        def _provide(_request: OtpRequest) -> str:
+            return str(totp.now())
+
+        return _provide
 
 
 class EmailOtpStrategy(_ParkedStrategy):

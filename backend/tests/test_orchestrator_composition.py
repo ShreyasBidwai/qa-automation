@@ -128,3 +128,14 @@ def test_endpoint_spec_is_rebuilt_from_a_brain_node() -> None:
     assert email.required is True and email.type == "email"
     assert email.relational is not None and email.relational.table == "users"
     assert spec.validation_fields[1].constraints.min == 18.0
+
+
+def test_build_auth_strategy_selects_totp_when_a_secret_is_present() -> None:
+    # The crawl uses automated TOTP (unattended 2FA) when the resolved AuthConfig
+    # carries a totp_secret, and manual-OTP semantics otherwise.
+    from app.api.execution import _build_auth_strategy
+    from app.auth.strategy import ManualOtpStrategy, TotpStrategy
+
+    assert isinstance(_build_auth_strategy("/tmp/crawl", use_totp=True), TotpStrategy)
+    manual = _build_auth_strategy("/tmp/crawl", use_totp=False)
+    assert isinstance(manual, ManualOtpStrategy) and not isinstance(manual, TotpStrategy)

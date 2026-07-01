@@ -15,9 +15,10 @@ import pytest
 
 from app.ai.errors import AIInvocationError, AITransientError
 from app.ai.gemini import GeminiProvider, parse_gemini_response
-from app.ai.types import Subgraph, SubgraphNode
+from app.ai.types import FailureEvidence, Subgraph, SubgraphNode
 from app.ai.usage import UsageCollector, install_collector, reset_collector
 from app.core.config import Settings
+from app.models.enums import Triage
 
 
 def _settings(**overrides: Any) -> Settings:
@@ -85,6 +86,52 @@ def test_generate_succeeds_keeps_key_in_header_and_records_usage() -> None:
     usage = collector.records[0].usage
     assert usage.available and usage.input_tokens == 11 and usage.output_tokens == 7
     assert usage.total_cost_usd is None
+
+
+def _triage_body(label: str) -> str:
+    return json.dumps(
+        {
+            "candidates": [{"content": {"parts": [{"text": label}]}}],
+            "usageMetadata": {
+                "promptTokenCount": 9,
+                "candidatesTokenCount": 2,
+                "totalTokenCount": 11,
+            },
+        }
+    )
+
+
+def test_triage_classifies_via_the_api_and_records_triage_usage() -> None:
+    captured: dict[str, Any] = {}
+
+    def transport(
+        url: str, headers: dict[str, str], body: bytes, timeout: float
+    ) -> tuple[int, str]:
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["body"] = json.loads(body.decode("utf-8"))
+        return 200, _triage_body("bad-test")
+
+    provider = GeminiProvider(_settings(), transport=transport, sleep=_noop)
+    collector = UsageCollector()
+    token = install_collector(collector)
+    try:
+        label = provider.triage(
+            FailureEvidence(
+                test_case_id="c1", outcome="fail", message="missing factory setup"
+            )
+        )
+    finally:
+        reset_collector(token)
+
+    assert label is Triage.BAD_TEST
+    # Key stays in the header; the failure message rides in the prompt text.
+    assert captured["headers"]["x-goog-api-key"] == "test-key-123"
+    assert "test-key-123" not in captured["url"]
+    assert "missing factory setup" in captured["body"]["contents"][0]["parts"][0]["text"]
+    # Usage is captured under the TRIAGE phase (ADR-0049), not generation.
+    assert len(collector.records) == 1
+    assert collector.records[0].phase == "triage"
 
 
 def test_missing_key_fails_fast_without_any_call() -> None:

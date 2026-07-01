@@ -13,7 +13,9 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 
+import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx import AsyncClient
@@ -31,6 +33,7 @@ from app.models.run_event import RunEvent
 from app.modes.mode_b import ModeBBounds, ModeBOrchestrator
 from app.modes.selection import SelectionStrategyKind, build_selection_strategy
 from app.progress import (
+    PHASE_CRAWL,
     PHASE_EXECUTE,
     PHASE_GENERATE,
     PHASE_REVIEW,
@@ -46,8 +49,23 @@ from app.progress import (
     reset_emitter,
 )
 from app.repositories.run_event_repository import RunEventRepository
+from app.screenshots import store_screenshot
+from app.screenshots import storage as screenshot_storage
 from app.services.job_queue import JobQueue
 from tests.factories import make_project
+
+
+@pytest.fixture
+def shot_dir(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    """Point the screenshot indirection at a tmp dir so the serve endpoint (which
+    runs in-process here) reads back what the test stored."""
+    directory = tmp_path / "shots"
+    monkeypatch.setattr(
+        screenshot_storage,
+        "get_settings",
+        lambda: SimpleNamespace(screenshot_dir=str(directory)),
+    )
+    return directory
 from tests.test_mode_b import (
     _ENV,
     _FakeResolver,
@@ -111,6 +129,29 @@ async def test_emitter_persists_events_in_seq_order(
         ]
         assert events[1].detail == {"n": "x"}
         assert events[0].step == "run"
+    finally:
+        await _cleanup(committing_sm, run_id)
+
+
+async def test_emitter_persists_a_step_screenshot_ref(
+    committing_sm: async_sessionmaker[AsyncSession],
+) -> None:
+    # A crawl/execute step can carry an opaque screenshot ref — the live "browser
+    # frame" the operator watches. It round-trips onto the event row verbatim.
+    run_id, project_id = uuid.uuid4(), uuid.uuid4()
+    ref = f"{project_id}/{'a' * 32}"
+    emitter = RunProgressEmitter(committing_sm, run_id=run_id, project_id=project_id)
+    try:
+        await emitter.emit(
+            phase=PHASE_CRAWL,
+            step="Visited /",
+            status=STATUS_PASSED,
+            screenshot_ref=ref,
+        )
+        await emitter.emit(phase=PHASE_RUN, step="run", status=STATUS_PASSED)
+        events = await _events_for(committing_sm, project_id, run_id)
+        assert events[0].screenshot_ref == ref
+        assert events[1].screenshot_ref is None  # not every step has a frame
     finally:
         await _cleanup(committing_sm, run_id)
 
@@ -294,8 +335,13 @@ async def _seed_run_events(
     sequence: list[tuple[str, str]],
     *,
     job_status: JobStatus,
+    screenshot_at: dict[int, str] | None = None,
 ) -> uuid.UUID:
-    """Commit a project + a RUN job + the given (phase, status) events; return job id."""
+    """Commit a project + a RUN job + the given (phase, status) events; return job id.
+
+    ``screenshot_at`` maps a seq → an opaque screenshot ref to attach to that event.
+    """
+    shots = screenshot_at or {}
     async with app.state.sessionmaker() as session:
         project = make_project(org_id=org_id)
         session.add(project)
@@ -315,6 +361,7 @@ async def _seed_run_events(
                     step=f"step {seq}",
                     status=status,
                     detail={"seq": seq},
+                    screenshot_ref=shots.get(seq),
                 )
             )
         await session.commit()
@@ -415,4 +462,78 @@ async def test_run_events_endpoints_require_a_known_authorized_run(
     assert (await client.get(f"/api/v1/runs/{missing}/events")).status_code == 404
     assert (
         await client.get(f"/api/v1/runs/{missing}/events/stream")
+    ).status_code == 404
+    assert (
+        await client.get(f"/api/v1/runs/{missing}/events/screenshot?seq=0")
+    ).status_code == 404
+
+
+# --- the live "browser frame": has_screenshot + the per-seq serve endpoint ----
+
+
+async def test_replay_flags_steps_that_have_a_screenshot(
+    authed_client: tuple[AsyncClient, FastAPI], shot_dir
+) -> None:
+    client, app = authed_client
+    org_id = await _personal_org_id(client)
+    ref = store_screenshot(b"\x89PNG-frame")  # default (monkeypatched tmp) dir
+    job_id = await _seed_run_events(
+        app,
+        org_id,
+        [(PHASE_RUN, STATUS_STARTED), (PHASE_CRAWL, STATUS_PASSED)],
+        job_status=JobStatus.RUNNING,
+        screenshot_at={1: ref},
+    )
+
+    events = (await client.get(f"/api/v1/runs/{job_id}/events")).json()["events"]
+    # has_screenshot is exposed; the opaque ref itself never is.
+    assert events[0]["has_screenshot"] is False
+    assert events[1]["has_screenshot"] is True
+    assert "screenshot_ref" not in events[1]
+
+
+async def test_event_screenshot_is_served_by_seq_to_an_authorized_caller(
+    authed_client: tuple[AsyncClient, FastAPI], shot_dir
+) -> None:
+    client, app = authed_client
+    org_id = await _personal_org_id(client)
+    ref = store_screenshot(b"\x89PNG-the-frame")
+    job_id = await _seed_run_events(
+        app,
+        org_id,
+        [(PHASE_RUN, STATUS_STARTED), (PHASE_CRAWL, STATUS_PASSED)],
+        job_status=JobStatus.RUNNING,
+        screenshot_at={1: ref},
+    )
+
+    resp = await client.get(f"/api/v1/runs/{job_id}/events/screenshot?seq=1")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/png"
+    assert resp.content == b"\x89PNG-the-frame"
+
+    # A step with no screenshot, and an unknown seq, both 404 (existence not leaked).
+    assert (
+        await client.get(f"/api/v1/runs/{job_id}/events/screenshot?seq=0")
+    ).status_code == 404
+    assert (
+        await client.get(f"/api/v1/runs/{job_id}/events/screenshot?seq=99")
+    ).status_code == 404
+
+
+async def test_event_screenshot_404_when_ref_recorded_but_bytes_missing(
+    authed_client: tuple[AsyncClient, FastAPI], shot_dir
+) -> None:
+    client, app = authed_client
+    org_id = await _personal_org_id(client)
+    # A well-formed ref the runner wrote on a filesystem this node can't reach
+    # (ADR-0051) → 404, not a 500.
+    job_id = await _seed_run_events(
+        app,
+        org_id,
+        [(PHASE_CRAWL, STATUS_PASSED)],
+        job_status=JobStatus.RUNNING,
+        screenshot_at={0: uuid.uuid4().hex},
+    )
+    assert (
+        await client.get(f"/api/v1/runs/{job_id}/events/screenshot?seq=0")
     ).status_code == 404

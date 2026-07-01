@@ -65,6 +65,15 @@ def test_resolve_ai_provider_prefers_the_project_choice() -> None:
     assert resolve_ai_provider_mode(project, settings) == "gemini"
 
 
+def test_every_selectable_provider_is_honoured_per_project() -> None:
+    # Provider-agnostic: each selectable backend a project picks resolves to itself,
+    # overriding the instance default — so anthropic/gemini/claude "just work".
+    settings = _settings(ai_provider_mode="stub")
+    for chosen in ("anthropic_api", "gemini", "claude_cli"):
+        project = make_project(settings={"ai_provider": chosen})
+        assert resolve_ai_provider_mode(project, settings) == chosen
+
+
 def test_resolve_ai_provider_falls_back_for_absent_or_untrusted_values() -> None:
     settings = _settings(ai_provider_mode="claude_cli")
     # Absent, an unknown/garbage mode, a non-string, and the non-selectable 'stub'

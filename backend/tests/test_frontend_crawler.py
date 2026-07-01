@@ -9,6 +9,7 @@ real fetcher's parsing + credentials-never-logged guarantee (fake node runner).
 
 from __future__ import annotations
 
+import base64
 import uuid
 from typing import Any
 
@@ -32,6 +33,7 @@ from app.crawler.urls import identity, normalize, resolve, same_origin
 from app.models.enums import EdgeKind, NodeKind
 from app.models.model_edge import ModelEdge
 from app.models.model_node import EMBEDDING_DIM, ModelNode
+from app.progress import PHASE_CRAWL, install_emitter, reset_emitter
 from app.repositories.node_repository import NodeRepository
 from tests.factories import make_project
 
@@ -45,6 +47,7 @@ def _snap(
     network: tuple[NetworkCall, ...] = (),
     forms: tuple[FormSpec, ...] = (),
     title: str = "Page",
+    screenshot_b64: str | None = None,
 ) -> PageSnapshot:
     abs_links = tuple(resolve(_BASE, link) for link in links)
     return PageSnapshot(
@@ -53,6 +56,7 @@ def _snap(
         links=abs_links,
         network=network,
         forms=forms,
+        screenshot_b64=screenshot_b64,
     )
 
 
@@ -218,6 +222,69 @@ async def test_crawl_builds_pages_nav_and_call_edges(db_session: AsyncSession) -
     )
     assert home_to_ping.confidence == 0.9
     assert any(e.dst_node_id == users_api.id for e in by_kind[EdgeKind.CALLS])
+
+
+async def test_crawl_stores_per_project_screenshot_ref_on_page_nodes(
+    db_session: AsyncSession,
+) -> None:
+    # A page snapshot carrying a screenshot ⇒ the crawl stores the bytes under the
+    # project's folder and records the project-scoped ref on the page node, so the
+    # operator's per-project screenshots are discoverable from the Brain.
+    project_id = await _project(db_session)
+    shot = base64.b64encode(b"\x89PNG fake screenshot bytes").decode()
+    crawler = FrontendCrawler(_FakeFetcher([_snap("/", screenshot_b64=shot)]))
+    await crawler.crawl(
+        session=db_session, project_id=project_id, config=CrawlConfig(base_url=_BASE)
+    )
+    page = (await NodeRepository(db_session).list_by_kind(project_id, NodeKind.PAGE))[0]
+    ref = page.attributes.get("screenshot_ref")
+    assert isinstance(ref, str)
+    assert ref.startswith(f"{project_id}/")  # grouped under the project's folder
+
+
+class _RecordingEmitter:
+    """A drop-in progress sink that records emit() calls (no DB) — proves the crawl
+    pushes a live frame per page through the same seam the live view consumes."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, str, str | None]] = []
+
+    async def emit(
+        self,
+        *,
+        phase: str,
+        step: str,
+        status: str,
+        detail: dict[str, object] | None = None,
+        screenshot_ref: str | None = None,
+    ) -> None:
+        self.calls.append((phase, step, status, screenshot_ref))
+
+
+async def test_crawl_emits_a_live_frame_per_page_carrying_the_screenshot(
+    db_session: AsyncSession,
+) -> None:
+    # With an emitter installed, each visited page is a watchable CRAWL frame whose
+    # screenshot_ref points at the per-project stored shot — what the operator sees.
+    project_id = await _project(db_session)
+    shot = base64.b64encode(b"\x89PNG fake screenshot bytes").decode()
+    rec = _RecordingEmitter()
+    token = install_emitter(rec)  # type: ignore[arg-type]
+    try:
+        crawler = FrontendCrawler(_FakeFetcher([_snap("/", screenshot_b64=shot)]))
+        await crawler.crawl(
+            session=db_session,
+            project_id=project_id,
+            config=CrawlConfig(base_url=_BASE),
+        )
+    finally:
+        reset_emitter(token)
+
+    frames = [c for c in rec.calls if c[0] == PHASE_CRAWL]
+    assert len(frames) == 1
+    _, step, _, ref = frames[0]
+    assert step == "Visited /"
+    assert ref is not None and ref.startswith(f"{project_id}/")  # the live frame's shot
 
 
 async def test_recrawl_is_idempotent_with_embed_cache(db_session: AsyncSession) -> None:
@@ -393,6 +460,31 @@ def test_playwright_fetcher_parses_and_passes_storage_state() -> None:
     assert snapshot.links == ("http://app.test/users",)
     # The session is handed to the driver over stdin (for an authenticated context).
     assert "storageState" in captured["stdin"]
+
+
+def test_playwright_fetcher_passes_interaction_config_to_the_driver() -> None:
+    import json
+
+    captured: dict[str, str] = {}
+
+    def _runner(argv, cwd, stdin, timeout):  # type: ignore[no-untyped-def]
+        captured["stdin"] = stdin
+        return 0, '{"url":"http://app.test/p","title":"P"}', ""
+
+    # Interaction on by default, with the configured cap.
+    fetcher = PlaywrightPageFetcher(
+        base_url="http://app.test", max_interactions=7, runner=_runner
+    )
+    fetcher.fetch("http://app.test/p")
+    config = json.loads(captured["stdin"])
+    assert config["interact"] is True and config["maxInteractions"] == 7
+
+    # And it can be turned off (a purely passive crawl).
+    off = PlaywrightPageFetcher(
+        base_url="http://app.test", interact=False, runner=_runner
+    )
+    off.fetch("http://app.test/p")
+    assert json.loads(captured["stdin"])["interact"] is False
 
 
 def test_playwright_fetcher_raises_on_driver_failure() -> None:

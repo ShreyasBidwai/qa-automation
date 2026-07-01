@@ -28,12 +28,13 @@ router = APIRouter(prefix="/api/v1", tags=["credentials"])
 
 
 def _status(record: TargetCredentials) -> CredentialStatusResponse:
-    # has_credentials = a usable encrypted secret is stored; the secret is NEVER
-    # included — the response model has no field for it (defence in depth).
+    # has_credentials / has_totp = whether the encrypted values are stored; NEITHER
+    # secret is ever included — the response model has no field for them (defence).
     return CredentialStatusResponse(
         mode=record.mode,
         identifier=record.identifier,
         has_credentials=record.encrypted_secret is not None,
+        has_totp=record.encrypted_totp_secret is not None,
     )
 
 
@@ -56,23 +57,33 @@ async def set_credentials(
         session, project_id, current_user, Permission.MANAGE_PROJECT
     )
 
+    repo = TargetCredentialsRepository(session)
     identifier: str | None = None
     encrypted: bytes | None = None
+    encrypted_totp: bytes | None = None
     if body.mode == CredentialMode.SPECIFIC_ACCOUNT.value:
         identifier = body.identifier.strip() if body.identifier else None
         try:
             # ``secret`` is guaranteed present for specific_account by the schema.
             encrypted = encrypt_secret(body.secret.get_secret_value())  # type: ignore[union-attr]
+            if body.totp_secret is not None:
+                encrypted_totp = encrypt_secret(body.totp_secret.get_secret_value())
+            else:
+                # Omitted ⇒ preserve any stored TOTP seed (don't wipe it on a
+                # password-only update); only polaris_creates clears it.
+                existing = await repo.get(project_id)
+                encrypted_totp = existing.encrypted_totp_secret if existing else None
         except CredentialsKeyError:
             raise HTTPException(
                 status_code=503, detail="credential encryption is not configured"
             ) from None
 
-    record = await TargetCredentialsRepository(session).upsert(
+    record = await repo.upsert(
         project_id,
         mode=body.mode,
         identifier=identifier,
         encrypted_secret=encrypted,
+        encrypted_totp_secret=encrypted_totp,
     )
     return _status(record)
 

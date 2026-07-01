@@ -17,7 +17,7 @@ from __future__ import annotations
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
@@ -37,7 +37,9 @@ class AuthConfig:
 
     login_url: str
     username: str
-    password: str
+    # The target secret. Excluded from the dataclass repr so it can't leak through an
+    # f-string, a traceback, or a log line (the same defence as ResolvedTargetLogin).
+    password: str = field(repr=False)
     account: str
     username_selector: str = (
         "input[type=email], input[name=email], input[name=username]"
@@ -49,6 +51,11 @@ class AuthConfig:
     )
     otp_submit_selector: str = "button[type=submit], input[type=submit]"
     success_selector: str | None = None
+    # The target account's TOTP (authenticator-app) shared secret, base32. Present ⇒
+    # the run can use the automated TotpStrategy (generate the code via pyotp) instead
+    # of prompting a human. A SECRET: excluded from the repr, never logged/persisted in
+    # the clear (it comes decrypted from the vault only at use, ADR-0053).
+    totp_secret: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)

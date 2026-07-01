@@ -84,6 +84,16 @@ class Settings(BaseSettings):
     # These configure WHERE/AGAINST WHAT it runs; only consulted in orchestrator
     # mode (the slim backend never executes — B5/ADR-0036).
     runner_framework: str = "pest"  # pest | playwright
+    # Frontend crawl phase (T4.2): the node project dir holding the Playwright
+    # ``crawl_page.mjs`` driver (+ a resolvable node_modules). Empty ⇒ a mode_b run
+    # skips the crawl phase. Set it to make one run cover backend + DB + frontend.
+    crawl_driver_dir: str = ""
+    # Interaction crawling (T4.2 "crawler depth"): the driver clicks a few SAFE in-page
+    # controls (tabs/filters/"load more") to surface endpoints that only fire on
+    # interaction. Bounded + denylisted in the driver — it NEVER submits a form or
+    # clicks a destructive control. Disable, or cap per page, here.
+    crawl_interactions_enabled: bool = True
+    crawl_max_interactions: int = 5
     # The target app the runner executes in (Pest: the Laravel app dir; Playwright:
     # the node project dir) and the repo the Laravel ingestor reads.
     target_app_path: str = ""
@@ -93,10 +103,23 @@ class Settings(BaseSettings):
     execution_db_url: str = "sqlite::memory:"
     # Where the runner writes evidence (JUnit, logs, traces).
     evidence_dir: str = "/tmp/polaris-evidence"
-    # Where failure screenshots are stored on local disk (gitignored; ADR-0051). The
-    # single indirection (app.screenshots) owns this path — swap to object storage at
-    # deploy. Relative to the backend working dir; gitignored via backend/.gitignore.
+    # Where failure screenshots live behind the single indirection (app.screenshots,
+    # ADR-0051). ``screenshot_storage`` selects the backend:
+    #   local — a gitignored on-disk dir (``screenshot_dir``); single-box/dev only,
+    #           since capture (runner) and serve (control plane) must share a disk.
+    #   s3    — an S3-compatible bucket (AWS S3 / MinIO / any S3 API); the decoupled
+    #           topology (ADR-0036) needs this so the runner and control plane share
+    #           storage. Credentials come from boto3's env/IAM chain, never here.
+    screenshot_storage: str = "local"  # local | s3
     screenshot_dir: str = "var/screenshots"
+    # S3 backend (screenshot_storage=s3). The bucket is required; the endpoint is set
+    # for S3-compatible stores like MinIO (empty ⇒ real AWS). A key prefix namespaces
+    # the objects within a shared bucket. AWS credentials are NEVER read from here —
+    # boto3 resolves them from the standard chain (env vars / instance role).
+    screenshot_s3_bucket: str = ""
+    screenshot_s3_endpoint_url: str | None = None
+    screenshot_s3_region: str = "us-east-1"
+    screenshot_s3_prefix: str = "screenshots"
     # The running target frontend a browser runner drives (Playwright only).
     target_base_url: str | None = None
 
@@ -150,6 +173,19 @@ class Settings(BaseSettings):
     # Cap for a single per-minute wait (also the default when the 429 omits a
     # RetryInfo). Keeps a hostile/garbled retryDelay from stalling the run.
     gemini_minute_retry_cap_seconds: float = 60.0
+
+    # --- Anthropic API provider (AI_PROVIDER_MODE=anthropic_api) ---------------
+    # The PRODUCTION Claude backend — the Messages API directly (no `claude` CLI).
+    # The API key is a SECRET, env-ONLY: never hardcoded, logged, stored in the DB,
+    # or returned in a payload. It is sent via the ``x-api-key`` HEADER (never the
+    # URL). Absent ⇒ the provider refuses with a clear error rather than calling
+    # unauthenticated. Uses ai_generate_model (frontier) + ai_triage_model (cheap).
+    anthropic_api_key: str | None = None
+    anthropic_base_url: str = "https://api.anthropic.com/v1"
+    anthropic_version: str = "2023-06-01"
+    # Output cap for a generate call (the Messages API requires max_tokens); triage
+    # uses a small internal cap since its reply is a single label.
+    anthropic_max_output_tokens: int = 8192
 
     # --- Embeddings (pluggable; local fastembed dev/prod, stub for tests) ---
     # Provider selection: local (fastembed ONNX) | stub (tests, no download).

@@ -42,6 +42,12 @@ class TargetCredentials(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # The account secret as Fernet ciphertext — the ONLY form it exists in at rest.
     # Null for polaris_creates. Never returned by any payload; decrypted only at use.
     encrypted_secret: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    # The account's TOTP (authenticator-app) shared secret as Fernet ciphertext — the
+    # ONLY form it exists in at rest. Present ⇒ runs use the automated TotpStrategy.
+    # Never returned by any payload; decrypted only at use (ADR-0053).
+    encrypted_totp_secret: Mapped[bytes | None] = mapped_column(
+        LargeBinary, nullable=True
+    )
 
 
 __all__ = ["TargetCredentials"]

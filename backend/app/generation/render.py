@@ -58,6 +58,28 @@ _NO_FACTORIES = (
     " The target application defines NO model factories: do NOT call `::factory()`. "
     "Create any required rows with explicit inserts, or rely on already-seeded data."
 )
+# When the target DOES define factories, steer the model to USE them for setup rows
+# (the authenticated user, related records) rather than hand-writing column lists —
+# guessing a column the table lacks (e.g. a `password` on a non-standard users table)
+# fails the setup before the endpoint is even hit. Agnostic: factories encode each
+# target's real schema, so this works for ANY project that ships them.
+_USE_FACTORIES = (
+    " The target application DEFINES model factories: create the authenticated user "
+    "and any required related rows via their model factories "
+    "(`User::factory()->create()`, `RelatedModel::factory()->create([...])`) — do NOT "
+    "hand-write column lists for setup inserts."
+)
+# When a case carries DB dependencies (a payload foreign key that must reference an
+# existing row), creation ORDER matters: a model factory often auto-creates its own
+# related rows, which can grab the same primary-key id the dependency hardcodes. So:
+# satisfy the dependencies FIRST, then create the authenticated user — its factory's
+# auto-created relations then get fresh ids and never collide. Agnostic: applies to
+# any project whose endpoints have foreign-key validation (`exists:...`).
+_DEPENDENCY_ORDER = (
+    " IMPORTANT setup order: create the listed DB-dependency rows FIRST (before the "
+    "authenticated user), so the user factory's own auto-created related rows take "
+    "fresh ids and do not collide with a dependency row's hardcoded id."
+)
 _FACTORY_SKIP_REASON = (
     "precondition seeding (model factories) unavailable on the target — deferred "
     "to B10"
@@ -135,7 +157,11 @@ def render_script(
     case rather than emitting one that hard-fails (ADR-0037).
     """
     instruction = _INSTRUCTION + _CODE_ONLY
-    if not factories_available:
+    if factories_available:
+        instruction += _USE_FACTORIES
+        if case.dependencies:
+            instruction += _DEPENDENCY_ORDER
+    else:
         instruction += _NO_FACTORIES
     raw = provider.generate(instruction, build_context(spec, case), budget_tokens)
     code = extract_code(raw)

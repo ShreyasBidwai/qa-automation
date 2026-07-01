@@ -16,7 +16,14 @@ from typing import Any, Protocol
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.types import AIProvider
-from app.credentials import resolve_target_login
+from app.auth.browser import PlaywrightLoginBrowser
+from app.auth.otp import autonomous_otp_unavailable
+from app.auth.strategy import ManualOtpStrategy, TotpStrategy
+from app.auth.types import AuthConfig, AuthStrategy
+from app.core.config import get_settings
+from app.crawler.crawler import FrontendCrawler
+from app.crawler.playwright_fetcher import PlaywrightPageFetcher
+from app.credentials import resolve_target_auth_config, resolve_target_login
 from app.db_state.run_phase import DbStateRunPhase, EngineTargetConnector
 from app.embeddings.types import EmbeddingProvider
 from app.execution.types import ExecutionRunner, TargetEnv
@@ -33,6 +40,55 @@ from app.modes.selection import SelectionStrategyKind, build_selection_strategy
 
 from .errors import ApiConfigError
 from .ports import RunExecution, RunRequest
+
+
+def _build_crawler(
+    target_env: TargetEnv, *, auth_config: AuthConfig | None = None
+) -> FrontendCrawler | None:
+    """A frontend crawler for the run, or None to skip the crawl phase.
+
+    Wired only when ``crawl_driver_dir`` is configured (the Playwright drivers live
+    there) AND the project has a frontend ``base_url`` to crawl. Keeps the crawl
+    opt-in and infra-gated, exactly like the DB-state phase is tier-gated.
+
+    When ``auth_config`` is present (the project has a target login + login config),
+    the crawler is given a real login strategy: it logs in once via the Playwright
+    login driver and replays that session on every page, so the crawl reaches
+    behind-the-gate journeys. A TOTP secret in the config selects the automated
+    TotpStrategy (unattended 2FA); otherwise manual-OTP semantics. No config ⇒
+    unauthenticated (the default).
+    """
+    settings = get_settings()
+    driver_dir = settings.crawl_driver_dir
+    if not driver_dir or not target_env.base_url:
+        return None
+    fetcher = PlaywrightPageFetcher(
+        base_url=target_env.base_url,
+        node_project_dir=driver_dir,
+        interact=settings.crawl_interactions_enabled,
+        max_interactions=settings.crawl_max_interactions,
+    )
+    auth_strategy = (
+        _build_auth_strategy(driver_dir, use_totp=bool(auth_config.totp_secret))
+        if auth_config is not None
+        else None
+    )
+    return FrontendCrawler(fetcher, auth_strategy=auth_strategy)
+
+
+def _build_auth_strategy(driver_dir: str, *, use_totp: bool) -> AuthStrategy:
+    """A login strategy that drives the real Playwright login driver.
+
+    With a TOTP secret configured, the automated TotpStrategy generates the 2FA code
+    (pyotp) so the login completes unattended. Otherwise manual-OTP semantics with an
+    autonomous OtpProvider: a plain form login completes headless; an unexpected OTP
+    challenge fails fast (no operator) and the crawl phase degrades to an
+    unauthenticated crawl rather than hanging. Credentials go over stdin, never argv.
+    """
+    browser = PlaywrightLoginBrowser(node_project_dir=driver_dir)
+    if use_totp:
+        return TotpStrategy(browser=browser)
+    return ManualOtpStrategy(browser=browser, otp_provider=autonomous_otp_unavailable)
 
 
 class TargetProvider(Protocol):
@@ -128,14 +184,18 @@ class OrchestratorRunExecutor:
         # as the user-provided account; otherwise Polaris provisions its own (existing
         # behaviour). ``resolve_target_login`` is the ONLY place the secret is
         # decrypted (in memory); the secret is never put in the summary, logs, or
-        # events — only the chosen mode is. (Actual target-auth is stubbed: T4.2a is
-        # not yet wired into runs; a real run hands the login to the AuthStrategy.)
+        # events — only the chosen mode is.
         target_login = await resolve_target_login(session, project_id)
         auth_mode = (
             CredentialMode.SPECIFIC_ACCOUNT.value
             if target_login is not None
             else CredentialMode.POLARIS_CREATES.value
         )
+        # The crawl logs in + reaches behind-the-gate pages when the project has BOTH a
+        # specific-account credential AND a login config (settings['auth_config']); the
+        # secret lives only inside this AuthConfig (its repr masks it) and is replayed
+        # via the AuthStrategy. Absent ⇒ the crawl stays unauthenticated (as before).
+        auth_config = await resolve_target_auth_config(session, project_id)
         # Target config (runner + where/what to test) comes FROM THE PROJECT when a
         # provider is wired (ADR-0054), not from instance env.
         runner, target_env = await self._resolve_target(session, project_id)
@@ -163,6 +223,17 @@ class OrchestratorRunExecutor:
                 resolver=resolver,
                 connector=EngineTargetConnector(target_env.execution_db.url),
             ),
+            # Frontend crawl phase (T4.2): wired only when a crawl driver dir is
+            # configured AND the project has a frontend URL. One run then covers
+            # backend + DB + frontend; otherwise the phase is simply skipped. With a
+            # login config present, the crawler authenticates to reach gated pages.
+            crawler=_build_crawler(target_env, auth_config=auth_config),
+            # The login config the crawl authenticates with (None ⇒ unauthenticated);
+            # its secret is masked and never logged/summarised.
+            auth_config=auth_config,
+            # The project's AI backend also triages failures (real-bug vs noise); the
+            # cheap tier (ai_triage_model) keeps it inexpensive (ADR-0049).
+            ai_provider=ai_provider,
         )
         report = await orchestrator.run(
             project_id=project_id,

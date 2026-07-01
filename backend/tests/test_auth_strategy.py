@@ -12,11 +12,13 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+import pyotp
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.errors import AuthConfigError, LoginFailedError
 from app.auth.factory import build_auth_strategy
+from app.auth.otp import autonomous_otp_unavailable
 from app.auth.redact import redact_label
 from app.auth.strategy import (
     ManualOtpStrategy,
@@ -167,6 +169,62 @@ async def test_manual_requires_config(db_session: AsyncSession) -> None:
         await strat.login(session=db_session, project_id=uuid.uuid4(), config=None)
 
 
+# --- automated TOTP: generate the code via pyotp, reuse the login flow -------
+
+
+class _CapturingBrowser(_FakeBrowser):
+    """Records the code the OtpProvider returned, to assert the generated TOTP."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.codes: list[str] = []
+
+    def run_login(
+        self, config: AuthConfig, otp_provider: OtpProvider, request: OtpRequest
+    ) -> LoginOutcome:
+        self.calls += 1
+        if self._challenge is not AuthChallenge.NONE:
+            self.codes.append(otp_provider(request))
+        return LoginOutcome(
+            storage_state=self._storage_state,
+            challenge=self._challenge,
+            channel=self._channel,
+            success=self._success,
+        )
+
+
+async def test_totp_strategy_generates_the_current_code_and_reuses(
+    db_session: AsyncSession,
+) -> None:
+    secret = pyotp.random_base32()
+    project_id = await _project(db_session)
+    browser = _CapturingBrowser(storage_state={"cookies": [{"name": "s", "value": "v"}]})
+    strat = TotpStrategy(browser=browser, clock=lambda: _FIXED)
+    config = _config(totp_secret=secret)
+
+    out = await strat.login(session=db_session, project_id=project_id, config=config)
+    assert out.variant is AuthVariant.TOTP
+    # The browser received a code the secret's authenticator accepts right now (a
+    # valid_window guards the ~microsecond chance of a step boundary between calls).
+    assert len(browser.codes) == 1
+    assert pyotp.TOTP(secret).verify(browser.codes[0], valid_window=1)
+
+    # Same reuse semantics as manual: a second login is served from cache.
+    await strat.login(session=db_session, project_id=project_id, config=config)
+    assert browser.calls == 1
+    rows = await AuthChallengeLogRepository(db_session).list_for_project(project_id)
+    assert len(rows) == 1  # one attempt logged (redacted), not two
+
+
+async def test_totp_strategy_requires_a_totp_secret(db_session: AsyncSession) -> None:
+    strat = TotpStrategy(browser=_FakeBrowser(storage_state={}), clock=lambda: _FIXED)
+    with pytest.raises(AuthConfigError):
+        # An AuthConfig without a totp_secret can't drive automated TOTP.
+        await strat.login(
+            session=db_session, project_id=await _project(db_session), config=_config()
+        )
+
+
 # --- no-auth, registry, parked variants, redaction --------------------------
 
 
@@ -187,17 +245,23 @@ def test_registry_resolves_strategy_by_variant() -> None:
         otp_provider=_OtpStub(),
     )
     assert isinstance(manual, ManualOtpStrategy)
-    assert isinstance(build_auth_strategy(AuthVariant.TOTP), TotpStrategy)
-    # Manual without its deps is a config error.
+    totp = build_auth_strategy(
+        AuthVariant.TOTP, browser=_FakeBrowser(storage_state={})
+    )
+    assert isinstance(totp, TotpStrategy)
+    # Manual without its deps, and TOTP without a browser, are config errors.
     with pytest.raises(AuthConfigError):
         build_auth_strategy(AuthVariant.MANUAL)
+    with pytest.raises(AuthConfigError):
+        build_auth_strategy(AuthVariant.TOTP)
 
 
 async def test_parked_variants_raise_not_implemented(
     db_session: AsyncSession,
 ) -> None:
+    # TOTP is now implemented; only email/sms OTP remain parked.
     project_id = await _project(db_session)
-    for variant in (AuthVariant.TOTP, AuthVariant.EMAIL_OTP, AuthVariant.SMS_OTP):
+    for variant in (AuthVariant.EMAIL_OTP, AuthVariant.SMS_OTP):
         strat = build_auth_strategy(variant)
         with pytest.raises(NotImplementedError):
             await strat.login(session=db_session, project_id=project_id, config=None)
@@ -208,3 +272,12 @@ def test_redact_label_masks_identifiers() -> None:
     masked = redact_label("+14155551234")
     assert masked.endswith("34") and "4155551" not in masked
     assert "•••" in redact_label("x")
+
+
+def test_autonomous_otp_provider_fails_fast_without_leaking_the_account() -> None:
+    # An autonomous run has no operator to read a code — the provider raises (never
+    # blocks on stdin) so the crawl phase can degrade to an unauthenticated crawl.
+    request = OtpRequest(project_id=uuid.uuid4(), account="jane@example.com")
+    with pytest.raises(LoginFailedError) as excinfo:
+        autonomous_otp_unavailable(request)
+    assert "jane@example.com" not in str(excinfo.value)  # account is redacted

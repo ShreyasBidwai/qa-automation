@@ -5,11 +5,13 @@ vi.mock("@/lib/api/client", () => ({ runApi: { create: vi.fn() } }));
 vi.mock("@/lib/router", () => ({ navigate: vi.fn() }));
 
 import { runApi } from "@/lib/api/client";
+import { navigate } from "@/lib/router";
 
 import { RunTriggerForm } from "./RunTriggerForm";
 
 describe("RunTriggerForm", () => {
   beforeEach(() => {
+    vi.mocked(navigate).mockReset();
     vi.mocked(runApi.create).mockReset();
     vi.mocked(runApi.create).mockResolvedValue({
       ok: true,
@@ -18,7 +20,7 @@ describe("RunTriggerForm", () => {
     });
   });
 
-  it("starts a mode_b full-sweep run when Autonomous is chosen", async () => {
+  it("starts a mode_b full-sweep run, then lands on the live view to watch it", async () => {
     render(<RunTriggerForm projectId="p1" />);
     fireEvent.click(screen.getByRole("radio", { name: /Autonomous/ }));
     fireEvent.click(screen.getByRole("button", { name: "Start run" }));
@@ -29,6 +31,8 @@ describe("RunTriggerForm", () => {
         strategy: "full_sweep",
       }),
     );
+    // Straight to the watchable live run, not the coarse status page.
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/runs/r1/live"));
   });
 
   it("sends a change_impact changeset as an array of paths", async () => {

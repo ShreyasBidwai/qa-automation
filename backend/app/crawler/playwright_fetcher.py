@@ -70,6 +70,8 @@ class PlaywrightPageFetcher:
         script_path: str | None = None,
         wait_ms: int = 1500,
         timeout: float = 60.0,
+        interact: bool = True,
+        max_interactions: int = 5,
         runner: NodeRunner = _run_node,
     ) -> None:
         self._base_url = base_url
@@ -77,6 +79,10 @@ class PlaywrightPageFetcher:
         self._script = script_path or str(self._project_dir / _DEFAULT_SCRIPT)
         self._wait_ms = wait_ms
         self._timeout = timeout
+        # Interaction crawling: the driver clicks a few SAFE controls to surface
+        # click-triggered endpoints (bounded + denylisted driver-side). See T4.2.
+        self._interact = interact
+        self._max_interactions = max_interactions
         self._runner = runner
 
     def fetch(
@@ -86,6 +92,8 @@ class PlaywrightPageFetcher:
             "url": url,
             "origin": self._base_url,
             "waitMs": self._wait_ms,
+            "interact": self._interact,
+            "maxInteractions": self._max_interactions,
         }
         if storage_state:
             config["storageState"] = storage_state
@@ -143,6 +151,7 @@ def _parse_snapshot(data: dict[str, Any]) -> PageSnapshot:
         if isinstance(c, dict) and c.get("url")
     )
     links = tuple(str(href) for href in data.get("links", []) if href)
+    shot = data.get("screenshot")
     return PageSnapshot(
         url=str(data["url"]),
         title=str(data.get("title", "")),
@@ -150,4 +159,5 @@ def _parse_snapshot(data: dict[str, Any]) -> PageSnapshot:
         forms=forms,
         elements=elements,
         network=network,
+        screenshot_b64=shot if isinstance(shot, str) and shot else None,
     )
