@@ -30,6 +30,16 @@ the in-process stub/demo path. Real multi-container Playwright runs (capture on 
 runner, serve from the control plane) need object storage; the single indirection +
 opaque ref are exactly what makes that swap mechanical.
 
+**Update (ADR-0056 era): object storage is now implemented.** The `# TODO` is
+resolved — `app.screenshots.storage` selects the backend by config
+(`SCREENSHOT_STORAGE=local|s3`): `LocalDiskStore` (default, single-box) or `S3Store`
+(boto3, any S3-compatible bucket — AWS S3 / MinIO). Set `s3` for the decoupled
+topology so the runner and control plane share a bucket. Credentials resolve from
+boto3's standard env/IAM chain — never our config, a URL, or a log. The public API
+(`store_screenshot` / `store_project_screenshot` / `get_screenshot`) and the opaque
+ref are unchanged, so the swap was exactly the one-module change this ADR promised;
+the S3 backend is covered by a real boto3 round-trip under `moto`.
+
 ### Capture — at the execution seam, best-effort, mirroring `evidence_ref`
 
 `ExecutionResult` gains optional `screenshot: bytes | None` (a browser runner

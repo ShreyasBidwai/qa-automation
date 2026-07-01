@@ -11,11 +11,14 @@ dir via the single indirection's settings hook.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
 from types import SimpleNamespace
 
+import boto3
 import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
+from moto import mock_aws
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.composition import StubRunExecutor
@@ -109,6 +112,68 @@ def test_placeholder_is_a_valid_png() -> None:
     assert png.startswith(b"\x89PNG\r\n\x1a\n")
     assert png.endswith(b"IEND\xaeB`\x82")  # IEND chunk + its CRC
     assert len(png) > 50
+
+
+# --- the S3 backend: a REAL boto3 round-trip (moto), not a fake ---------------
+
+_S3_BUCKET = "polaris-shots-test"
+
+
+@pytest.fixture
+def s3_backend(monkeypatch: pytest.MonkeyPatch) -> Iterator[object]:
+    """Point the indirection at an S3 backend backed by moto's in-process AWS mock,
+    so the S3Store is exercised through a genuine boto3 client (create bucket, PUT,
+    GET) with no network or real credentials."""
+    with mock_aws():
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=_S3_BUCKET)
+        monkeypatch.setattr(
+            screenshot_storage,
+            "get_settings",
+            lambda: SimpleNamespace(
+                screenshot_storage="s3",
+                screenshot_s3_bucket=_S3_BUCKET,
+                screenshot_s3_endpoint_url=None,
+                screenshot_s3_region="us-east-1",
+                screenshot_s3_prefix="screenshots",
+                screenshot_dir="unused",
+            ),
+        )
+        screenshot_storage.reset_backend_cache()  # fresh client inside this mock
+        try:
+            yield client
+        finally:
+            screenshot_storage.reset_backend_cache()
+
+
+def test_s3_backend_round_trips_a_flat_ref(s3_backend) -> None:
+    ref = store_screenshot(b"\x89PNG-s3-bytes")
+    assert len(ref) == 32 and "/" not in ref  # still an opaque ref, no bucket/path
+    assert get_screenshot(ref) == b"\x89PNG-s3-bytes"
+    # The object lands under the configured prefix as <ref>.png.
+    body = s3_backend.get_object(Bucket=_S3_BUCKET, Key=f"screenshots/{ref}.png")
+    assert body["Body"].read() == b"\x89PNG-s3-bytes"
+
+
+def test_s3_backend_groups_project_refs_under_the_prefix(s3_backend) -> None:
+    project_id = uuid.uuid4()
+    ref = store_project_screenshot(project_id, b"page-frame")
+    assert ref.startswith(f"{project_id}/")  # project-scoped, still opaque
+    assert get_screenshot(ref) == b"page-frame"
+    hex_part = ref.split("/", 1)[1]
+    key = f"screenshots/{project_id}/{hex_part}.png"
+    assert s3_backend.get_object(Bucket=_S3_BUCKET, Key=key)["Body"].read() == b"page-frame"
+
+
+def test_s3_get_unknown_ref_is_none(s3_backend) -> None:
+    # A well-formed ref with no stored object → None (a clean miss, not a 500).
+    assert get_screenshot(uuid.uuid4().hex) is None
+
+
+def test_s3_get_rejects_malformed_ref_without_touching_s3(s3_backend) -> None:
+    # A non-opaque ref is refused before any S3 call (no traversal into the bucket).
+    assert get_screenshot("../../etc/passwd") is None
+    assert get_screenshot("a/b") is None
 
 
 # --- capture at the execution seam (RunLifecycle) ----------------------------

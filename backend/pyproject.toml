@@ -23,6 +23,12 @@ ignore_missing_imports = true
 module = ["pgvector.*", "fastembed.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# boto3/botocore ship no inline types (stubs are a separate heavy package we don't
+# ship); the S3 screenshot backend uses them behind our own typed interface.
+module = ["boto3.*", "botocore.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

@@ -97,10 +97,23 @@ class Settings(BaseSettings):
     execution_db_url: str = "sqlite::memory:"
     # Where the runner writes evidence (JUnit, logs, traces).
     evidence_dir: str = "/tmp/polaris-evidence"
-    # Where failure screenshots are stored on local disk (gitignored; ADR-0051). The
-    # single indirection (app.screenshots) owns this path — swap to object storage at
-    # deploy. Relative to the backend working dir; gitignored via backend/.gitignore.
+    # Where failure screenshots live behind the single indirection (app.screenshots,
+    # ADR-0051). ``screenshot_storage`` selects the backend:
+    #   local — a gitignored on-disk dir (``screenshot_dir``); single-box/dev only,
+    #           since capture (runner) and serve (control plane) must share a disk.
+    #   s3    — an S3-compatible bucket (AWS S3 / MinIO / any S3 API); the decoupled
+    #           topology (ADR-0036) needs this so the runner and control plane share
+    #           storage. Credentials come from boto3's env/IAM chain, never here.
+    screenshot_storage: str = "local"  # local | s3
     screenshot_dir: str = "var/screenshots"
+    # S3 backend (screenshot_storage=s3). The bucket is required; the endpoint is set
+    # for S3-compatible stores like MinIO (empty ⇒ real AWS). A key prefix namespaces
+    # the objects within a shared bucket. AWS credentials are NEVER read from here —
+    # boto3 resolves them from the standard chain (env vars / instance role).
+    screenshot_s3_bucket: str = ""
+    screenshot_s3_endpoint_url: str | None = None
+    screenshot_s3_region: str = "us-east-1"
+    screenshot_s3_prefix: str = "screenshots"
     # The running target frontend a browser runner drives (Playwright only).
     target_base_url: str | None = None
 

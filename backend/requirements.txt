@@ -22,3 +22,8 @@ argon2-cffi==23.1.0
 # HMAC-SHA256, authenticated). Key comes from config/secret env, never the repo
 # (ADR-0053). Ships manylinux wheels.
 cryptography==43.0.3
+# S3-compatible object storage for screenshots in the decoupled topology (ADR-0051):
+# the runner writes and the control plane serves from a shared bucket (AWS S3, MinIO,
+# or any S3 API). Credentials come from boto3's standard env/IAM chain — never our
+# config, never a URL, never logged. Local disk stays the default (single-box/dev).
+boto3==1.35.36
