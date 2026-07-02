@@ -13,6 +13,7 @@ const badgeVariants = cva(
       level: {
         pass: "bg-status-pass-bg text-status-pass-fg",
         fail: "bg-status-fail-bg text-status-fail-fg",
+        error: "bg-status-error-bg text-status-error-fg",
         flaky: "bg-status-flaky-bg text-status-flaky-fg",
         info: "bg-status-info-bg text-status-info-fg",
         neutral: "bg-status-neutral-bg text-status-neutral-fg",

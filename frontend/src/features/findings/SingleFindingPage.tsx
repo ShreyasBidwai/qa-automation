@@ -15,6 +15,7 @@ import { triageSpec } from "../runs/findingBadges";
 import {
   confidenceRationale,
   failureLine,
+  findingRationale,
   parseRootCauseKey,
   parseSignature,
   statusMeaning,
@@ -163,6 +164,11 @@ function Report({ finding }: { finding: Finding }) {
           <TrustMark source={finding.oracle_source} label />
         </MetaCell>
       </div>
+
+      {/* The three axes above, married into ONE verdict — what to do at a glance. */}
+      <p className="mt-3 rounded-lg border border-border-subtle bg-background px-3.5 py-2.5 text-[13px] font-medium text-foreground-secondary">
+        {findingRationale(finding)}
+      </p>
 
       <Section title="What's wrong">
         {summary ? (

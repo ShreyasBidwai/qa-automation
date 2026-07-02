@@ -2,7 +2,19 @@ import { describe, expect, it } from "vitest";
 
 import type { JobStatusValue } from "@/lib/api/types";
 
-import { isTerminal, runStatusDescriptor } from "./runStatus";
+import { isTerminal, runRowStatusDescriptor, runStatusDescriptor } from "./runStatus";
+
+describe("runRowStatusDescriptor", () => {
+  it("gives ERRORED its own level, distinct from a real FAILED", () => {
+    // A run that couldn't complete (infra) must not look like a run that found a bug
+    // (architecture-review DO-FIRST #4).
+    expect(runRowStatusDescriptor("errored").level).toBe("error");
+    expect(runRowStatusDescriptor("failed").level).toBe("fail");
+    expect(runRowStatusDescriptor("errored").level).not.toBe(
+      runRowStatusDescriptor("failed").level,
+    );
+  });
+});
 
 describe("runStatusDescriptor", () => {
   // The backend JobStatus enum, verbatim (app/models/enums.py). Every one of these

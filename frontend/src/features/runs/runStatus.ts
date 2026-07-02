@@ -47,7 +47,9 @@ export function runRowStatusDescriptor(status: string): StatusDescriptor {
     case "failed":
       return { level: "fail", label: "Failed" };
     case "errored":
-      return { level: "fail", label: "Errored" };
+      // A run that couldn't complete (infra), NOT a test that found a real bug —
+      // its own level so users don't read it as a failure (architecture-review #4).
+      return { level: "error", label: "Errored" };
     case "running":
       return { level: "info", label: "Running…" };
     case "pending":

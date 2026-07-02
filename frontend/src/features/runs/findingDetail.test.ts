@@ -6,6 +6,7 @@ import {
   buildRibbon,
   confidenceRationale,
   failureLine,
+  findingRationale,
   parseRootCauseKey,
   parseSignature,
   statusMeaning,
@@ -68,5 +69,42 @@ describe("findingDetail", () => {
   it("explains confidence and status in plain language", () => {
     expect(confidenceRationale("characterization")).toMatch(/Behaviour-changed/);
     expect(statusMeaning("flaky")).toMatch(/oscillating/i);
+  });
+});
+
+describe("findingRationale", () => {
+  it("says act now for a high-confidence critical with wide blast", () => {
+    const line = findingRationale({
+      severity: "critical",
+      oracle_source: "rule-derived",
+      status: "regression",
+      explains_count: 5,
+    });
+    expect(line).toContain("Critical");
+    expect(line).toContain("high confidence");
+    expect(line).toContain("affects 5 tests");
+    expect(line).toContain("act now");
+  });
+
+  it("tells the user to confirm a low-confidence characterization change", () => {
+    const line = findingRationale({
+      severity: "minor",
+      oracle_source: "characterization",
+      status: "new",
+      explains_count: 1,
+    });
+    expect(line).toContain("low confidence");
+    expect(line).toContain("isolated");
+    expect(line).toContain("confirm the change is intended");
+  });
+
+  it("flags a flaky finding as reproduce-first", () => {
+    const line = findingRationale({
+      severity: "major",
+      oracle_source: "rule-derived",
+      status: "flaky",
+      explains_count: 2,
+    });
+    expect(line).toContain("confirm it reproduces");
   });
 });

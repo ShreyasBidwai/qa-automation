@@ -133,6 +133,41 @@ export function buildRibbon(finding: Finding): Ribbon {
   return { hops: [], partial: true, available: false };
 }
 
+/** One line that MARRIES the three trust axes a user weighs — severity ·
+ *  confidence (oracle source) · blast — into a verdict of what to do
+ *  (architecture-review DO-NEXT #11). So "which do I fix first" is answerable at a
+ *  glance instead of reconciling three separate cells. */
+export function findingRationale(finding: {
+  severity: string;
+  oracle_source: string;
+  status: string;
+  explains_count: number;
+}): string {
+  const high =
+    finding.oracle_source === "rule-derived" ||
+    finding.oracle_source === "spec-grounded";
+  const confidence = high
+    ? `${finding.oracle_source} (high confidence)`
+    : finding.oracle_source === "characterization"
+      ? "behaviour-pinned (low confidence)"
+      : finding.oracle_source;
+  const blast =
+    finding.explains_count > 1
+      ? `affects ${finding.explains_count} tests`
+      : "isolated";
+  const verdict =
+    finding.status === "flaky"
+      ? "confirm it reproduces before prioritising"
+      : !high
+        ? "confirm the change is intended before acting"
+        : finding.status === "regression" || finding.severity === "critical"
+          ? "act now"
+          : "worth fixing";
+  const severity =
+    finding.severity.charAt(0).toUpperCase() + finding.severity.slice(1);
+  return `${severity} · ${confidence} · ${blast} → ${verdict}`;
+}
+
 /** Plain-language reason a finding is high-confidence vs a change to confirm. */
 export function confidenceRationale(oracleSource: string): string {
   switch (oracleSource) {

@@ -16,7 +16,7 @@ import type {
 } from "@/lib/api/types";
 
 import { aiTriageSpec, triageSpec } from "./findingBadges";
-import { failureLine, statusMeaning } from "./findingDetail";
+import { failureLine, findingRationale, statusMeaning } from "./findingDetail";
 import { historyViz, severityViz } from "./findingViz";
 import { BlastPathRibbon } from "./BlastPathRibbon";
 
@@ -71,6 +71,11 @@ export function FindingDetail({
           <p className="mt-1.5 text-xs text-muted-foreground">
             explains {finding.explains_count}{" "}
             {finding.explains_count === 1 ? "test" : "tests"}
+          </p>
+          {/* The verdict: severity · confidence · blast → what to do, in one line, so
+           *  a user can rank findings without reconciling three separate cells. */}
+          <p className="mt-2.5 rounded-md border border-border-subtle bg-background px-2.5 py-1.5 text-[12.5px] font-medium text-foreground-secondary">
+            {findingRationale(finding)}
           </p>
           {/* Open the same finding as a full-screen, structured bug report. The run
            *  travels along so the dedicated view resolves it exactly. */}

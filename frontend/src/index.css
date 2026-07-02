@@ -46,6 +46,12 @@
     --color-status-flaky-fg: #b45309; /* amber-700 */
     --color-status-flaky-solid: #f59e0b; /* amber-500 */
 
+    /* Status: errored = orange (a test that COULDN'T run — infra, not a real bug;
+       distinct from red fail and amber flaky so a user never conflates the two) */
+    --color-status-error-bg: #fff7ed; /* orange-50 */
+    --color-status-error-fg: #c2410c; /* orange-700 */
+    --color-status-error-solid: #ea580c; /* orange-600 */
+
     /* Status: info / running = blue */
     --color-status-info-bg: #eff6ff; /* blue-50 */
     --color-status-info-fg: #1d4ed8; /* blue-700 */

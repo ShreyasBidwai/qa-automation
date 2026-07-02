@@ -1,8 +1,10 @@
 import type { ApiResult } from "@/lib/api/client";
 import type { HealthzResponse, ReadyzResponse } from "@/lib/api/types";
 
-/** A status level maps to exactly one badge colour + icon (see StatusBadge). */
-export type StatusLevel = "pass" | "fail" | "flaky" | "info" | "neutral";
+/** A status level maps to exactly one badge colour + icon (see StatusBadge).
+ *  `error` is a test/run that COULDN'T run (infra) — distinct from `fail` (a real
+ *  failure) so a user never conflates "the app is broken" with "we couldn't test it". */
+export type StatusLevel = "pass" | "fail" | "error" | "flaky" | "info" | "neutral";
 
 export interface StatusDescriptor {
   level: StatusLevel;
