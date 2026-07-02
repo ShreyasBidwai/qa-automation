@@ -373,6 +373,21 @@ class RunStatusResponse(BaseModel):
     finished_at: datetime | None = None
 
 
+class CiSummaryResponse(BaseModel):
+    """A CI/PR-gate-consumable verdict for a run (GET /runs/{id}/ci). Trigger a run
+    with POST /projects/{id}/runs, then poll this until ``terminal`` and gate the
+    pipeline on ``gate``: block iff ``fail``. The severity counts explain the verdict.
+    """
+
+    run_id: uuid.UUID
+    status: str  # queued | running | succeeded | failed | cancelled
+    terminal: bool
+    gate: str  # pass | fail | pending — the single pipeline signal
+    critical: int
+    major: int
+    minor: int
+
+
 class FindingLocationAnchor(BaseModel):
     """The deepest failing node (the grouping anchor) — what broke, structurally."""
 

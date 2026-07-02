@@ -35,7 +35,7 @@ from app.execution.lifecycle import STATUS_PASSED as RUN_STATUS_PASSED
 from app.execution.lifecycle import RunLifecycle
 from app.execution.types import ExecutionRunner, PestScript, TargetEnv
 from app.models.ai_usage import AiUsage
-from app.models.enums import Outcome, RunMode, RunTrigger, Triage
+from app.models.enums import JobStatus, Outcome, RunMode, RunTrigger, Triage
 from app.models.finding import Finding
 from app.models.result import Result
 from app.progress import (
@@ -48,6 +48,7 @@ from app.progress import (
     STATUS_PASSED,
     STATUS_SKIPPED,
     STATUS_STARTED,
+    current_run_id,
     emit,
 )
 from app.reporting import FindingAssembler, HistoryClassifier, SeverityScorer
@@ -55,6 +56,7 @@ from app.repositories.ai_usage_repository import AiUsageRepository
 from app.repositories.result_repository import ResultRepository
 from app.repositories.test_case_repository import TestCaseRepository
 from app.repositories.test_script_repository import TestScriptRepository
+from app.services.job_queue import JobQueue
 
 from .selection import (
     FullSweepStrategy,
@@ -527,6 +529,17 @@ class ModeBOrchestrator:
                     extra={"project_id": str(project_id), "processed": len(ensured)},
                 )
                 break
+            # Cooperative cancel: if the operator cancelled the run (DELETE /runs/{id}
+            # → job CANCELLED), stop generating between targets so a cancel actually
+            # frees the worker instead of grinding through 50 targets. The cases done
+            # so far are already committed + reusable. Safe: mark_succeeded no-ops on a
+            # cancelled job, so the cancel status sticks.
+            if await self._is_cancelled():
+                logger.info(
+                    "modes.mode_b.cancelled",
+                    extra={"project_id": str(project_id), "processed": len(ensured)},
+                )
+                break
             ensured.extend(await self._ensure_for_target(project_id, target))
             # Run-durability: commit each target's case+script the moment it is
             # generated, so a crash on a later target loses only the in-flight item —
@@ -534,6 +547,15 @@ class ModeBOrchestrator:
             # never-clobber ``_reuse_scripts`` path). Safe under expire_on_commit=False.
             await self._session.commit()
         return ensured
+
+    async def _is_cancelled(self) -> bool:
+        """Whether the operator cancelled this run (job → CANCELLED). The run id IS
+        the job id (progress pins it), read committed so an out-of-band cancel shows."""
+        run_id = current_run_id()
+        if run_id is None:
+            return False
+        job = await JobQueue(self._session).get(run_id)
+        return job is not None and job.status is JobStatus.CANCELLED
 
     async def _ensure_for_target(
         self, project_id: uuid.UUID, target: Target

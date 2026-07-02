@@ -50,6 +50,7 @@ from .ports import run_request_to_payload, to_run_request
 from .schemas import (
     AiUsageBucket,
     AiUsageRecord,
+    CiSummaryResponse,
     FindingResponse,
     FindingsResponse,
     RunCreate,
@@ -199,6 +200,59 @@ async def get_run(
         run_number=run.run_number if run is not None else None,
         created_at=run.created_at if run is not None else None,
         finished_at=run.finished_at if run is not None else None,
+    )
+
+
+@router.delete("/runs/{run_id}", response_model=RunResponse)
+async def cancel_run(
+    run_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> RunResponse:
+    """Cancel a run (RUN permission). A QUEUED run never starts; a RUNNING run stops
+    cooperatively at the next generation boundary (mode_b checks the cancel flag) and
+    its terminal status is not clobbered. Already-finished runs are unchanged."""
+    job = await _authorized_run_job(
+        run_id, session=session, user=current_user, permission=Permission.RUN
+    )
+    await JobQueue(session).cancel(run_id)
+    await session.commit()
+    refreshed = await JobQueue(session).get(run_id)
+    return RunResponse(run_id=run_id, status=(refreshed or job).status.value)
+
+
+@router.get("/runs/{run_id}/ci", response_model=CiSummaryResponse)
+async def run_ci_summary(
+    run_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> CiSummaryResponse:
+    """A CI/PR-gate verdict for a run (VIEW). Trigger with POST /projects/{id}/runs,
+    then poll this until ``terminal`` and gate the pipeline on ``gate`` (block iff
+    ``fail``). Fails on any open critical/major finding; minor findings don't block."""
+    job = await _authorized_run_job(
+        run_id, session=session, user=current_user, permission=Permission.VIEW
+    )
+    counts = (await OpenFindingsReader(session).severity_counts_by_run([run_id])).get(
+        run_id, {}
+    )
+    critical = counts.get("critical", 0)
+    major = counts.get("major", 0)
+    minor = counts.get("minor", 0)
+    terminal = job.status in _TERMINAL_JOB_STATUSES
+    gate = (
+        "pending"
+        if not terminal
+        else ("fail" if critical or major or job.status is JobStatus.FAILED else "pass")
+    )
+    return CiSummaryResponse(
+        run_id=run_id,
+        status=job.status.value,
+        terminal=terminal,
+        gate=gate,
+        critical=critical,
+        major=major,
+        minor=minor,
     )
 
 
