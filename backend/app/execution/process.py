@@ -27,6 +27,39 @@ Process = Callable[
     [Sequence[str], "str | None", "Mapping[str, str] | None", float], ProcessResult
 ]
 
+# The runner holds Polaris' own secrets (the Claude bridge token, git token, the
+# credentials-vault key, provider API keys, the control-plane DB URL). The process
+# this module spawns runs the AI-GENERATED test code, which could read them via
+# getenv() and exfiltrate. So the child gets a SCRUBBED copy of the environment:
+# these keys (and anything matching a secret-shaped substring, so a future secret is
+# caught by default) are stripped. The target reads its OWN `.env.testing` for app
+# config, so removing Polaris' secrets never starves the test (ADR: architecture-review
+# DO-FIRST #1). Defense in depth alongside the dual-DB guard.
+_SECRET_ENV_NAMES = frozenset({"DATABASE_URL", "CLAUDE_BRIDGE_URL"})
+_SECRET_ENV_SUBSTRINGS = (
+    "SECRET",
+    "TOKEN",
+    "PASSWORD",
+    "PASSWD",
+    "API_KEY",
+    "APIKEY",
+    "ACCESS_KEY",
+    "CREDENTIAL",
+    "PRIVATE_KEY",
+)
+
+
+def is_secret_env_key(key: str) -> bool:
+    """True if ``key`` names a secret that must not reach a target-test subprocess."""
+    upper = key.upper()
+    return upper in _SECRET_ENV_NAMES or any(s in upper for s in _SECRET_ENV_SUBSTRINGS)
+
+
+def scrubbed_environ() -> dict[str, str]:
+    """``os.environ`` with Polaris' secrets removed — the safe base for a child that
+    executes generated code. Operational vars (PATH, HOME, LANG, …) are preserved."""
+    return {k: v for k, v in os.environ.items() if not is_secret_env_key(k)}
+
 
 def run_process(
     argv: Sequence[str],
@@ -34,7 +67,8 @@ def run_process(
     env: Mapping[str, str] | None,
     timeout: float,
 ) -> ProcessResult:
-    full_env = {**os.environ, **(env or {})}
+    # Scrubbed base (no Polaris secrets) + the caller's explicit overlay (which wins).
+    full_env = {**scrubbed_environ(), **(env or {})}
     try:
         completed = subprocess.run(
             list(argv),

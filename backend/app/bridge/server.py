@@ -276,6 +276,17 @@ def main() -> None:
         f"claude-bridge listening on {host}:{port} "
         f"(models: {sorted(allowed)} + claude-* ids)"
     )
+    # Security posture (architecture-review DO-NEXT #8): the endpoint spends your
+    # Claude account. A non-loopback bind is reachable beyond localhost — needed so
+    # the runner container can reach it via host.docker.internal (a loopback bind
+    # would break that on Linux), but the operator must firewall the port to the
+    # docker gateway / host and NOT expose it to a shared or public network.
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        print(  # noqa: T201 — operator-facing security warning
+            f"  ⚠️  bound to {host} (all/other interfaces) — token-guarded, but "
+            "firewall this port to the docker gateway; do NOT expose it publicly. "
+            "Set CLAUDE_BRIDGE_HOST=127.0.0.1 if the runner is not containerised."
+        )
     try:
         server.serve_forever()
     except KeyboardInterrupt:
