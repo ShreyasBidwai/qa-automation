@@ -181,12 +181,61 @@ def _dependencies(
 # --- planner ----------------------------------------------------------------
 
 
+# Field types whose value a create endpoint safely echoes back unchanged. Excludes
+# anything the server transforms/hides — see _echo_fields.
+_ECHO_SAFE_TYPES = frozenset({"string", "integer", "numeric"})
+# Never assert the echo of a value the server normalises, hashes, or hides — asserting
+# it would be a false failure (violates the ADR-0025 no-invented-oracle stance).
+_ECHO_UNSAFE_NAME_PARTS = (
+    "password",
+    "secret",
+    "token",
+    "hash",
+    "otp",
+    "pin",
+    "email",
+    "url",
+)
+_ECHO_UNSAFE_RULES = ("confirmed", "email", "url", "date", "hashed", "lowercase")
+# Only create/update methods return the mutated resource to echo-check.
+_ECHO_METHODS = frozenset({"POST", "PUT", "PATCH"})
+
+
+def _echo_fields(
+    method: str, fields: list[ValidationField], payload: dict[str, Any]
+) -> dict[str, Any]:
+    """The submitted field→value pairs a create/update SAFELY echoes back — so a
+    happy-path characterization can assert the resource actually persisted them,
+    without inventing (we sent these) or false-failing on server-transformed fields.
+    """
+    if method.upper() not in _ECHO_METHODS:
+        return {}
+    echo: dict[str, Any] = {}
+    for field_spec in fields:
+        name = field_spec.name
+        if not field_spec.required or field_spec.type not in _ECHO_SAFE_TYPES:
+            continue
+        if any(part in name.lower() for part in _ECHO_UNSAFE_NAME_PARTS):
+            continue
+        if any(rule in field_spec.raw_rules for rule in _ECHO_UNSAFE_RULES):
+            continue
+        if name in payload:
+            echo[name] = payload[name]
+    return echo
+
+
 def plan_cases(spec: EndpointSpec) -> list[PlannedCase]:
     fields = spec.validation_fields
     base_payload: dict[str, Any] = {f.name: _valid_value(f) for f in fields}
     path_values: dict[str, Any] = {p: 1 for p in spec.path_params}
     auth = spec.auth_required
     cases: list[PlannedCase] = []
+    # A create/update happy path can assert the resource echoed the values we sent
+    # (structural characterization stays the floor; this only tightens when safe).
+    happy_echo = _echo_fields(spec.method, fields, base_payload)
+    happy_shape: dict[str, Any] = {"json_object": True}
+    if happy_echo:
+        happy_shape["echo"] = happy_echo
 
     def negative(
         field_spec: ValidationField,
@@ -230,7 +279,7 @@ def plan_cases(spec: EndpointSpec) -> list[PlannedCase]:
             path_values=dict(path_values),
             authenticated=auth,
             expected=ExpectedOutcome(
-                status=_success_status(spec.method), shape={"json_object": True}
+                status=_success_status(spec.method), shape=happy_shape
             ),
             oracle_source=OracleSource.CHARACTERIZATION,
             dependencies=_dependencies(spec, base_payload),
