@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     job_poll_interval_seconds: float = 1.0
     job_backoff_base_seconds: float = 2.0
     job_stuck_after_seconds: int = 300  # a running job older than this is "stuck"
+    # Watchdog: a run exceeding this wall-clock budget is force-failed (terminally,
+    # no retry) with an incident, so a hung run can never hold the queue forever
+    # (architecture-review DO-FIRST #2). Generous — a large full-sweep generation is
+    # legitimately long; this only catches a genuinely wedged run.
+    job_max_duration_seconds: float = 1800.0
     # Identifies the claiming worker in the job lease (B5, ADR-0036).
     worker_id: str = "runner"
 

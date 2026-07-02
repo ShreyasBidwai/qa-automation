@@ -46,12 +46,15 @@ class JobWorker:
         *,
         worker_id: str = "worker",
         backoff_base_seconds: float = 2.0,
+        max_duration_seconds: float = 1800.0,
         incident_recorder: IncidentRecorder | None = None,
     ) -> None:
         self._sm = sessionmaker
         self._handlers = handlers
         self._worker_id = worker_id
         self._backoff = backoff_base_seconds
+        # Watchdog budget: a run exceeding this is force-failed (see _run).
+        self._max_duration = max_duration_seconds
         # The universal capture seam: every autonomous failure surfaces here. Records
         # in a fresh session (best-effort) so it survives the job's own rollback.
         self._recorder = incident_recorder or IncidentRecorder(sessionmaker)
@@ -115,40 +118,21 @@ class JobWorker:
         try:
             try:
                 async with self._sm() as session:
-                    run_id, summary = await handler(session, claimed)
-                    await session.commit()
-            except Exception as exc:  # task boundary: record + retry, never die
-                # Terminal run-failed so a live stream closes (best-effort).
-                if emitter is not None:
-                    await emitter.emit(
-                        phase=PHASE_RUN,
-                        step="run",
-                        status=STATUS_FAILED,
-                        detail={"error": type(exc).__name__},
+                    # Watchdog: bound the whole run — a wedged run can never hold the
+                    # queue forever (architecture-review DO-FIRST #2). A timeout is
+                    # terminal (retrying a hung run just wedges again).
+                    run_id, summary = await asyncio.wait_for(
+                        handler(session, claimed), timeout=self._max_duration
                     )
-                # Capture a structured incident BEFORE finalizing — best-effort, so a
-                # recording failure can't change the existing fail/retry behaviour. The
-                # phase is the one tagged inward (e.g. provider) or the job kind's.
-                await self._recorder.record(
-                    exc,
-                    phase=phase_of(exc, default=phase_for_job_kind(claimed.kind)),
-                    project_id=claimed.project_id,
-                    component=f"job:{claimed.kind.value}",
+                    await session.commit()
+            except TimeoutError as exc:
+                await self._on_job_failure(
+                    claimed, emitter, exc, detail="watchdog_timeout", terminal=True
                 )
-                # Run-durability: immediately reconcile this crashed run's row (its id
-                # is the job id) to 'interrupted' in a FRESH session, so the partial
-                # run + its committed cases are honestly terminal without waiting for
-                # the next startup sweep. Best-effort; a total DB outage defers it to
-                # that sweep.
-                if claimed.kind is JobKind.RUN:
-                    await self._reconcile_run(claimed.id)
-                await self._finalize_failure(claimed, type(exc).__name__)
-                logger.error(
-                    "jobs.failed",
-                    extra={
-                        "job_id": str(claimed.id),
-                        "error_type": type(exc).__name__,
-                    },
+                return
+            except Exception as exc:  # task boundary: record + retry, never die
+                await self._on_job_failure(
+                    claimed, emitter, exc, detail=type(exc).__name__, terminal=False
                 )
                 return
             async with self._sm() as session:
@@ -160,10 +144,59 @@ class JobWorker:
             if token is not None:
                 reset_emitter(token)
 
-    async def _finalize_failure(self, claimed: ClaimedJob, detail: str) -> None:
+    async def _on_job_failure(
+        self,
+        claimed: ClaimedJob,
+        emitter: RunProgressEmitter | None,
+        exc: BaseException,
+        *,
+        detail: str,
+        terminal: bool,
+    ) -> None:
+        """Fail a job honestly: terminal run event + incident + run reconcile +
+        queue finalize (retry unless ``terminal``). All best-effort; never raises."""
+        # Terminal run-failed so a live stream closes (best-effort).
+        if emitter is not None:
+            await emitter.emit(
+                phase=PHASE_RUN,
+                step="run",
+                status=STATUS_FAILED,
+                detail={"error": type(exc).__name__},
+            )
+        # Capture a structured incident BEFORE finalizing — best-effort, so a
+        # recording failure can't change the fail/retry behaviour. The phase is the
+        # one tagged inward (e.g. provider) or the job kind's.
+        await self._recorder.record(
+            exc,
+            phase=phase_of(exc, default=phase_for_job_kind(claimed.kind)),
+            project_id=claimed.project_id,
+            component=f"job:{claimed.kind.value}",
+        )
+        # Run-durability: immediately reconcile this crashed run's row (its id is the
+        # job id) to 'interrupted' in a FRESH session, so the partial run + its
+        # committed cases are honestly terminal without waiting for the next startup
+        # sweep. Best-effort; a total DB outage defers it to that sweep.
+        if claimed.kind is JobKind.RUN:
+            await self._reconcile_run(claimed.id)
+        await self._finalize_failure(claimed, detail, terminal=terminal)
+        logger.error(
+            "jobs.failed",
+            extra={
+                "job_id": str(claimed.id),
+                "error_type": type(exc).__name__,
+                "terminal": terminal,
+            },
+        )
+
+    async def _finalize_failure(
+        self, claimed: ClaimedJob, detail: str, *, terminal: bool = False
+    ) -> None:
         async with self._sm() as session:
             await JobQueue(session).mark_failed_or_retry(
-                claimed.id, detail=detail, backoff_base_seconds=self._backoff
+                claimed.id,
+                detail=detail,
+                backoff_base_seconds=self._backoff,
+                terminal=terminal,
             )
             await session.commit()
 

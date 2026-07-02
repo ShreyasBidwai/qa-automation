@@ -44,6 +44,7 @@ async def _run(settings: Settings) -> None:
         handlers,
         worker_id=settings.worker_id,
         backoff_base_seconds=settings.job_backoff_base_seconds,
+        max_duration_seconds=settings.job_max_duration_seconds,
     )
 
     stop = asyncio.Event()

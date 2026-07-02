@@ -135,13 +135,18 @@ class JobQueue:
         *,
         detail: str,
         backoff_base_seconds: float = 2.0,
+        terminal: bool = False,
     ) -> JobStatus | None:
-        """Re-queue with exponential backoff under the cap, else mark failed."""
+        """Re-queue with exponential backoff under the cap, else mark failed.
+
+        ``terminal`` forces FAILED with no retry — for failures that will just recur
+        (e.g. a watchdog timeout on a wedged run), so we don't re-run them 3×.
+        """
         job = await self._lock(job_id)
         if job is None or job.status != JobStatus.RUNNING:
             return None
         job.detail = detail
-        if job.attempts < job.max_attempts:
+        if not terminal and job.attempts < job.max_attempts:
             delay = backoff_base_seconds * (2 ** (job.attempts - 1))
             job.status = JobStatus.QUEUED
             job.available_at = datetime.now(UTC) + timedelta(seconds=delay)

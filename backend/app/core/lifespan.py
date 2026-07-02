@@ -69,6 +69,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             handlers,
             worker_id="poller",
             backoff_base_seconds=settings.job_backoff_base_seconds,
+            max_duration_seconds=settings.job_max_duration_seconds,
         )
         stop_event = asyncio.Event()
         worker_task = asyncio.create_task(
