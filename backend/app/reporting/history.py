@@ -39,18 +39,25 @@ def classify_history(presence: Sequence[bool]) -> FindingStatus:
     """Classify a key from its presence vector over prior runs (oldest → newest).
 
     ``presence[i]`` is whether the key had a finding in window run ``i``. The
-    current run is excluded (the finding is present now by definition). Precedence:
-    flaky > regression > known > new (ADR-0023).
+    current run is excluded (the finding is present now by definition).
+
+    REGRESSION takes precedence over FLAKY (architecture-review DO-FIRST #3): a
+    failure that was cleared (the immediately-prior run PASSED) and has now returned
+    is a real, currently-reproducing break — surface it, never bury it as "flaky"
+    just because older history flapped. FLAKY is reserved for a failure that is
+    ONGOING at the prior→current boundary (prior run also failed) yet genuinely
+    oscillates — noisy, but not a fresh regression. Precedence: regression > flaky >
+    known > new.
     """
-    flips = sum(1 for a, b in zip(presence, presence[1:], strict=False) if a != b)
-    if flips >= FLAKY_FLIP_THRESHOLD:
-        return FindingStatus.FLAKY
     seen = any(presence)
     last = presence[-1] if presence else False  # the immediately-prior run
     if seen and not last:
-        return FindingStatus.REGRESSION  # cleared, then back
+        return FindingStatus.REGRESSION  # cleared, then back — a live regression
+    flips = sum(1 for a, b in zip(presence, presence[1:], strict=False) if a != b)
+    if flips >= FLAKY_FLIP_THRESHOLD:
+        return FindingStatus.FLAKY  # ongoing (prior failed) AND oscillating
     if last:
-        return FindingStatus.KNOWN  # ongoing
+        return FindingStatus.KNOWN  # ongoing, stable
     return FindingStatus.NEW  # never seen in the window
 
 

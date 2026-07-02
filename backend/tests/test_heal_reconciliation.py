@@ -99,7 +99,7 @@ async def test_healed_location_finding_suppressed_by_default(
     project_id = await _project(db_session)
     run_id = (await RunRepository(db_session).add(make_run(project_id))).id
     await _seed_finding(
-        db_session, project_id, run_id, key="DRIFT#fail", heal_status=STATUS_PROPOSED
+        db_session, project_id, run_id, key="DRIFT#fail", heal_status=STATUS_CONFIRMED
     )
     await _seed_finding(db_session, project_id, run_id, key="REAL#fail")
 
@@ -107,7 +107,8 @@ async def test_healed_location_finding_suppressed_by_default(
         project_id, limit=100, offset=0
     )
 
-    # Only the real finding is "currently broken"; the drift is suppressed.
+    # Only the real finding is "currently broken"; the CONFIRMED-healed drift is
+    # suppressed.
     assert total == 1
     assert [i.finding.root_cause_key for i in page] == ["REAL#fail"]
     assert page[0].superseded is False
@@ -119,7 +120,7 @@ async def test_include_superseded_returns_it_tagged(
     project_id = await _project(db_session)
     run_id = (await RunRepository(db_session).add(make_run(project_id))).id
     await _seed_finding(
-        db_session, project_id, run_id, key="DRIFT#fail", heal_status=STATUS_PROPOSED
+        db_session, project_id, run_id, key="DRIFT#fail", heal_status=STATUS_CONFIRMED
     )
     await _seed_finding(db_session, project_id, run_id, key="REAL#fail")
 
@@ -133,16 +134,20 @@ async def test_include_superseded_returns_it_tagged(
     assert by_key["REAL#fail"].superseded is False
 
 
-async def test_confirmed_heal_also_suppresses(db_session: AsyncSession) -> None:
+async def test_proposed_heal_does_not_suppress(db_session: AsyncSession) -> None:
+    # A PROPOSED (unconfirmed) heal must NOT hide the finding — the human still needs
+    # to see it to accept/reject the re-addressing (architecture-review DO-NEXT #10).
     project_id = await _project(db_session)
     run_id = (await RunRepository(db_session).add(make_run(project_id))).id
-    await _seed_finding(
-        db_session, project_id, run_id, key="DRIFT#fail", heal_status=STATUS_CONFIRMED
+    finding = await _seed_finding(
+        db_session, project_id, run_id, key="DRIFT#fail", heal_status=STATUS_PROPOSED
     )
+    assert await superseded_finding_ids(db_session, [finding]) == set()
+
     page, total = await OpenFindingsReader(db_session).open_findings(
         project_id, limit=100, offset=0
     )
-    assert total == 0 and page == []
+    assert total == 1 and page[0].finding.root_cause_key == "DRIFT#fail"
 
 
 async def test_rejected_heal_does_not_suppress(db_session: AsyncSession) -> None:
@@ -221,7 +226,7 @@ async def test_inbox_excludes_drift_by_default_includes_tagged_with_flag(
             )
         ).id
         await _seed_finding(
-            session, pid, run_id, key="DRIFT#fail", heal_status=STATUS_PROPOSED
+            session, pid, run_id, key="DRIFT#fail", heal_status=STATUS_CONFIRMED
         )
         await _seed_finding(session, pid, run_id, key="REAL#fail")
         await session.commit()

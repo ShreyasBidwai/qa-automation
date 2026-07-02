@@ -4,8 +4,9 @@ A LOCATION failure double-surfaces: B8 proposes a heal for it AND the assembler
 turns the raw failing result into a Finding. Read together, that reads as "the app
 is broken" when the honest story is "the test needs re-addressing". This reconciles
 the two **at read time** (no new persistence): a finding is *superseded by a heal*
-when its representative result's test case carries a proposed/confirmed heal in the
-same run.
+only when its representative result's test case carries a **CONFIRMED** heal in the
+same run — a proposed (unconfirmed) heal never hides the finding a human must still
+see to accept or reject (architecture-review DO-NEXT #10).
 
 The link is the heal's existence, which is itself the confidence gate — B8 only
 proposes a heal for a high-confidence LOCATION re-binding and NEVER for an assertion
@@ -25,11 +26,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.finding import Finding
 from app.models.result import Result
-from app.models.test_heal import STATUS_CONFIRMED, STATUS_PROPOSED, TestHeal
+from app.models.test_heal import STATUS_CONFIRMED, TestHeal
 
-# A heal in one of these states masks its finding; a rejected heal does not (the
-# human said "not a valid re-addressing" → the failure stands as a real finding).
-_ACTIVE_HEAL_STATUSES = (STATUS_PROPOSED, STATUS_CONFIRMED)
+# Only a CONFIRMED heal masks its finding — a proposed heal is unconfirmed and must
+# not hide the finding a human needs to see to decide; a rejected heal never masks.
+_ACTIVE_HEAL_STATUSES = (STATUS_CONFIRMED,)
 
 
 async def superseded_finding_ids(

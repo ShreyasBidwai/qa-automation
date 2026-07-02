@@ -50,12 +50,14 @@ def test_oscillation_is_flaky() -> None:
     assert classify_history([False, True, False, True]) is FindingStatus.FLAKY
 
 
-def test_flaky_wins_over_regression() -> None:
+def test_regression_wins_over_flaky_when_the_prior_run_passed() -> None:
+    # A live regression must NOT be buried as "flaky" just because older history
+    # flapped (architecture-review DO-FIRST #3). The immediately-prior run PASSED
+    # (last=False) and the failure has returned → REGRESSION, even though it
+    # oscillated earlier. FLAKY stays for failures still ongoing at the boundary.
     presence = [True, False, True, False]
-    # regression-eligible (seen earlier, absent in the immediately-prior run)...
-    assert any(presence) and not presence[-1]
-    # ...but it oscillated, so flaky wins (precedence).
-    assert classify_history(presence) is FindingStatus.FLAKY
+    assert any(presence) and not presence[-1]  # seen earlier, prior run passed
+    assert classify_history(presence) is FindingStatus.REGRESSION
 
 
 def test_single_flip_is_regression_not_flaky() -> None:
@@ -144,17 +146,39 @@ async def test_regression_when_cleared_then_back(db_session: AsyncSession) -> No
     )
 
 
-async def test_flaky_when_key_oscillates(db_session: AsyncSession) -> None:
+async def test_oscillating_but_prior_passing_is_regression_not_flaky(
+    db_session: AsyncSession,
+) -> None:
+    # architecture-review DO-FIRST #3: the immediately-prior run PASSED (r4 no K) and
+    # the failure returned now → a live REGRESSION the user must see, even though the
+    # key oscillated earlier. It must NOT be buried as "flaky".
     project_id = await _project(db_session)
     r1 = await _run(db_session, project_id, 1)  # K
     await _run(db_session, project_id, 2)  # no K
     r3 = await _run(db_session, project_id, 3)  # K
-    await _run(db_session, project_id, 4)  # no K
+    await _run(db_session, project_id, 4)  # no K  ← prior run PASSED
     r5 = await _run(db_session, project_id, 5)  # current, K
     await _seed_finding(db_session, project_id, r1, "K")
     await _seed_finding(db_session, project_id, r3, "K")
     finding = await _seed_finding(db_session, project_id, r5, "K")
-    # window [r1,r2,r3,r4] presence [T,F,T,F] → 3 flips → flaky (wins over regression)
+    # window [r1,r2,r3,r4] presence [T,F,T,F], prior run passed → REGRESSION.
+    assert await HistoryClassifier(db_session).classify(project_id, finding) is (
+        FindingStatus.REGRESSION
+    )
+
+
+async def test_ongoing_oscillating_is_flaky(db_session: AsyncSession) -> None:
+    # Still FLAKY when the failure is ONGOING at the boundary (prior run also failed)
+    # yet oscillated before — noisy, but not a fresh regression.
+    project_id = await _project(db_session)
+    r1 = await _run(db_session, project_id, 1)  # K
+    await _run(db_session, project_id, 2)  # no K
+    r3 = await _run(db_session, project_id, 3)  # K  ← prior run FAILED
+    r4 = await _run(db_session, project_id, 4)  # current, K
+    await _seed_finding(db_session, project_id, r1, "K")
+    await _seed_finding(db_session, project_id, r3, "K")
+    finding = await _seed_finding(db_session, project_id, r4, "K")
+    # window [r1,r2,r3] presence [T,F,T], prior run failed, 2 flips → FLAKY.
     assert await HistoryClassifier(db_session).classify(project_id, finding) is (
         FindingStatus.FLAKY
     )
