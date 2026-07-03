@@ -167,175 +167,201 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate className="space-y-6">
-      <div
-        role="radiogroup"
-        aria-label="How to choose tests"
-        className="grid gap-3 sm:grid-cols-2"
-      >
-        <ModeCard
-          selected={mode === "describe"}
-          onSelect={() => setMode("describe")}
-          title="Describe it"
-          description="Say a scenario in plain English — Polaris authors the test (UI journey or API contract) for you to review."
-        />
-        <ModeCard
-          selected={mode === "autonomous"}
-          onSelect={() => setMode("autonomous")}
-          title="Autonomous"
-          description="Polaris sweeps your app and runs tests across the layers you choose."
-        />
-      </div>
-
-      {mode === "describe" ? (
-        <div className="space-y-4">
-          <fieldset className="space-y-2">
-            <legend className="mb-1 text-sm font-medium text-foreground">
-              What kind of test
-            </legend>
-            <div
-              role="radiogroup"
-              aria-label="Authoring layer"
-              className="grid gap-2 sm:grid-cols-2"
-            >
-              {AUTHORING_LAYERS.map((layer) => (
-                <LayerChoice
-                  key={layer.key}
-                  selected={authoringLayer === layer.key}
-                  onSelect={() => setAuthoringLayer(layer.key)}
-                  title={layer.title}
-                  description={layer.description}
-                />
-              ))}
-            </div>
-          </fieldset>
-
-          <div className="space-y-2">
-            <label
-              htmlFor="prompt"
-              className="text-sm font-medium text-foreground"
-            >
-              What to test
-            </label>
-            <Textarea
-              id="prompt"
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              placeholder={
-                authoringLayer === "api"
-                  ? "e.g. the orders endpoint rejects an unauthenticated POST"
-                  : "e.g. a shopper checks out with an expired card"
-              }
-              rows={3}
+    <form onSubmit={onSubmit} noValidate>
+      {/* Two columns: the run configuration on the left, and a context panel on the
+          right — the searchable module picker when scoping by module (ADR-0061), a
+          run preview otherwise — so the width isn't wasted. Stacks on small screens. */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem] xl:grid-cols-[minmax(0,1fr)_28rem]">
+        <div className="space-y-6">
+          <div
+            role="radiogroup"
+            aria-label="How to choose tests"
+            className="grid gap-3 sm:grid-cols-2"
+          >
+            <ModeCard
+              selected={mode === "describe"}
+              onSelect={() => setMode("describe")}
+              title="Describe it"
+              description="Say a scenario in plain English — Polaris authors the test (UI journey or API contract) for you to review."
             />
-            <div className="flex flex-wrap gap-2">
-              {EXAMPLES[authoringLayer].map((example) => (
-                <button
-                  key={example}
-                  type="button"
-                  onClick={() => setPrompt(example)}
-                  className="rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                  {example}
-                </button>
-              ))}
-            </div>
+            <ModeCard
+              selected={mode === "autonomous"}
+              onSelect={() => setMode("autonomous")}
+              title="Autonomous"
+              description="Polaris sweeps your app and runs tests across the layers you choose."
+            />
           </div>
 
-          <CsvImportPanel projectId={projectId} />
-        </div>
-      ) : (
-        <fieldset className="space-y-3">
-          <legend className="mb-1 text-sm font-medium text-foreground">
-            Scope
-          </legend>
-          <StrategyOption
-            value="full_sweep"
-            selected={scope === "full_sweep"}
-            onSelect={() => setScope("full_sweep")}
-            title="Test everything"
-            description="A full sweep across every testable target."
-          />
-          <StrategyOption
-            value="modules"
-            selected={scope === "modules"}
-            onSelect={() => setScope("modules")}
-            title="Test specific modules"
-            description="Pick the feature areas to test — their API and/or frontend."
-          />
-          {scope === "modules" ? (
-            <ModulePicker
-              projectId={projectId}
-              selected={selectedModules}
-              onChange={setSelectedModules}
-            />
-          ) : null}
-          <StrategyOption
-            value="change_impact"
-            selected={scope === "change_impact"}
-            onSelect={() => setScope("change_impact")}
-            title="Test only what changed"
-            description="Change-impact selection from a list of changed files."
-          />
-          {scope === "change_impact" ? (
-            <div className="space-y-1.5 pl-1">
-              <label
-                htmlFor="changeset"
-                className="text-sm font-medium text-foreground"
-              >
-                Changed files
-              </label>
-              <Textarea
-                id="changeset"
-                value={changeset}
-                onChange={(event) => setChangeset(event.target.value)}
-                placeholder={
-                  "app/Http/Controllers/CheckoutController.php\napp/Models/Order.php"
-                }
-                className="font-mono text-[13px]"
-              />
-              <p className="text-xs text-muted-foreground">
-                One path per line.
-              </p>
-            </div>
-          ) : null}
+          {mode === "describe" ? (
+            <div className="space-y-4">
+              <fieldset className="space-y-2">
+                <legend className="mb-1 text-sm font-medium text-foreground">
+                  What kind of test
+                </legend>
+                <div
+                  role="radiogroup"
+                  aria-label="Authoring layer"
+                  className="grid gap-2 sm:grid-cols-2"
+                >
+                  {AUTHORING_LAYERS.map((layer) => (
+                    <LayerChoice
+                      key={layer.key}
+                      selected={authoringLayer === layer.key}
+                      onSelect={() => setAuthoringLayer(layer.key)}
+                      title={layer.title}
+                      description={layer.description}
+                    />
+                  ))}
+                </div>
+              </fieldset>
 
-          <fieldset className="space-y-2 pt-1">
-            <legend className="mb-1 text-sm font-medium text-foreground">
-              Layers to test
-            </legend>
-            <p className="mb-2 text-xs text-muted-foreground">
-              Which layers this run exercises. All on = test everything.
-            </p>
-            <div className="grid gap-2 sm:grid-cols-3">
-              {LAYERS.map((layer) => (
-                <LayerToggle
-                  key={layer.key}
-                  label={layer.label}
-                  description={layer.description}
-                  checked={layers[layer.key]}
-                  onChange={(checked) =>
-                    setLayers((current) => ({
-                      ...current,
-                      [layer.key]: checked,
-                    }))
+              <div className="space-y-2">
+                <label
+                  htmlFor="prompt"
+                  className="text-sm font-medium text-foreground"
+                >
+                  What to test
+                </label>
+                <Textarea
+                  id="prompt"
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                  placeholder={
+                    authoringLayer === "api"
+                      ? "e.g. the orders endpoint rejects an unauthenticated POST"
+                      : "e.g. a shopper checks out with an expired card"
                   }
+                  rows={3}
                 />
-              ))}
+                <div className="flex flex-wrap gap-2">
+                  {EXAMPLES[authoringLayer].map((example) => (
+                    <button
+                      key={example}
+                      type="button"
+                      onClick={() => setPrompt(example)}
+                      className="rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                      {example}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <CsvImportPanel projectId={projectId} />
             </div>
-          </fieldset>
-        </fieldset>
-      )}
+          ) : (
+            <fieldset className="space-y-3">
+              <legend className="mb-1 text-sm font-medium text-foreground">
+                Scope
+              </legend>
+              <StrategyOption
+                value="full_sweep"
+                selected={scope === "full_sweep"}
+                onSelect={() => setScope("full_sweep")}
+                title="Test everything"
+                description="A full sweep across every testable target."
+              />
+              <StrategyOption
+                value="modules"
+                selected={scope === "modules"}
+                onSelect={() => setScope("modules")}
+                title="Test specific modules"
+                description="Pick the feature areas to test — their API and/or frontend."
+              />
+              <StrategyOption
+                value="change_impact"
+                selected={scope === "change_impact"}
+                onSelect={() => setScope("change_impact")}
+                title="Test only what changed"
+                description="Change-impact selection from a list of changed files."
+              />
+              {scope === "change_impact" ? (
+                <div className="space-y-1.5 pl-1">
+                  <label
+                    htmlFor="changeset"
+                    className="text-sm font-medium text-foreground"
+                  >
+                    Changed files
+                  </label>
+                  <Textarea
+                    id="changeset"
+                    value={changeset}
+                    onChange={(event) => setChangeset(event.target.value)}
+                    placeholder={
+                      "app/Http/Controllers/CheckoutController.php\napp/Models/Order.php"
+                    }
+                    className="font-mono text-[13px]"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    One path per line.
+                  </p>
+                </div>
+              ) : null}
 
-      {error ? (
-        <p role="alert" className="text-sm text-status-fail-fg">
-          {error}
-        </p>
-      ) : null}
+              <fieldset className="space-y-2 pt-1">
+                <legend className="mb-1 text-sm font-medium text-foreground">
+                  Layers to test
+                </legend>
+                <p className="mb-2 text-xs text-muted-foreground">
+                  Which layers this run exercises. All on = test everything.
+                </p>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {LAYERS.map((layer) => (
+                    <LayerToggle
+                      key={layer.key}
+                      label={layer.label}
+                      description={layer.description}
+                      checked={layers[layer.key]}
+                      onChange={(checked) =>
+                        setLayers((current) => ({
+                          ...current,
+                          [layer.key]: checked,
+                        }))
+                      }
+                    />
+                  ))}
+                </div>
+              </fieldset>
+            </fieldset>
+          )}
 
-      <Button type="submit" disabled={submitting}>
-        {submitting ? "Starting…" : "Start run"}
-      </Button>
+          {error ? (
+            <p role="alert" className="text-sm text-status-fail-fg">
+              {error}
+            </p>
+          ) : null}
+
+          <Button type="submit" disabled={submitting}>
+            {submitting ? "Starting…" : "Start run"}
+          </Button>
+        </div>
+
+        <aside aria-label="Run details" className="min-w-0">
+          {mode === "autonomous" && scope === "modules" ? (
+            <div className="space-y-2">
+              <h2 className="text-sm font-medium text-foreground">
+                Modules to test
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Search and pick the feature areas — combine with the layers to
+                target their API and/or frontend.
+              </p>
+              <ModulePicker
+                projectId={projectId}
+                selected={selectedModules}
+                onChange={setSelectedModules}
+              />
+            </div>
+          ) : (
+            <RunPreview
+              mode={mode}
+              scope={scope}
+              authoringLayer={authoringLayer}
+              layers={layers}
+            />
+          )}
+        </aside>
+      </div>
     </form>
   );
 }
@@ -484,6 +510,63 @@ function CsvImportSummary({
   );
 }
 
+/** A compact preview of what the configured run will do — fills the right column
+ *  when the module picker isn't shown, so the space stays useful, not empty. */
+function RunPreview({
+  mode,
+  scope,
+  authoringLayer,
+  layers,
+}: {
+  mode: Mode;
+  scope: AutoScope;
+  authoringLayer: AuthoringLayer;
+  layers: Record<RunLayer, boolean>;
+}) {
+  const activeLayers = LAYERS.filter((layer) => layers[layer.key]);
+  const layerText =
+    activeLayers.length === LAYERS.length
+      ? "all"
+      : activeLayers.map((layer) => layer.label).join(" · ") || "none";
+  return (
+    <div className="rounded-xl border border-border bg-surface p-4">
+      <h2 className="text-sm font-medium text-foreground">This run</h2>
+      {mode === "describe" ? (
+        <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
+          Polaris authors a{" "}
+          <span className="font-medium text-foreground">
+            {authoringLayer === "api" ? "API contract" : "UI journey"}
+          </span>{" "}
+          test from your description, for you to review before it runs.
+        </p>
+      ) : (
+        <dl className="mt-2 space-y-1.5 text-[13px] text-muted-foreground">
+          <div className="flex justify-between gap-3">
+            <dt>Scope</dt>
+            <dd className="text-right font-medium text-foreground">
+              {scope === "change_impact"
+                ? "What changed"
+                : scope === "modules"
+                  ? "Specific modules"
+                  : "Everything"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt>Layers</dt>
+            <dd className="text-right font-medium text-foreground">
+              {layerText}
+            </dd>
+          </div>
+        </dl>
+      )}
+      <p className="mt-3 rounded-lg border border-dashed border-border bg-background px-3 py-2 text-xs text-muted-foreground">
+        Tip: “Test specific modules” scopes the run to a feature area —
+        including just its frontend.
+      </p>
+    </div>
+  );
+}
+
 /**
  * The module picker (ADR-0061): a searchable, multi-select list of the project's
  * feature areas, laid out across the width. Selecting modules narrows the run to
@@ -523,7 +606,7 @@ function ModulePicker({
 
   if (loading) {
     return (
-      <div className="ml-1 flex items-center gap-2 rounded-lg border border-dashed border-border bg-surface px-3 py-4 text-[13px] text-muted-foreground">
+      <div className="flex items-center gap-2 rounded-lg border border-dashed border-border bg-surface px-3 py-4 text-[13px] text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
         Loading modules…
       </div>
@@ -533,7 +616,7 @@ function ModulePicker({
     return (
       <p
         role="alert"
-        className="ml-1 rounded-lg border border-status-fail-border bg-status-fail-bg px-3 py-2.5 text-[13px] text-status-fail-fg"
+        className="rounded-lg border border-status-fail-border bg-status-fail-bg px-3 py-2.5 text-[13px] text-status-fail-fg"
       >
         {error}
       </p>
@@ -541,7 +624,7 @@ function ModulePicker({
   }
   if (modules.length === 0) {
     return (
-      <p className="ml-1 rounded-lg border border-dashed border-border bg-surface px-3 py-4 text-center text-[13px] text-muted-foreground">
+      <p className="rounded-lg border border-dashed border-border bg-surface px-3 py-4 text-center text-[13px] text-muted-foreground">
         No modules yet — build the model first, and the app’s feature areas
         appear here.
       </p>
@@ -549,7 +632,7 @@ function ModulePicker({
   }
 
   return (
-    <div className="ml-1 rounded-xl border border-border bg-surface p-3">
+    <div className="rounded-xl border border-border bg-surface p-3">
       <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5">
         <Search
           className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
@@ -587,7 +670,7 @@ function ModulePicker({
         </div>
       </div>
 
-      <ul className="mt-2 grid max-h-[300px] gap-1.5 overflow-y-auto sm:grid-cols-2 xl:grid-cols-3">
+      <ul className="mt-2 grid max-h-[440px] gap-1.5 overflow-y-auto">
         {filtered.map((module) => {
           const checked = selectedSet.has(module.key);
           return (

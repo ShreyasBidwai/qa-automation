@@ -19,9 +19,9 @@ export function StartRunPage({ projectId }: { projectId: string }) {
         description="Describe a scenario to test, or run autonomously across the model."
       />
       <main className="flex-1 px-6 py-8">
-        {/* Wider than a single column so the module picker (ADR-0061) can lay its
-            searchable list across the width instead of leaving the right side empty. */}
-        <div className="max-w-4xl">
+        {/* Wide enough for the two-column run form — config on the left, the module
+            picker / run preview on the right (ADR-0061) — so the space isn't wasted. */}
+        <div className="max-w-6xl">
           <RunTriggerForm projectId={projectId} />
         </div>
       </main>
