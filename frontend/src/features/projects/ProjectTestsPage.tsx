@@ -1,4 +1,9 @@
-import { AlertTriangle, ArrowLeft, ChevronRight, FlaskConical } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ChevronRight,
+  FlaskConical,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Link } from "@/components/Link";
@@ -38,8 +43,8 @@ export function ProjectTestsPage({ projectId }: { projectId: string }) {
             Generated tests
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            The runnable tests Polaris authored from the model — target, kind, and
-            the actual code.
+            The runnable tests Polaris authored from the model — target, kind,
+            and the actual code.
           </p>
         </div>
         {!loading && !error ? (
@@ -142,7 +147,9 @@ function TestRow({ test }: { test: TestCaseSummary }) {
       {open ? (
         <div className="border-t border-border-subtle bg-background">
           <pre className="max-h-[440px] overflow-auto px-5 py-4 font-mono text-[12.5px] leading-relaxed text-foreground-secondary">
-            <code>{test.code || "// (no code generated for this case yet)"}</code>
+            <code>
+              {test.code || "// (no code generated for this case yet)"}
+            </code>
           </pre>
         </div>
       ) : null}
@@ -201,7 +208,8 @@ function facetCounts(
   pick: (t: TestCaseSummary) => string,
 ): [string, number][] {
   const counts = new Map<string, number>();
-  for (const test of tests) counts.set(pick(test), (counts.get(pick(test)) ?? 0) + 1);
+  for (const test of tests)
+    counts.set(pick(test), (counts.get(pick(test)) ?? 0) + 1);
   return [...counts.entries()].sort((a, b) => b[1] - a[1]);
 }
 

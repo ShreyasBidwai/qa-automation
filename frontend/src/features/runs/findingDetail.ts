@@ -114,7 +114,11 @@ export function buildRibbon(finding: Finding): Ribbon {
       });
     }
     for (const table of location.tables ?? []) {
-      hops.push({ tier: "DB", label: table, failing: isFailing("table", table) });
+      hops.push({
+        tier: "DB",
+        label: table,
+        failing: isFailing("table", table),
+      });
     }
     return { hops, partial: false, available: true };
   }
