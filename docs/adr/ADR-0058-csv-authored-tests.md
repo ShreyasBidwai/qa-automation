@@ -40,10 +40,13 @@ Key choices:
   the CSV *is* the stated requirement. (The AI planner still forbids spec-grounded; see
   `test_nothing_is_spec_grounded`.)
 - **Reuse the merge engine.** Rows persist through the same `CaseMergeService` the AI
-  generator uses (create / update, never a blind write). A stable, namespaced
-  `case_key` (`CSV#<hash>`) makes re-importing a corrected CSV **update in place** and
-  guarantees CSV keys never collide with the AI generator's endpoint-derived keys —
-  the two authoring paths coexist on one project.
+  generator uses (create / update, never a blind write). A stable `case_key` shaped
+  `"{METHOD} {path}::csv::<hash>"` makes re-importing a corrected CSV **update in
+  place**; the readable prefix makes the Tests viewer show the endpoint (it labels
+  from `case_key.split("::")[0]`), and the `csv` segment — a case type the AI planner
+  never emits (it uses happy/negative/edge there) — guarantees a CSV key never
+  collides with an AI key on the full key. The two authoring paths coexist on one
+  project.
 - **Partial success, never silent.** A malformed row is reported per-row (1-based) and
   skipped; valid rows still land. A whole-file problem (missing header / required
   column) reports at row 0. Bounded like the document upload: ~1 MB and 500 rows, both

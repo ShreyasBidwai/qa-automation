@@ -264,10 +264,14 @@ def render_csv_test(spec: CsvTestSpec) -> str:
 
 def csv_case_key(spec: CsvTestSpec) -> str:
     """Stable identity so re-importing the same scenario UPDATES it in place (never a
-    duplicate). CSV keys are namespaced (``CSV#…``) so they never collide with the
-    AI generator's endpoint-derived keys."""
+    duplicate). Shaped ``"{METHOD} {path}::csv::{hash}"`` — the readable prefix makes
+    the Tests viewer show the endpoint (it labels from ``case_key.split("::")[0]``),
+    while the ``csv`` segment + hash keep the full key unique and namespaced: the AI
+    generator's keys use a real case type there (happy/negative/edge), never ``csv``,
+    so the two authoring paths never collide on a full key."""
     seed = f"csv|{spec.method}|{spec.path}|{spec.name}|{spec.expected_status}"
-    return f"CSV#{hashlib.sha256(seed.encode()).hexdigest()[:16]}"
+    digest = hashlib.sha256(seed.encode()).hexdigest()[:16]
+    return f"{spec.method} {spec.path}::csv::{digest}"
 
 
 def to_test_case(project_id: uuid.UUID, spec: CsvTestSpec, case_key: str) -> TestCase:

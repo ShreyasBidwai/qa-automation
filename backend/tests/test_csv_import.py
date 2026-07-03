@@ -140,10 +140,12 @@ def test_php_string_escaping_is_injection_safe() -> None:
     assert "api/x\\'; drop" in code  # single quote escaped, not terminated
 
 
-def test_case_key_is_stable_and_namespaced() -> None:
-    spec = parse_csv_tests(_GOOD).specs[0]
+def test_case_key_is_stable_readable_and_namespaced() -> None:
+    spec = parse_csv_tests(_GOOD).specs[0]  # "List orders" → GET api/v1/orders
     key = csv_case_key(spec)
-    assert key.startswith("CSV#")
+    # Readable prefix (the viewer shows METHOD path) + a "csv" segment the AI never
+    # emits as a case type, so a CSV key can't collide with an AI key on the full key.
+    assert key.startswith("GET api/v1/orders::csv::")
     assert csv_case_key(spec) == key  # stable → idempotent re-import
 
 
@@ -154,8 +156,8 @@ def test_status_class_drives_test_type_via_the_builder() -> None:
     import uuid
 
     pid = uuid.uuid4()
-    happy_case = to_test_case(pid, happy, "CSV#a")
-    negative_case = to_test_case(pid, negative, "CSV#b")
+    happy_case = to_test_case(pid, happy, csv_case_key(happy))
+    negative_case = to_test_case(pid, negative, csv_case_key(negative))
     assert happy_case.type is TestType.HAPPY
     assert negative_case.type is TestType.NEGATIVE
     # A CSV scenario is honestly human-authored + spec-grounded (the QA declared it),
