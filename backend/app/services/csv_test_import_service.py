@@ -22,6 +22,7 @@ from app.generation.csv_import import (
     to_test_case,
     to_test_script,
 )
+from app.models.enums import AuthoredBy, CaseOrigin
 from app.repositories.test_script_repository import TestScriptRepository
 from app.services.case_merge_service import CaseMergeService
 
@@ -59,6 +60,12 @@ class CsvTestImportService:
         created = 0
         updated = 0
         for spec, outcome in zip(parsed.specs, outcomes, strict=True):
+            # The merge engine stamps every case it creates as AI-generated (its
+            # design assumption). A CSV row is a HUMAN-authored test the QA specified
+            # exactly, so re-stamp it honestly after the merge — mirroring how the
+            # Mode-C paths re-tag their cases as proposals (ADR-0058 / ADR-0059).
+            outcome.test_case.origin = CaseOrigin.AUTHORED
+            outcome.test_case.authored_by = AuthoredBy.HUMAN
             await self._scripts.add(
                 to_test_script(
                     project_id,

@@ -50,6 +50,9 @@ async def test_import_persists_runnable_tests_visible_in_the_viewer(
     assert "$this->postJson('api/v1/orders', ['qty' => 2])" in codes
     assert "assertStatus(201)" in codes
     assert all(item["oracle_source"] == "spec-grounded" for item in listing["items"])
+    # Honestly human-authored (not the merge engine's default "generated"), so a QA
+    # reading the viewer sees these are their own tests, not AI output (ADR-0058).
+    assert all(item["origin"] == "authored" for item in listing["items"])
 
 
 async def test_import_ui_rows_persist_playwright_page_smokes(
