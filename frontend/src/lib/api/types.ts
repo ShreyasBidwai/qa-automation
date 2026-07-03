@@ -199,6 +199,10 @@ export type SelectionStrategy = "full_sweep" | "change_impact";
 /** Which layers a run exercises (ADR-0052). Values match the FindingLayer vocab. */
 export type RunLayer = "ui" | "api" | "db";
 
+/** The authoring engine a "Describe it" (mode_c) run uses: `ui` composes a browser
+ *  page-journey, `api` authors endpoint-contract tests for the resolved endpoint. */
+export type AuthoringLayer = "ui" | "api";
+
 export interface ModeBRunBody {
   mode: "mode_b";
   strategy: SelectionStrategy;
@@ -212,6 +216,8 @@ export interface ModeBRunBody {
 export interface ModeCRunBody {
   mode: "mode_c";
   prompt: string;
+  /** Which authoring engine to use. Omitted = `ui` (the page-journey default). */
+  layer?: AuthoringLayer;
 }
 
 export type RunCreateBody = ModeBRunBody | ModeCRunBody;
@@ -287,10 +293,19 @@ export interface TestCaseSummary {
   target: string;
   type: string; // happy | negative
   layer: string; // api | ui | db
-  oracle_source: string; // characterization | rule-derived
+  oracle_source: string; // characterization | rule-derived | spec-grounded
   framework: string; // pest
   code: string;
   created_at: string;
+  origin: string; // generated | edited | proposed | authored
+  proposal_status: string | null; // pending | accepted | rejected (null = not a proposal)
+}
+
+/** Result of accepting/discarding a proposed case (POST …/tests/{id}/accept|/discard). */
+export interface CaseReviewResponse {
+  id: string;
+  proposal_status: string; // accepted | rejected
+  is_current: boolean;
 }
 
 export interface TestCaseListResponse {

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { projectApi, runApi } from "@/lib/api/client";
 import type {
+  AuthoringLayer,
   CsvImportResponse,
   RunCreateBody,
   RunLayer,
@@ -15,10 +16,38 @@ import { cn } from "@/lib/utils";
 
 type Mode = "describe" | "autonomous";
 
-const EXAMPLES = [
-  "checkout rejects expired cards",
-  "orders require authentication",
-  "password reset link expires",
+// Examples are layer-specific: a UI journey reads as a user flow across pages, an
+// API contract as an endpoint's request→response behaviour.
+const EXAMPLES: Record<AuthoringLayer, string[]> = {
+  ui: [
+    "a shopper checks out with an expired card",
+    "login rejects a wrong password",
+    "the dashboard loads after signing in",
+  ],
+  api: [
+    "the orders endpoint rejects an unauthenticated POST",
+    "creating an order validates the quantity",
+    "the login endpoint returns a token",
+  ],
+};
+
+// The authoring engine for a "Describe it" run (Mode C). UI composes a browser
+// page-journey; API authors the resolved endpoint's contract tests.
+const AUTHORING_LAYERS: {
+  key: AuthoringLayer;
+  title: string;
+  description: string;
+}[] = [
+  {
+    key: "ui",
+    title: "UI journey",
+    description: "a browser flow across pages",
+  },
+  {
+    key: "api",
+    title: "API contract",
+    description: "an endpoint's request/response",
+  },
 ];
 
 // The selectable layer scope (ADR-0052), in a stable order for a deterministic body.
@@ -32,6 +61,8 @@ const LAYERS: { key: RunLayer; label: string; description: string }[] = [
 export function RunTriggerForm({ projectId }: { projectId: string }) {
   const [mode, setMode] = useState<Mode>("describe");
   const [prompt, setPrompt] = useState("");
+  // Which authoring engine "Describe it" uses (Mode C): UI journey vs API contract.
+  const [authoringLayer, setAuthoringLayer] = useState<AuthoringLayer>("ui");
   const [strategy, setStrategy] = useState<SelectionStrategy>("full_sweep");
   const [changeset, setChangeset] = useState("");
   // Layer scope (Mode B). Default = all on = the full set = current behaviour.
@@ -49,7 +80,7 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
         setError("Describe what to test.");
         return null;
       }
-      return { mode: "mode_c", prompt: prompt.trim() };
+      return { mode: "mode_c", prompt: prompt.trim(), layer: authoringLayer };
     }
 
     // At least one layer must be selected; turning all off blocks the run.
@@ -90,9 +121,17 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
     setSubmitting(false);
 
     if (result.ok && result.data) {
-      // Land straight on the live view: the run is watchable from the first step
-      // (Polaris driving the site, page-by-page) rather than a coarse status page.
-      navigate(`/runs/${result.data.run_id}/live`);
+      // "Describe it" AUTHORS tests (no run/findings), so land on the Tests viewer —
+      // it polls the authoring job and reveals the new cases the moment they land,
+      // instead of an empty live-run page. An autonomous run IS watchable, so it goes
+      // straight to the live view (Polaris driving the site, page-by-page).
+      if (body.mode === "mode_c") {
+        navigate(
+          `/projects/${projectId}/tests?authoring=${result.data.run_id}`,
+        );
+      } else {
+        navigate(`/runs/${result.data.run_id}/live`);
+      }
       return;
     }
     setError(result.error ?? "Could not start the run.");
@@ -109,46 +148,78 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
           selected={mode === "describe"}
           onSelect={() => setMode("describe")}
           title="Describe it"
-          description="Say what to test in plain English. Polaris turns it into tests."
+          description="Say a scenario in plain English — Polaris authors the test (UI journey or API contract) for you to review."
         />
         <ModeCard
           selected={mode === "autonomous"}
           onSelect={() => setMode("autonomous")}
           title="Autonomous"
-          description="Let Polaris decide — sweep everything, or just what changed."
+          description="Polaris sweeps your app and runs tests across the layers you choose."
         />
       </div>
 
       {mode === "describe" ? (
-        <div className="space-y-2">
-          <label htmlFor="prompt" className="text-sm font-medium text-foreground">
-            What to test
-          </label>
-          <Textarea
-            id="prompt"
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            placeholder="Describe what to test…"
-            rows={3}
-          />
-          <div className="flex flex-wrap gap-2">
-            {EXAMPLES.map((example) => (
-              <button
-                key={example}
-                type="button"
-                onClick={() => setPrompt(example)}
-                className="rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              >
-                {example}
-              </button>
-            ))}
+        <div className="space-y-4">
+          <fieldset className="space-y-2">
+            <legend className="mb-1 text-sm font-medium text-foreground">
+              What kind of test
+            </legend>
+            <div
+              role="radiogroup"
+              aria-label="Authoring layer"
+              className="grid gap-2 sm:grid-cols-2"
+            >
+              {AUTHORING_LAYERS.map((layer) => (
+                <LayerChoice
+                  key={layer.key}
+                  selected={authoringLayer === layer.key}
+                  onSelect={() => setAuthoringLayer(layer.key)}
+                  title={layer.title}
+                  description={layer.description}
+                />
+              ))}
+            </div>
+          </fieldset>
+
+          <div className="space-y-2">
+            <label
+              htmlFor="prompt"
+              className="text-sm font-medium text-foreground"
+            >
+              What to test
+            </label>
+            <Textarea
+              id="prompt"
+              value={prompt}
+              onChange={(event) => setPrompt(event.target.value)}
+              placeholder={
+                authoringLayer === "api"
+                  ? "e.g. the orders endpoint rejects an unauthenticated POST"
+                  : "e.g. a shopper checks out with an expired card"
+              }
+              rows={3}
+            />
+            <div className="flex flex-wrap gap-2">
+              {EXAMPLES[authoringLayer].map((example) => (
+                <button
+                  key={example}
+                  type="button"
+                  onClick={() => setPrompt(example)}
+                  className="rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  {example}
+                </button>
+              ))}
+            </div>
           </div>
 
           <CsvImportPanel projectId={projectId} />
         </div>
       ) : (
         <fieldset className="space-y-3">
-          <legend className="mb-1 text-sm font-medium text-foreground">Scope</legend>
+          <legend className="mb-1 text-sm font-medium text-foreground">
+            Scope
+          </legend>
           <StrategyOption
             value="full_sweep"
             selected={strategy === "full_sweep"}
@@ -180,7 +251,9 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
                 }
                 className="font-mono text-[13px]"
               />
-              <p className="text-xs text-muted-foreground">One path per line.</p>
+              <p className="text-xs text-muted-foreground">
+                One path per line.
+              </p>
             </div>
           ) : null}
 
@@ -199,7 +272,10 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
                   description={layer.description}
                   checked={layers[layer.key]}
                   onChange={(checked) =>
-                    setLayers((current) => ({ ...current, [layer.key]: checked }))
+                    setLayers((current) => ({
+                      ...current,
+                      [layer.key]: checked,
+                    }))
                   }
                 />
               ))}
@@ -225,10 +301,11 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
 // inline (a data: URI) so it needs no extra route or asset and always matches the
 // columns the parser accepts.
 const CSV_TEMPLATE =
-  "name,method,path,expected_status,payload,description,authenticated\n" +
-  "List orders,GET,api/v1/orders,200,,lists all orders,true\n" +
-  'Create order,POST,api/v1/orders,201,"{""qty"": 2}",creates an order,true\n' +
-  'Reject empty cart,POST,api/v1/orders,422,"{""qty"": 0}",rejects a zero qty,true\n';
+  "layer,name,method,path,expected_status,payload,description,authenticated,assert_text\n" +
+  "api,List orders,GET,api/v1/orders,200,,lists all orders,true,\n" +
+  'api,Create order,POST,api/v1/orders,201,"{""qty"": 2}",creates an order,true,\n' +
+  'api,Reject empty cart,POST,api/v1/orders,422,"{""qty"": 0}",rejects a zero qty,true,\n' +
+  "ui,Login page,,/login,,,the login page loads,,Sign in\n";
 
 const CSV_TEMPLATE_HREF =
   "data:text/csv;charset=utf-8," + encodeURIComponent(CSV_TEMPLATE);
@@ -261,9 +338,12 @@ function CsvImportPanel({ projectId }: { projectId: string }) {
     <div className="rounded-lg border border-dashed border-border bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-foreground">Or import from CSV</p>
+          <p className="text-sm font-medium text-foreground">
+            Or import from CSV
+          </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Upload QA-authored scenarios — each row becomes a runnable test.{" "}
+            Upload QA-authored scenarios — each row becomes a runnable test (API
+            endpoint or UI page smoke).{" "}
             <a
               href={CSV_TEMPLATE_HREF}
               download="polaris-tests-template.csv"
@@ -302,7 +382,9 @@ function CsvImportPanel({ projectId }: { projectId: string }) {
         </p>
       ) : null}
 
-      {result ? <CsvImportSummary projectId={projectId} result={result} /> : null}
+      {result ? (
+        <CsvImportSummary projectId={projectId} result={result} />
+      ) : null}
     </div>
   );
 }
@@ -319,7 +401,8 @@ function CsvImportSummary({
     <div className="mt-3 space-y-2 border-t border-border pt-3">
       {persisted > 0 ? (
         <p className="text-sm text-status-pass-fg">
-          Imported {persisted} test{persisted === 1 ? "" : "s"} ({result.created} new
+          Imported {persisted} test{persisted === 1 ? "" : "s"} (
+          {result.created} new
           {result.updated > 0 ? `, ${result.updated} updated` : ""}).{" "}
           <Link
             to={`/projects/${projectId}/tests`}
@@ -336,7 +419,8 @@ function CsvImportSummary({
       {result.errors.length > 0 ? (
         <div className="space-y-1">
           <p className="text-xs font-medium text-status-fail-fg">
-            {result.errors.length} row{result.errors.length === 1 ? "" : "s"} skipped:
+            {result.errors.length} row{result.errors.length === 1 ? "" : "s"}{" "}
+            skipped:
           </p>
           <ul className="space-y-0.5">
             {result.errors.map((rowError) => (
@@ -354,6 +438,44 @@ function CsvImportSummary({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** A compact segmented choice for the Describe-it authoring layer (UI / API). */
+function LayerChoice({
+  selected,
+  onSelect,
+  title,
+  description,
+}: {
+  selected: boolean;
+  onSelect: () => void;
+  title: string;
+  description: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onSelect}
+      className={cn(
+        "rounded-lg border px-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        selected
+          ? "border-accent bg-accent-subtle"
+          : "border-border bg-surface hover:bg-background",
+      )}
+    >
+      <div
+        className={cn(
+          "text-sm font-medium",
+          selected ? "text-accent" : "text-foreground",
+        )}
+      >
+        {title}
+      </div>
+      <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+    </button>
   );
 }
 
@@ -419,8 +541,12 @@ function LayerToggle({
         className="mt-0.5 h-4 w-4 shrink-0 text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       />
       <span className="min-w-0">
-        <span className="block text-sm font-medium text-foreground">{label}</span>
-        <span className="block text-xs text-muted-foreground">{description}</span>
+        <span className="block text-sm font-medium text-foreground">
+          {label}
+        </span>
+        <span className="block text-xs text-muted-foreground">
+          {description}
+        </span>
       </span>
     </label>
   );
@@ -443,7 +569,9 @@ function StrategyOption({
     <label
       className={cn(
         "flex cursor-pointer items-start gap-3 rounded-lg border p-3",
-        selected ? "border-accent bg-accent-subtle" : "border-border bg-surface",
+        selected
+          ? "border-accent bg-accent-subtle"
+          : "border-border bg-surface",
       )}
     >
       <input
@@ -455,8 +583,12 @@ function StrategyOption({
         className="mt-0.5 h-4 w-4 text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       />
       <span>
-        <span className="block text-sm font-medium text-foreground">{title}</span>
-        <span className="block text-xs text-muted-foreground">{description}</span>
+        <span className="block text-sm font-medium text-foreground">
+          {title}
+        </span>
+        <span className="block text-xs text-muted-foreground">
+          {description}
+        </span>
       </span>
     </label>
   );

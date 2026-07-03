@@ -345,10 +345,16 @@ class ModeBRunRequest(BaseModel):
 
 
 class ModeCRunRequest(BaseModel):
-    """Natural-language authoring run."""
+    """Natural-language authoring run (a QA describes a test in plain English).
+
+    ``layer`` selects the authoring engine: ``ui`` composes a browser page-journey
+    (E2E) from the description; ``api`` authors endpoint-contract tests for the
+    endpoint the description resolves to. Both land as PROPOSED cases for review.
+    """
 
     mode: Literal["mode_c"]
     prompt: str = Field(min_length=1, max_length=4096)
+    layer: Literal["ui", "api"] = "ui"
 
 
 # Discriminated on ``mode`` — an unknown mode is a 422, not a silent default.
@@ -699,15 +705,31 @@ class TestCaseSummary(BaseModel):
     target: str
     type: str  # happy | negative
     layer: str  # api | ui | db
-    oracle_source: str  # characterization | rule-derived
+    oracle_source: str  # characterization | rule-derived | spec-grounded
     framework: str  # pest
     code: str
     created_at: datetime
+    # Review state — a describe-it/CSV-authored case lands as an origin=proposed,
+    # proposal_status=pending case the human accepts or discards before it runs.
+    origin: str  # generated | edited | proposed | authored
+    proposal_status: str | None  # pending | accepted | rejected (null = not a proposal)
 
 
 class TestCaseListResponse(BaseModel):
     items: list[TestCaseSummary]
     total: int
+
+
+class CaseReviewResponse(BaseModel):
+    """The result of accepting/discarding a proposed case (POST …/accept|/discard).
+
+    ``accepted`` cases stay current and run; ``rejected`` (discarded) cases drop out
+    of the viewer and never run. The client refreshes the list from this.
+    """
+
+    id: uuid.UUID
+    proposal_status: str  # accepted | rejected
+    is_current: bool
 
 
 class CsvImportRowError(BaseModel):

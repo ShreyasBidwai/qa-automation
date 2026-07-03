@@ -52,6 +52,26 @@ async def test_import_persists_runnable_tests_visible_in_the_viewer(
     assert all(item["oracle_source"] == "spec-grounded" for item in listing["items"])
 
 
+async def test_import_ui_rows_persist_playwright_page_smokes(
+    authed_client: tuple[AsyncClient, FastAPI],
+) -> None:
+    client, _ = authed_client
+    project_id = await _new_project(client)
+    csv = "layer,path,assert_text\n" "ui,/login,Sign in\n" "ui,/dashboard,\n"
+    resp = await client.post(
+        f"/api/v1/projects/{project_id}/tests/import", files=_upload(csv)
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["created"] == 2
+
+    listing = (await client.get(f"/api/v1/projects/{project_id}/tests")).json()
+    assert listing["total"] == 2
+    ui = next(item for item in listing["items"] if item["target"] == "VISIT /login")
+    assert ui["layer"] == "ui"
+    assert ui["framework"] == "playwright"
+    assert 'await page.goto("/login")' in ui["code"]
+
+
 async def test_reimport_updates_in_place_not_duplicates(
     authed_client: tuple[AsyncClient, FastAPI],
 ) -> None:

@@ -19,6 +19,8 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.generation.e2e_generator import E2EGenerator, GeneratedE2ECase
+from app.generation.generator import GeneratedCase, TestGenerator
+from app.ingestion.models import EndpointSpec
 from app.models.enums import CaseOrigin, ProposalStatus
 
 # Merge actions that created a fresh AI-owned current version — for Mode C these
@@ -40,6 +42,32 @@ async def generate_proposed_cases(
     """
     results = await generator.generate_and_persist(
         session=session, project_id=project_id, page_node_id=page_node_id
+    )
+    for result in results:
+        if result.action in _RETAG_ACTIONS:
+            result.test_case.origin = CaseOrigin.PROPOSED
+            result.test_case.proposal_status = ProposalStatus.PENDING
+    await session.flush()
+    return results
+
+
+async def generate_proposed_api_cases(
+    *,
+    session: AsyncSession,
+    project_id: uuid.UUID,
+    spec: EndpointSpec,
+    generator: TestGenerator,
+) -> list[GeneratedCase]:
+    """Generate API cases for ONE endpoint and persist them as Mode-C proposals.
+
+    The API-layer sibling of ``generate_proposed_cases``: it reuses the SAME backend
+    ``TestGenerator`` (deterministic plan + AI render + idempotent merge) mode_b uses
+    for an endpoint, then re-tags net-new/updated cases ``origin=proposed`` +
+    ``proposal_status=pending`` — so a described API test lands in the human review
+    queue instead of going live unreviewed (identical stance to the E2E path).
+    """
+    results = await generator.generate_and_persist(
+        session=session, project_id=project_id, spec=spec
     )
     for result in results:
         if result.action in _RETAG_ACTIONS:

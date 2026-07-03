@@ -60,7 +60,12 @@ class CsvTestImportService:
         updated = 0
         for spec, outcome in zip(parsed.specs, outcomes, strict=True):
             await self._scripts.add(
-                to_test_script(project_id, outcome.test_case.id, render_csv_test(spec))
+                to_test_script(
+                    project_id,
+                    outcome.test_case.id,
+                    render_csv_test(spec),
+                    layer=spec.layer,
+                )
             )
             if outcome.action == "created":
                 created += 1

@@ -57,17 +57,26 @@ Key choices:
 
 ### CSV format
 
-Header row required; column names are case-insensitive (spaces → underscores):
+Header row required; column names are case-insensitive (spaces → underscores). `path`
+is the only universally-required column; the rest depend on the row's `layer`.
 
-| column            | required | meaning                                             |
-| ----------------- | -------- | --------------------------------------------------- |
-| `method`          | yes      | GET / POST / PUT / PATCH / DELETE                    |
-| `path`            | yes      | endpoint URI, e.g. `api/v1/orders/1`                |
-| `expected_status` | yes      | HTTP status to assert (100–599)                     |
-| `name`            | no       | short test name (derived from method+path if empty) |
-| `payload`         | no       | JSON object body for POST/PUT/PATCH, e.g. `{"qty":2}`|
-| `description`     | no       | intent, rendered as an `// Intent:` comment         |
-| `authenticated`   | no       | `true` (default) / `false` — act as a factory user  |
+| column            | required           | meaning                                              |
+| ----------------- | ------------------ | ---------------------------------------------------- |
+| `layer`           | no (default `api`) | `api` (endpoint test) or `ui` (page smoke)           |
+| `path`            | yes                | endpoint URI (api) or page path (ui)                 |
+| `method`          | api only           | GET / POST / PUT / PATCH / DELETE                     |
+| `expected_status` | api only           | HTTP status to assert (100–599); ui defaults to "loads" |
+| `name`            | no                 | short test name (derived from the path if empty)     |
+| `payload`         | no (api)           | JSON object body for POST/PUT/PATCH, e.g. `{"qty":2}` |
+| `description`     | no                 | intent, rendered as an `// Intent:` comment          |
+| `authenticated`   | no (api)           | `true` (default) / `false` — act as a factory user   |
+| `assert_text`     | no (ui)            | text that must be visible on the page after it loads |
+
+An `api` row renders a deterministic PHPUnit/Pest feature test; a `ui` row renders a
+Playwright page-smoke spec (`page.goto(path)` → assert it loaded < 400, optionally
+assert `assert_text` is visible), persisted as `TestLayer.UI` / `Framework.PLAYWRIGHT`.
+A UI CSV row is a page smoke, not a full journey — for a multi-step browser flow, use
+the "Describe it → UI journey" authoring path (ADR-0059).
 
 ## Consequences
 

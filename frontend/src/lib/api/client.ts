@@ -6,6 +6,7 @@ import type {
   ChangePasswordBody,
   AuthConfigStatus,
   AuthConfigUpsertBody,
+  CaseReviewResponse,
   CredentialStatus,
   CredentialUpsertBody,
   CsvImportResponse,
@@ -291,6 +292,18 @@ export const projectApi = {
       form,
     );
   },
+  /** POST /projects/{id}/tests/{caseId}/accept — adopt a pending proposal (it runs). */
+  acceptTest: (id: string, caseId: string) =>
+    postJson<CaseReviewResponse>(
+      `${API_BASE}/projects/${id}/tests/${caseId}/accept`,
+      {},
+    ),
+  /** POST /projects/{id}/tests/{caseId}/discard — reject a pending proposal. */
+  discardTest: (id: string, caseId: string) =>
+    postJson<CaseReviewResponse>(
+      `${API_BASE}/projects/${id}/tests/${caseId}/discard`,
+      {},
+    ),
   /** GET /projects/{id}/db-state-tier — the DB-state testing tier (needs VIEW). */
   getDbStateTier: (id: string) =>
     getJson<DbStateTierResponse>(`${API_BASE}/projects/${id}/db-state-tier`),

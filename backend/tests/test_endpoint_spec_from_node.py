@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import uuid
 
-from app.api.real_execution import _validation_field, endpoint_spec_from_node
+from app.generation.endpoint_from_node import (
+    _validation_field,
+    endpoint_spec_from_node,
+)
 from app.models.enums import NodeKind
 from app.models.model_node import ModelNode
 

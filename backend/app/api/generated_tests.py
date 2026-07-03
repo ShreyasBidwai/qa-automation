@@ -19,11 +19,13 @@ from app.models.test_case import TestCase
 from app.repositories.node_repository import NodeRepository
 from app.repositories.test_case_repository import TestCaseRepository
 from app.repositories.test_script_repository import TestScriptRepository
+from app.services.case_review_service import CaseReviewError, CaseReviewService
 from app.services.csv_test_import_service import CsvTestImportService
 
 from .authz import authorize_project
 from .deps import CurrentUser, get_session
 from .schemas import (
+    CaseReviewResponse,
     CsvImportResponse,
     CsvImportRowError,
     TestCaseListResponse,
@@ -92,6 +94,10 @@ async def list_project_tests(
                 framework=script.framework.value if script else "—",
                 code=script.code if script else "",
                 created_at=case.created_at,
+                origin=case.origin.value,
+                proposal_status=(
+                    case.proposal_status.value if case.proposal_status else None
+                ),
             )
         )
 
@@ -136,4 +142,64 @@ async def import_tests_csv(
             CsvImportRowError(row=error.row, message=error.message)
             for error in result.errors
         ],
+    )
+
+
+@router.post(
+    "/projects/{project_id}/tests/{case_id}/accept",
+    response_model=CaseReviewResponse,
+)
+async def accept_test(
+    project_id: uuid.UUID,
+    case_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> CaseReviewResponse:
+    """Accept a pending authored proposal — it stays current and runs (MANAGE)."""
+    return await _review(project_id, case_id, current_user, session, accept=True)
+
+
+@router.post(
+    "/projects/{project_id}/tests/{case_id}/discard",
+    response_model=CaseReviewResponse,
+)
+async def discard_test(
+    project_id: uuid.UUID,
+    case_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> CaseReviewResponse:
+    """Discard a pending authored proposal — it drops from the viewer and never runs."""
+    return await _review(project_id, case_id, current_user, session, accept=False)
+
+
+async def _review(
+    project_id: uuid.UUID,
+    case_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: AsyncSession,
+    *,
+    accept: bool,
+) -> CaseReviewResponse:
+    await authorize_project(
+        session, project_id, current_user, Permission.MANAGE_PROJECT
+    )
+    service = CaseReviewService(session)
+    try:
+        if accept:
+            case = await service.accept(
+                project_id, case_id, reviewed_by=current_user.email
+            )
+        else:
+            case = await service.discard(
+                project_id, case_id, reviewed_by=current_user.email
+            )
+    except CaseReviewError as error:
+        # Not found OR not a pending proposal → 404 (existence not leaked; a plain
+        # generated/already-resolved case is not a reviewable resource).
+        raise HTTPException(status_code=404, detail=str(error)) from None
+    return CaseReviewResponse(
+        id=case.id,
+        proposal_status=case.proposal_status.value if case.proposal_status else "",
+        is_current=case.is_current,
     )

@@ -28,8 +28,10 @@ class RunRequest:
     changeset: tuple[str, ...] = ()
     max_targets: int = 50
     prompt: str | None = None
-    # Optional layer scope (ADR-0052); None = the full set (UI/API/DB).
+    # Optional layer scope (ADR-0052); None = the full set (UI/API/DB). Mode B only.
     layers: frozenset[str] | None = None
+    # Mode C only: which authoring engine ("ui" page-journey | "api" endpoint tests).
+    layer: str | None = None
 
 
 @dataclass(frozen=True)
@@ -70,7 +72,7 @@ def to_run_request(body: ModeBRunRequest | ModeCRunRequest) -> RunRequest:
             max_targets=body.max_targets,
             layers=frozenset(body.layers) if body.layers else None,
         )
-    return RunRequest(mode=RunMode.C, prompt=body.prompt)
+    return RunRequest(mode=RunMode.C, prompt=body.prompt, layer=body.layer)
 
 
 def run_request_to_payload(request: RunRequest) -> dict[str, Any]:
@@ -82,6 +84,7 @@ def run_request_to_payload(request: RunRequest) -> dict[str, Any]:
         "max_targets": request.max_targets,
         "prompt": request.prompt,
         "layers": sorted(request.layers) if request.layers else None,
+        "layer": request.layer,
     }
 
 
@@ -96,4 +99,5 @@ def run_request_from_payload(payload: dict[str, Any]) -> RunRequest:
         max_targets=payload.get("max_targets", 50),
         prompt=payload.get("prompt"),
         layers=frozenset(layers) if layers else None,
+        layer=payload.get("layer"),
     )

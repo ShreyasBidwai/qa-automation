@@ -26,7 +26,7 @@ the hermetic suite uses the stub, the manual smoke a real model.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
@@ -41,22 +41,18 @@ from app.execution.php_test_runner import PhpTestRunner
 from app.execution.playwright_runner import PlaywrightRunner
 from app.execution.types import DbHandle, DbRole, ExecutionRunner, PestScript, TargetEnv
 from app.generation.e2e_generator import E2EGenerator
+
+# Re-exported for backward compatibility — the Brain-node→EndpointSpec inverse moved
+# to app.generation.endpoint_from_node so NL-authoring can reuse it without an
+# api⇄modes import cycle. Existing callers still import it from here.
+from app.generation.endpoint_from_node import endpoint_spec_from_node
 from app.generation.generator import TestGenerator
 from app.git.cli import GitCliProvider
 from app.git.types import GitProvider
 from app.incidents import capturing_ai_provider
 from app.ingestion.git_ingest import ingest_from_git
 from app.ingestion.laravel.ingester import LaravelIngester
-from app.ingestion.laravel.normalize import normalize_rules
-from app.ingestion.laravel.route_list import path_params_from_uri
-from app.ingestion.models import (
-    EndpointSpec,
-    FieldConstraints,
-    RelationalRule,
-    ValidationField,
-)
 from app.models.enums import NodeKind
-from app.models.model_node import ModelNode
 from app.modes.selection import Target
 from app.repositories.node_repository import NodeRepository
 from app.repositories.project_repository import ProjectRepository
@@ -71,74 +67,6 @@ from .project_target import (
 
 class TargetGenerationError(Exception):
     """A target could not be turned into a runnable case (unknown node / kind)."""
-
-
-# --- EndpointSpec ⟵ Brain node ----------------------------------------------
-
-
-def _validation_field(data: dict[str, Any] | str) -> ValidationField:
-    # The static whole-repo Laravel ingester records validation fields as bare
-    # names (``list[str]``); the per-endpoint extractor records rich dicts. Accept
-    # both so generation works off a statically-ingested Brain (the default path).
-    if isinstance(data, str):
-        data = {"name": data}
-    constraints = data.get("constraints") or {}
-    relational = data.get("relational")
-    return ValidationField(
-        name=str(data.get("name", "")),
-        raw_rules=list(data.get("raw_rules", [])),
-        required=bool(data.get("required", False)),
-        type=str(data.get("type", "unknown")),
-        constraints=FieldConstraints(
-            min=constraints.get("min"),
-            max=constraints.get("max"),
-            size=constraints.get("size"),
-        ),
-        relational=(
-            RelationalRule(
-                kind=relational["kind"],
-                table=relational["table"],
-                column=relational.get("column"),
-            )
-            if relational
-            else None
-        ),
-    )
-
-
-def endpoint_spec_from_node(node: ModelNode) -> EndpointSpec:
-    """Rebuild the generator's ``EndpointSpec`` from an endpoint node's attributes.
-
-    The Laravel ingestor stores method/uri/auth + the captured validation spec on
-    the node (``ingester.py``); this is its inverse so the backend generator can run
-    off the Brain without re-reading the repo.
-    """
-    attrs = node.attributes or {}
-    uri = str(attrs.get("uri", ""))
-    validation = attrs.get("validation") or {}
-    return EndpointSpec(
-        method=str(attrs.get("method", "GET")),
-        uri=uri,
-        route_name=attrs.get("name"),
-        auth_required=bool(attrs.get("auth_required", False)),
-        path_params=path_params_from_uri(uri),
-        query_params=[],
-        validation_fields=_validation_fields_from(validation),
-    )
-
-
-def _validation_fields_from(validation: Mapping[str, Any]) -> list[ValidationField]:
-    """Typed validation fields from a node's ``validation`` attribute.
-
-    Prefer the captured rule SPECS (``rules`` map → ``normalize_rules``) so each field
-    carries its TYPE/constraints and the plan emits type-correct payloads. Fall back to
-    bare field names (``fields``) when only names were captured — older Brains, or
-    array-form / ``Rule::*`` rules the static parser can't reduce to a pipe string.
-    """
-    rules = validation.get("rules")
-    if isinstance(rules, Mapping) and rules:
-        return list(normalize_rules(rules))
-    return [_validation_field(f) for f in validation.get("fields", [])]
 
 
 # --- the production TargetGenerator ------------------------------------------

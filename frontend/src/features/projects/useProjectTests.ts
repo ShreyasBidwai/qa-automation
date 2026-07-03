@@ -10,8 +10,14 @@ export interface ProjectTestsState {
   error: string | null;
 }
 
-/** Load a project's generated test cases + their code (read-only viewer). */
-export function useProjectTests(projectId: string): ProjectTestsState {
+/** Load a project's generated test cases + their code (read-only viewer).
+ *
+ * ``reloadToken`` re-fetches when it changes — the caller bumps it after an authoring
+ * job completes so freshly-proposed cases appear without a manual refresh. */
+export function useProjectTests(
+  projectId: string,
+  reloadToken = 0,
+): ProjectTestsState {
   const [state, setState] = useState<ProjectTestsState>({
     tests: [],
     total: 0,
@@ -43,7 +49,7 @@ export function useProjectTests(projectId: string): ProjectTestsState {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, reloadToken]);
 
   return state;
 }

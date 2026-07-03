@@ -36,6 +36,7 @@ from app.modes.mode_b import (
     TargetGenerator,
 )
 from app.modes.mode_c import build_mode_c_orchestrator
+from app.modes.mode_c_api import build_mode_c_api_orchestrator
 from app.modes.selection import SelectionStrategyKind, build_selection_strategy
 
 from .errors import ApiConfigError
@@ -262,6 +263,24 @@ class OrchestratorRunExecutor:
                 "mode_c execution requires an embedding provider to be composed"
             )
         ai_provider = await self._resolve_ai_provider(session, project_id)
+        # ``layer`` picks the authoring engine: "api" resolves the described endpoint
+        # and authors its contract tests; "ui" (default) composes a browser journey.
+        if request.layer == "api":
+            api_orchestrator = build_mode_c_api_orchestrator(
+                session, ai_provider=ai_provider, embedding_provider=self._embed
+            )
+            api_result = await api_orchestrator.propose(
+                project_id=project_id, nl=request.prompt or ""
+            )
+            return RunExecution(
+                run_id=None,
+                summary={
+                    "mode": "mode_c",
+                    "layer": "api",
+                    "endpoint": api_result.endpoint.name,
+                    "proposed_cases": len(api_result.cases),
+                },
+            )
         orchestrator = build_mode_c_orchestrator(
             session, ai_provider=ai_provider, embedding_provider=self._embed
         )
@@ -271,5 +290,9 @@ class OrchestratorRunExecutor:
         # Authoring produces proposed cases, not a run/findings (run_id is None).
         return RunExecution(
             run_id=None,
-            summary={"mode": "mode_c", "proposed_cases": len(result.cases)},
+            summary={
+                "mode": "mode_c",
+                "layer": "ui",
+                "proposed_cases": len(result.cases),
+            },
         )

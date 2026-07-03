@@ -12,11 +12,15 @@ from app.generation.csv_import import (
     csv_case_key,
     parse_csv_tests,
     render_csv_test,
+    to_test_case,
+    to_test_script,
 )
 from app.models.enums import (
     AuthoredBy,
     CaseOrigin,
+    Framework,
     OracleSource,
+    TestLayer,
     TestType,
 )
 
@@ -60,11 +64,20 @@ def test_authenticated_false_variants_opt_out() -> None:
     assert parse_csv_tests(csv).specs[0].authenticated is False
 
 
-def test_missing_required_column_is_a_whole_file_error() -> None:
-    # No expected_status column at all → one row-0 error, no specs.
-    result = parse_csv_tests("method,path\nGET,api/x\n")
+def test_missing_path_column_is_a_whole_file_error() -> None:
+    # ``path`` is the only universally-required header → its absence is a row-0 error.
+    result = parse_csv_tests("method,expected_status\nGET,200\n")
     assert not result.specs
     assert result.errors[0].row == 0
+    assert "path" in result.errors[0].message
+
+
+def test_api_row_missing_status_is_a_per_row_error() -> None:
+    # method/expected_status are per-row requirements for the API layer, not headers,
+    # so a header with just method,path validates the missing status at the row.
+    result = parse_csv_tests("method,path\nGET,api/x\n")
+    assert not result.specs
+    assert result.errors[0].row == 1
     assert "expected_status" in result.errors[0].message
 
 
@@ -150,11 +163,9 @@ def test_case_key_is_stable_readable_and_namespaced() -> None:
 
 
 def test_status_class_drives_test_type_via_the_builder() -> None:
-    from app.generation.csv_import import to_test_case
-
-    happy, negative = parse_csv_tests(_GOOD).specs[0], parse_csv_tests(_GOOD).specs[2]
     import uuid
 
+    happy, negative = parse_csv_tests(_GOOD).specs[0], parse_csv_tests(_GOOD).specs[2]
     pid = uuid.uuid4()
     happy_case = to_test_case(pid, happy, csv_case_key(happy))
     negative_case = to_test_case(pid, negative, csv_case_key(negative))
@@ -166,3 +177,59 @@ def test_status_class_drives_test_type_via_the_builder() -> None:
     assert happy_case.origin is CaseOrigin.AUTHORED
     assert happy_case.oracle_source is OracleSource.SPEC_GROUNDED
     assert happy_case.edited_by_human is False
+    assert happy_case.layer is TestLayer.API
+
+
+# --- UI-layer rows (page smoke → Playwright) ---------------------------------
+
+
+def test_ui_row_parses_with_page_smoke_defaults() -> None:
+    # A ui row needs only a path; method/expected_status are optional (defaults apply).
+    result = parse_csv_tests("layer,path\nui,/checkout\n")
+    assert not result.errors
+    spec = result.specs[0]
+    assert spec.layer == "ui"
+    assert spec.path == "/checkout"
+    assert spec.method == "GET"
+    assert spec.expected_status == 200  # "the page loads"
+    assert spec.name == "VISIT /checkout"
+
+
+def test_ui_render_is_runnable_playwright_page_smoke() -> None:
+    csv = "layer,path,assert_text,description\nui,/login,Sign in,the login page loads\n"
+    code = render_csv_test(parse_csv_tests(csv).specs[0])
+    assert code.startswith('import { test, expect } from "@playwright/test";')
+    assert 'await page.goto("/login")' in code
+    assert "toBeLessThan(400)" in code  # asserts the page loaded
+    assert 'page.getByText("Sign in")' in code  # the visible-text assertion
+    assert "// Intent: the login page loads" in code
+
+
+def test_ui_row_with_a_pinned_4xx_asserts_the_exact_status() -> None:
+    csv = "layer,path,expected_status\nui,/admin,403\n"
+    spec = parse_csv_tests(csv).specs[0]
+    assert spec.expected_status == 403
+    code = render_csv_test(spec)
+    assert "toBe(403)" in code
+
+
+def test_ui_and_api_rows_on_the_same_path_get_distinct_keys_and_layers() -> None:
+    import uuid
+
+    api = parse_csv_tests("method,path,expected_status\nGET,orders,200\n").specs[0]
+    ui = parse_csv_tests("layer,path\nui,orders\n").specs[0]
+    assert csv_case_key(api) != csv_case_key(ui)
+    assert csv_case_key(ui).startswith("VISIT orders::csv::")
+
+    pid = uuid.uuid4()
+    ui_case = to_test_case(pid, ui, csv_case_key(ui))
+    assert ui_case.layer is TestLayer.UI
+    ui_script = to_test_script(pid, ui_case.id, render_csv_test(ui), layer=ui.layer)
+    assert ui_script.framework is Framework.PLAYWRIGHT
+
+
+def test_unknown_layer_is_a_row_error() -> None:
+    result = parse_csv_tests("layer,path,expected_status\nweb,/x,200\n")
+    assert not result.specs
+    assert result.errors[0].row == 1
+    assert "layer" in result.errors[0].message

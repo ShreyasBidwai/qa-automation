@@ -64,7 +64,7 @@ describe("RunTriggerForm", () => {
     );
   });
 
-  it("sends a mode_c prompt body (describe-it is the default)", async () => {
+  it("sends a mode_c prompt body defaulting to the UI authoring layer", async () => {
     render(<RunTriggerForm projectId="p1" />);
     fireEvent.change(screen.getByLabelText("What to test"), {
       target: { value: "Check the cart" },
@@ -75,6 +75,28 @@ describe("RunTriggerForm", () => {
       expect(runApi.create).toHaveBeenCalledWith("p1", {
         mode: "mode_c",
         prompt: "Check the cart",
+        layer: "ui",
+      }),
+    );
+    // Authoring lands on the Tests viewer (it polls the job), not a live-run page.
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith("/projects/p1/tests?authoring=r1"),
+    );
+  });
+
+  it("authors at the API layer when API is chosen", async () => {
+    render(<RunTriggerForm projectId="p1" />);
+    fireEvent.click(screen.getByRole("radio", { name: /^API contract/ }));
+    fireEvent.change(screen.getByLabelText("What to test"), {
+      target: { value: "orders reject an unauthenticated POST" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start run" }));
+
+    await waitFor(() =>
+      expect(runApi.create).toHaveBeenCalledWith("p1", {
+        mode: "mode_c",
+        prompt: "orders reject an unauthenticated POST",
+        layer: "api",
       }),
     );
   });
@@ -82,14 +104,15 @@ describe("RunTriggerForm", () => {
   it("fills the prompt from an example chip", async () => {
     render(<RunTriggerForm projectId="p1" />);
     fireEvent.click(
-      screen.getByRole("button", { name: "orders require authentication" }),
+      screen.getByRole("button", { name: "login rejects a wrong password" }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Start run" }));
 
     await waitFor(() =>
       expect(runApi.create).toHaveBeenCalledWith("p1", {
         mode: "mode_c",
-        prompt: "orders require authentication",
+        prompt: "login rejects a wrong password",
+        layer: "ui",
       }),
     );
   });
