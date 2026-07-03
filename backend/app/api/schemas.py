@@ -84,6 +84,23 @@ class ProjectResponse(BaseModel):
     created_at: datetime
 
 
+class ModelKindCount(BaseModel):
+    kind: str  # endpoint | page | model | table | role
+    count: int
+
+
+class ModelStatsResponse(BaseModel):
+    """The built-model (Brain) summary for a project: whether it's built, how big, and
+    of what — so the Project view can show "Model built · N nodes · M edges" + a
+    per-kind breakdown instead of just a Build button."""
+
+    built: bool
+    node_count: int
+    edge_count: int
+    nodes_by_kind: list[ModelKindCount]
+    last_built_at: datetime | None = None
+
+
 # --- DB-state testing tier (B10, ADR-0043) ----------------------------------
 
 DbStateTierLiteral = Literal["off", "read_only", "full"]

@@ -15,6 +15,7 @@ import { modeLabel } from "../runs/modeLabel";
 import { passTone } from "../runs/runMetrics";
 import { runRowStatusDescriptor, runStatusDescriptor } from "../runs/runStatus";
 import { useIngest } from "./useIngest";
+import { useProjectModel } from "./useProjectModel";
 import { useProjectOverview } from "./useProjectOverview";
 
 /** The project landing page (#3a): config, a health summary, and recent runs. */
@@ -121,7 +122,9 @@ function HealthSummary({
   const prior = runs[1] ?? null;
   const severity = severityCounts(openFindings);
   const pct =
-    latest && latest.pass_rate !== null ? Math.round(latest.pass_rate * 100) : null;
+    latest && latest.pass_rate !== null
+      ? Math.round(latest.pass_rate * 100)
+      : null;
   const tone = pct === null ? null : passTone(pct);
 
   return (
@@ -133,7 +136,10 @@ function HealthSummary({
               <span className="text-[30px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">
                 {pct}%
               </span>
-              <PassTrend latest={latest!.pass_rate!} prior={prior?.pass_rate ?? null} />
+              <PassTrend
+                latest={latest!.pass_rate!}
+                prior={prior?.pass_rate ?? null}
+              />
             </div>
             <div className="mt-3 h-[5px] overflow-hidden rounded-full bg-border-subtle">
               <div
@@ -196,16 +202,30 @@ function HealthSummary({
   );
 }
 
-function HealthCard({ label, children }: { label: string; children: ReactNode }) {
+function HealthCard({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
   return (
     <div className="rounded-xl border border-border bg-surface px-5 py-[18px] shadow-card">
-      <div className="mb-2.5 text-xs font-medium text-muted-foreground">{label}</div>
+      <div className="mb-2.5 text-xs font-medium text-muted-foreground">
+        {label}
+      </div>
       {children}
     </div>
   );
 }
 
-function PassTrend({ latest, prior }: { latest: number; prior: number | null }) {
+function PassTrend({
+  latest,
+  prior,
+}: {
+  latest: number;
+  prior: number | null;
+}) {
   if (prior === null) return null;
   const delta = Math.round((latest - prior) * 100);
   if (delta === 0)
@@ -238,7 +258,10 @@ function SevCount({
 }) {
   return (
     <span className={cn("inline-flex items-center gap-1.5", text)}>
-      <span className={cn("h-[7px] w-[7px] rounded-full", dot)} aria-hidden="true" />
+      <span
+        className={cn("h-[7px] w-[7px] rounded-full", dot)}
+        aria-hidden="true"
+      />
       {n} {label}
     </span>
   );
@@ -332,16 +355,44 @@ function ColHead({ children }: { children: ReactNode }) {
 
 // ---- model ------------------------------------------------------------------
 
+// Human-readable, pluralised labels for the Brain node kinds (in a stable display
+// order); anything the backend adds later still shows under its raw kind.
+const NODE_KIND_LABELS: Record<string, string> = {
+  endpoint: "Endpoints",
+  page: "Pages",
+  table: "Tables",
+  model: "Models",
+  role: "Roles",
+};
+
 function ModelCard({ projectId }: { projectId: string }) {
   const ingest = useIngest(projectId);
+  // Refetch the model summary when a build finishes (ingest.status → succeeded).
+  const { model } = useProjectModel(projectId, ingest.status);
+  const built = model?.built ?? false;
+
   return (
     <section className="rounded-xl border border-border bg-surface p-5 shadow-card">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold text-foreground">Model</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Build the system model from the repository before running tests.
-          </p>
+          {built && model ? (
+            <p className="mt-1 text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">Model built</span> —{" "}
+              {model.node_count} {model.node_count === 1 ? "node" : "nodes"} ·{" "}
+              {model.edge_count} {model.edge_count === 1 ? "edge" : "edges"}
+              {model.last_built_at ? (
+                <span className="text-status-neutral-solid">
+                  {" · built "}
+                  {relativeTime(model.last_built_at)}
+                </span>
+              ) : null}
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-muted-foreground">
+              Build the system model from the repository before running tests.
+            </p>
+          )}
         </div>
         {/* See the tests Polaris generated from the model (empty until a run). */}
         <Link
@@ -351,9 +402,30 @@ function ModelCard({ projectId }: { projectId: string }) {
           View generated tests →
         </Link>
       </div>
+
+      {built && model && model.nodes_by_kind.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {model.nodes_by_kind.map((entry) => (
+            <span
+              key={entry.kind}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-[12px] text-foreground-secondary"
+            >
+              {NODE_KIND_LABELS[entry.kind] ?? entry.kind}
+              <span className="tabular-nums font-semibold text-foreground">
+                {entry.count}
+              </span>
+            </span>
+          ))}
+        </div>
+      ) : null}
+
       <div className="mt-3 flex items-center gap-3">
         <Button variant="outline" onClick={ingest.start} disabled={ingest.busy}>
-          {ingest.busy ? "Building model…" : "Build model"}
+          {ingest.busy
+            ? "Building model…"
+            : built
+              ? "Rebuild model"
+              : "Build model"}
         </Button>
         {ingest.status ? (
           <StatusBadge status={runStatusDescriptor(ingest.status)} />

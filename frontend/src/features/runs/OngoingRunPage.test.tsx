@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api/client", () => ({
   runApi: { active: vi.fn(), events: vi.fn(), get: vi.fn() },
-  projectApi: { tests: vi.fn() },
+  projectApi: { tests: vi.fn(), get: vi.fn() },
 }));
 vi.mock("./runEventsStream", () => ({ streamRunEvents: vi.fn() }));
 vi.mock("./useRunScreenshot", () => ({
@@ -63,6 +63,21 @@ describe("OngoingRunPage", () => {
         ok: true,
         status: 200,
         data: { items: [], total: 0 },
+      });
+    vi.mocked(projectApi.get)
+      .mockReset()
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        data: {
+          id: "p1",
+          name: "Acme API",
+          slug: "acme",
+          repo_url: "/r",
+          app_url: null,
+          auth_config_ref: null,
+          created_at: "2026-01-01T00:00:00Z",
+        },
       });
   });
 

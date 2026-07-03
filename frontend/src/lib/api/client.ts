@@ -25,6 +25,7 @@ import type {
   JobStatus,
   MemberListResponse,
   MemberResponse,
+  ModelStats,
   OpenFindingsResponse,
   OrgListResponse,
   PageParams,
@@ -269,6 +270,9 @@ export const projectApi = {
     postJson<Project>(`${API_BASE}/projects`, body),
   /** GET /projects/{id}. */
   get: (id: string) => getJson<Project>(`${API_BASE}/projects/${id}`),
+  /** GET /projects/{id}/model — the built-model summary (node/edge counts, by kind). */
+  model: (id: string) =>
+    getJson<ModelStats>(`${API_BASE}/projects/${id}/model`),
   /** GET /projects — list projects (bounded, newest first). */
   list: (params: PageParams) =>
     getJson<ProjectListResponse>(`${API_BASE}/projects?${pageQuery(params)}`),

@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api/client", () => ({
-  projectApi: { get: vi.fn(), ingest: vi.fn() },
+  projectApi: { get: vi.fn(), ingest: vi.fn(), model: vi.fn() },
   runApi: { list: vi.fn() },
   findingApi: { listForProject: vi.fn() },
   jobApi: { get: vi.fn() },
@@ -60,6 +60,19 @@ describe("ProjectPage (overview)", () => {
     vi.mocked(projectApi.get).mockReset();
     vi.mocked(runApi.list).mockReset();
     vi.mocked(findingApi.listForProject).mockReset();
+    vi.mocked(projectApi.model)
+      .mockReset()
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        data: {
+          built: false,
+          node_count: 0,
+          edge_count: 0,
+          nodes_by_kind: [],
+          last_built_at: null,
+        },
+      });
   });
 
   it("renders the health summary, config, and recent runs", async () => {
@@ -91,7 +104,9 @@ describe("ProjectPage (overview)", () => {
     render(<ProjectPage projectId="p1" />);
 
     // Health summary (78% also shows on the latest run's row, so allow >1).
-    expect((await screen.findAllByText("78%")).length).toBeGreaterThanOrEqual(1);
+    expect((await screen.findAllByText("78%")).length).toBeGreaterThanOrEqual(
+      1,
+    );
     expect(screen.getByText("Open findings")).toBeInTheDocument();
     expect(screen.getByText("1 critical")).toBeInTheDocument();
 
@@ -105,6 +120,39 @@ describe("ProjectPage (overview)", () => {
 
     // Recent runs.
     expect(screen.getByText("Recent runs")).toBeInTheDocument();
+  });
+
+  it("shows the built-model summary with node/edge counts and kinds", async () => {
+    vi.mocked(projectApi.get).mockResolvedValue(ok(PROJECT));
+    vi.mocked(runApi.list).mockResolvedValue(
+      ok({ items: [], total: 0, limit: 5, offset: 0 }),
+    );
+    vi.mocked(findingApi.listForProject).mockResolvedValue(
+      ok({ items: [], total: 0, limit: 50, offset: 0 }),
+    );
+    vi.mocked(projectApi.model).mockResolvedValue(
+      ok({
+        built: true,
+        node_count: 3,
+        edge_count: 1,
+        nodes_by_kind: [
+          { kind: "endpoint", count: 2 },
+          { kind: "page", count: 1 },
+        ],
+        last_built_at: "2026-06-22T11:00:00Z",
+      }),
+    );
+
+    render(<ProjectPage projectId="p1" />);
+
+    expect(await screen.findByText("Model built")).toBeInTheDocument();
+    expect(screen.getByText(/3 nodes/)).toBeInTheDocument();
+    expect(screen.getByText(/1 edge/)).toBeInTheDocument();
+    expect(screen.getByText("Endpoints")).toBeInTheDocument();
+    // A built model offers a rebuild, not a first build.
+    expect(
+      screen.getByRole("button", { name: "Rebuild model" }),
+    ).toBeInTheDocument();
   });
 
   it("shows an error state when the project can't be loaded", async () => {
@@ -123,6 +171,8 @@ describe("ProjectPage (overview)", () => {
 
     render(<ProjectPage projectId="p1" />);
 
-    expect(await screen.findByText("Couldn't load this project")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Couldn't load this project"),
+    ).toBeInTheDocument();
   });
 });

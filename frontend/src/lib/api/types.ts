@@ -138,6 +138,20 @@ export interface Project {
   created_at: string;
 }
 
+export interface ModelKindCount {
+  kind: string; // endpoint | page | model | table | role
+  count: number;
+}
+
+/** The built-model (Brain) summary for a project (GET /projects/{id}/model). */
+export interface ModelStats {
+  built: boolean;
+  node_count: number;
+  edge_count: number;
+  nodes_by_kind: ModelKindCount[];
+  last_built_at: string | null;
+}
+
 /** PATCH body for a project — only the provided fields change (ProjectUpdate). */
 export interface ProjectUpdateBody {
   name?: string;

@@ -1,8 +1,8 @@
 import {
   AlertTriangle,
+  ArrowRight,
   Check,
   ChevronDown,
-  Code2,
   FlaskConical,
   Globe,
   ImageOff,
@@ -13,14 +13,14 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { Drawer } from "@/components/Drawer";
 import { Link } from "@/components/Link";
 import { SkeletonRows } from "@/components/Skeleton";
 import { StatePanel } from "@/components/StatePanel";
 import { Button } from "@/components/ui/button";
-import type { RunProgressEvent, TestCaseSummary } from "@/lib/api/types";
+import type { RunProgressEvent } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
+import { useProject } from "../projects/useProject";
 import { useProjectTests } from "../projects/useProjectTests";
 import {
   currentStepSeq,
@@ -85,6 +85,7 @@ export function RunJourney({ runId }: { runId: string }) {
 
   return (
     <div className="space-y-5">
+      {projectId ? <RunProjectHeading projectId={projectId} /> : null}
       <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-card">
         <RunSummaryRow
           runId={runId}
@@ -112,6 +113,26 @@ export function RunJourney({ runId }: { runId: string }) {
         terminal={terminal}
       />
     </div>
+  );
+}
+
+/** The project this run belongs to, shown at the top of the journey (and linking
+ *  back to it) so the operator always knows which app is under test. */
+function RunProjectHeading({ projectId }: { projectId: string }) {
+  const { project } = useProject(projectId);
+  if (!project) return null;
+  return (
+    <Link
+      to={`/projects/${projectId}`}
+      className="inline-flex items-baseline gap-2 text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <span className="text-[11px] font-semibold uppercase tracking-[0.06em]">
+        Project
+      </span>
+      <span className="text-[17px] font-semibold tracking-[-0.01em] text-foreground">
+        {project.name}
+      </span>
+    </Link>
   );
 }
 
@@ -372,9 +393,9 @@ function PhaseBody({
         ) : null}
       </div>
 
-      {/* Generate: show the TESTS it authored — the star of this phase. */}
+      {/* Generate: one link through to the full generated-tests page. */}
       {isGenerate && projectId ? (
-        <GeneratedTestsPanel projectId={projectId} />
+        <GeneratedTestsCTA projectId={projectId} />
       ) : null}
 
       {/* Explore/Execute: the live browser window as Polaris drives the app. */}
@@ -395,9 +416,9 @@ function PhaseBody({
               Generation steps
             </p>
           ) : null}
-          {/* Only ONE phase's steps show, in a bounded scroll — the page never grows
-              unbounded and there's no cross-phase scrolling. */}
-          <ul className="max-h-[460px] space-y-1.5 overflow-y-auto p-3">
+          {/* Only ONE phase's steps show — the page's single scroll handles length,
+              so there's no nested scroller and no cross-phase scrolling. */}
+          <ul className="space-y-1.5 p-3">
             {group.events.map((event) => (
               <StepRow
                 key={event.seq}
@@ -413,144 +434,34 @@ function PhaseBody({
   );
 }
 
-// --- generated tests panel + view-test drawer --------------------------------
+// --- generated tests call-to-action -----------------------------------------
 
-/** Extract the human-readable intent a renderer stamped as an `// Intent:` comment
- *  (both the API and UI renderers emit one), so the drawer can lead with it. */
-function extractIntent(code: string): string | null {
-  const match = code.match(/(?:\/\/|#)\s*Intent:\s*(.+)/);
-  return match ? match[1].trim() : null;
-}
-
-function GeneratedTestsPanel({ projectId }: { projectId: string }) {
-  const { tests, total, loading, error } = useProjectTests(projectId);
-  const [active, setActive] = useState<TestCaseSummary | null>(null);
-
-  if (loading) {
-    return <SkeletonRows label="Loading the generated tests…" />;
-  }
-  if (error) {
-    return (
-      <p className="rounded-lg border border-status-fail-border bg-status-fail-bg px-4 py-3 text-[13px] text-status-fail-fg">
-        {error}
-      </p>
-    );
-  }
-  if (total === 0) {
-    return (
-      <p className="rounded-lg border border-dashed border-border bg-surface px-4 py-6 text-center text-[13px] text-muted-foreground">
-        No tests authored yet.
-      </p>
-    );
-  }
-
+/** One link through to the full generated-tests page — the tests a run authored are
+ *  reviewed there (code, accept/discard), not in a per-test popup here. */
+function GeneratedTestsCTA({ projectId }: { projectId: string }) {
+  const { total, loading } = useProjectTests(projectId);
   return (
-    <>
-      <ul className="grid max-h-[420px] gap-2 overflow-y-auto sm:grid-cols-2">
-        {tests.map((test) => (
-          <li
-            key={test.id}
-            className="flex items-center gap-3 rounded-lg border border-border bg-surface px-3.5 py-2.5"
-          >
-            <FlaskConical
-              className="h-4 w-4 shrink-0 text-status-neutral-solid"
-              aria-hidden="true"
-            />
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-mono text-[12.5px] font-medium text-foreground">
-                {test.target}
-              </p>
-              <p className="mt-0.5 text-[11px] text-status-neutral-solid">
-                {test.type} · {test.layer} · {test.framework}
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setActive(test)}
-            >
-              <Code2 className="h-3.5 w-3.5" aria-hidden="true" />
-              View test
-            </Button>
-          </li>
-        ))}
-      </ul>
-      <ViewTestDrawer test={active} onClose={() => setActive(null)} />
-    </>
-  );
-}
-
-function ViewTestDrawer({
-  test,
-  onClose,
-}: {
-  test: TestCaseSummary | null;
-  onClose: () => void;
-}) {
-  const intent = test ? extractIntent(test.code) : null;
-  const isUi = test?.layer === "ui";
-  return (
-    <Drawer open={test !== null} onClose={onClose} label="Test details">
-      {test ? (
-        <>
-          <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
-            <div className="min-w-0">
-              <h2 className="truncate font-mono text-[15px] font-semibold text-foreground">
-                {test.target}
-              </h2>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {[
-                  test.type,
-                  test.layer,
-                  test.oracle_source,
-                  test.framework,
-                ].map((badge) => (
-                  <span
-                    key={badge}
-                    className="rounded-[5px] bg-status-neutral-bg px-1.5 py-0.5 font-mono text-[10.5px] text-status-neutral-fg"
-                  >
-                    {badge}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <button
-              type="button"
-              data-autofocus
-              onClick={onClose}
-              aria-label="Close"
-              className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              <X className="h-4 w-4" aria-hidden="true" />
-            </button>
-          </div>
-
-          <div className="flex-1 space-y-4 px-5 py-4">
-            {intent ? (
-              <div>
-                <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-status-neutral-solid">
-                  {isUi ? "Journey" : "What it checks"}
-                </p>
-                <p className="text-[13.5px] leading-relaxed text-foreground-secondary">
-                  {intent}
-                </p>
-              </div>
-            ) : null}
-            <div>
-              <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-status-neutral-solid">
-                {isUi ? "Playwright spec" : "Test code"}
-              </p>
-              <pre className="overflow-x-auto rounded-lg border border-border bg-background px-3.5 py-3 font-mono text-[12px] leading-relaxed text-foreground-secondary">
-                <code>
-                  {test.code || "// (no code generated for this case yet)"}
-                </code>
-              </pre>
-            </div>
-          </div>
-        </>
-      ) : null}
-    </Drawer>
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-3.5 shadow-card">
+      <div className="flex items-center gap-2.5">
+        <FlaskConical
+          className="h-4 w-4 shrink-0 text-status-neutral-solid"
+          aria-hidden="true"
+        />
+        <p className="text-[13.5px] text-foreground-secondary">
+          {loading
+            ? "Loading the generated tests…"
+            : total === 0
+              ? "No tests authored yet."
+              : `Polaris authored ${total} ${total === 1 ? "test" : "tests"} from the model.`}
+        </p>
+      </div>
+      <Button asChild variant="outline" size="sm">
+        <Link to={`/projects/${projectId}/tests`}>
+          View generated tests
+          <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+        </Link>
+      </Button>
+    </div>
   );
 }
 

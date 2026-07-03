@@ -24,8 +24,8 @@ export function OngoingRunPage() {
         title="Ongoing run"
         description="The run currently in progress — watched live, one phase at a time."
       />
-      <main className="flex-1 px-6 py-8 lg:px-8">
-        <div className="mx-auto max-w-[1200px]">
+      <main className="flex-1 px-4 py-8 lg:px-6">
+        <div className="mx-auto max-w-[1760px]">
           {loading ? (
             <SkeletonRows label="Looking for a run in progress…" />
           ) : error ? (

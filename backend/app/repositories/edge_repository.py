@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 
 from app.models.enums import EdgeKind
 from app.models.model_edge import ModelEdge
@@ -21,6 +21,11 @@ from .errors import EdgeIntegrityError
 
 class EdgeRepository(ProjectScopedRepository[ModelEdge]):
     model = ModelEdge
+
+    async def count_for_project(self, project_id: uuid.UUID) -> int:
+        """Total edges in a project's model (the built-model summary)."""
+        stmt = select(func.count()).where(ModelEdge.project_id == project_id)
+        return int(await self.session.scalar(stmt) or 0)
 
     async def _node_in_project(self, project_id: uuid.UUID, node_id: uuid.UUID) -> bool:
         stmt = select(ModelNode.id).where(

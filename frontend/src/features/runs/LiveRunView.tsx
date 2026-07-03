@@ -19,8 +19,8 @@ export function LiveRunView({ runId }: { runId: string }) {
         title="Run journey"
         description={<span className="font-mono">{runId}</span>}
       />
-      <main className="flex-1 px-6 py-8 lg:px-8">
-        <div className="mx-auto max-w-[1200px]">
+      <main className="flex-1 px-4 py-8 lg:px-6">
+        <div className="mx-auto max-w-[1760px]">
           <div className="mb-6">
             <Link
               to={`/runs/${runId}`}

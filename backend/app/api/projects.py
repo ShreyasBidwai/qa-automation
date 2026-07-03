@@ -30,6 +30,8 @@ from app.reporting.project_summary import (
     ProjectSummary,
     ProjectSummaryReader,
 )
+from app.repositories.edge_repository import EdgeRepository
+from app.repositories.node_repository import NodeRepository
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.project_repository import ProjectRepository
 from app.services.job_queue import JobQueue
@@ -43,6 +45,8 @@ from .schemas import (
     IngestResponse,
     JobStatusResponse,
     LastRunSummary,
+    ModelKindCount,
+    ModelStatsResponse,
     ProjectCreate,
     ProjectListItem,
     ProjectListResponse,
@@ -175,6 +179,34 @@ async def get_project(
         session, project_id, current_user, Permission.VIEW
     )
     return _project_response(project)
+
+
+@router.get("/projects/{project_id}/model", response_model=ModelStatsResponse)
+async def get_project_model(
+    project_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ModelStatsResponse:
+    """The built-model (Brain) summary: is it built, how many nodes/edges, of what
+    kinds, and when it was last built (VIEW). Drives the Project view's Model card."""
+    await authorize_project(session, project_id, current_user, Permission.VIEW)
+    nodes = NodeRepository(session)
+    counts = await nodes.counts_by_kind(project_id)
+    node_count = sum(counts.values())
+    edge_count = await EdgeRepository(session).count_for_project(project_id)
+    return ModelStatsResponse(
+        built=node_count > 0,
+        node_count=node_count,
+        edge_count=edge_count,
+        # Most-numerous kind first, so "42 endpoints" leads the breakdown.
+        nodes_by_kind=[
+            ModelKindCount(kind=kind.value, count=count)
+            for kind, count in sorted(
+                counts.items(), key=lambda kv: (-kv[1], kv[0].value)
+            )
+        ],
+        last_built_at=await nodes.last_built_at(project_id) if node_count else None,
+    )
 
 
 @router.patch("/projects/{project_id}", response_model=ProjectResponse)

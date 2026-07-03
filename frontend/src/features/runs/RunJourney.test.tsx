@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api/client", () => ({
   runApi: { events: vi.fn(), get: vi.fn() },
-  projectApi: { tests: vi.fn() },
+  projectApi: { tests: vi.fn(), get: vi.fn() },
 }));
 vi.mock("./runEventsStream", () => ({ streamRunEvents: vi.fn() }));
 vi.mock("./useRunScreenshot", () => ({
@@ -98,10 +98,27 @@ function testsOk(items: TestCaseSummary[]) {
   return { ok: true, status: 200, data: { items, total: items.length } };
 }
 
+function projectOk() {
+  return {
+    ok: true,
+    status: 200,
+    data: {
+      id: "p1",
+      name: "Acme API",
+      slug: "acme",
+      repo_url: "/r",
+      app_url: null,
+      auth_config_ref: null,
+      created_at: "2026-01-01T00:00:00Z",
+    },
+  };
+}
+
 describe("RunJourney", () => {
   beforeEach(() => {
     vi.mocked(runApi.events).mockReset();
     vi.mocked(runApi.get).mockReset().mockResolvedValue(runStatus("succeeded"));
+    vi.mocked(projectApi.get).mockReset().mockResolvedValue(projectOk());
     vi.mocked(streamRunEvents).mockReset();
     vi.mocked(projectApi.tests)
       .mockReset()
@@ -125,6 +142,8 @@ describe("RunJourney", () => {
         screen.getByRole("tab", { name: new RegExp(label) }),
       ).toBeInTheDocument();
     }
+    // The project this run belongs to is named at the top.
+    expect(await screen.findByText("Acme API")).toBeInTheDocument();
     // A finished run defaults to the last active phase (Review) — only ITS content is
     // shown, so the Execute step is not visible until that tab is opened.
     expect(screen.getByText("Review complete")).toBeInTheDocument();
@@ -152,17 +171,19 @@ describe("RunJourney", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows authored tests in the Generate phase and opens a View-test drawer", async () => {
+  it("links through to the generated-tests page from the Generate phase", async () => {
     vi.mocked(runApi.events).mockResolvedValue(eventsResponse(JOURNEY));
 
     render(<RunJourney runId="r1" />);
     fireEvent.click(await screen.findByRole("tab", { name: /Generate/ }));
 
-    // The authored test appears; opening it reveals the title, intent and code.
-    fireEvent.click(await screen.findByRole("button", { name: /View test/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Test details" });
-    expect(within(dialog).getByText("creates an order")).toBeInTheDocument();
-    expect(within(dialog).getByText(/class Orders_Test/)).toBeInTheDocument();
+    // A single "View generated tests" link opens the full tests page (no per-test
+    // popup here); the authored count is surfaced.
+    const link = await screen.findByRole("link", {
+      name: /View generated tests/,
+    });
+    expect(link).toHaveAttribute("href", "/projects/p1/tests");
+    expect(screen.getByText(/Polaris authored 1 test/)).toBeInTheDocument();
   });
 
   it("shows the live watching state for an in-progress run", async () => {

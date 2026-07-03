@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Float, cast, select
+from sqlalchemy import Float, cast, func, select
 
 from app.models.enums import NodeKind
 from app.models.model_node import EMBEDDING_DIM, ModelNode
@@ -15,6 +16,25 @@ from .base import ProjectScopedRepository
 
 class NodeRepository(ProjectScopedRepository[ModelNode]):
     model = ModelNode
+
+    async def counts_by_kind(self, project_id: uuid.UUID) -> dict[NodeKind, int]:
+        """Node count per kind for a project (one grouped query) — the built-model
+        summary. Kinds with no nodes are simply absent from the map."""
+        stmt = (
+            select(ModelNode.kind, func.count())
+            .where(ModelNode.project_id == project_id)
+            .group_by(ModelNode.kind)
+        )
+        rows = (await self.session.execute(stmt)).all()
+        return {kind: count for kind, count in rows}
+
+    async def last_built_at(self, project_id: uuid.UUID) -> datetime | None:
+        """When the model was most recently (re)built — the newest node's timestamp."""
+        stmt = select(func.max(ModelNode.created_at)).where(
+            ModelNode.project_id == project_id
+        )
+        value: datetime | None = await self.session.scalar(stmt)
+        return value
 
     async def get_by_key(
         self, project_id: uuid.UUID, kind: NodeKind, name: str
