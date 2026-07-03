@@ -17,7 +17,10 @@ import { clearToken } from "@/lib/auth/session";
 import { AppShell } from "./AppShell";
 
 describe("AppShell", () => {
-  beforeEach(() => clearToken());
+  beforeEach(() => {
+    clearToken();
+    window.history.pushState({}, "", "/");
+  });
 
   it("renders the primary nav, the account/support cluster, the wordmark, and content", () => {
     render(
@@ -41,11 +44,54 @@ describe("AppShell", () => {
     }
 
     // The wordmark links home (sidebar + mobile top bar).
-    expect(screen.getAllByLabelText("Polaris — home").length).toBeGreaterThanOrEqual(1);
+    expect(
+      screen.getAllByLabelText("Polaris — home").length,
+    ).toBeGreaterThanOrEqual(1);
     // The top bar carries the route-derived context + an account link.
     const topBar = within(screen.getByRole("banner"));
     expect(topBar.getByText("Projects")).toBeInTheDocument();
-    expect(topBar.getByRole("link", { name: "Your account" })).toBeInTheDocument();
+    expect(
+      topBar.getByRole("link", { name: "Your account" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("page content")).toBeInTheDocument();
+  });
+
+  it("highlights only the deepest matching nav entry", () => {
+    window.history.pushState({}, "", "/runs/ongoing");
+    render(
+      <AuthProvider>
+        <AppShell>
+          <div>content</div>
+        </AppShell>
+      </AuthProvider>,
+    );
+    const primary = within(screen.getByRole("navigation", { name: "Primary" }));
+    // On /runs/ongoing the longest prefix wins: "Ongoing run" is current, "Runs" not.
+    expect(primary.getByRole("link", { name: "Ongoing run" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(primary.getByRole("link", { name: "Runs" })).not.toHaveAttribute(
+      "aria-current",
+    );
+  });
+
+  it("keeps 'Runs' highlighted for a specific run's pages", () => {
+    window.history.pushState({}, "", "/runs/abc123/live");
+    render(
+      <AuthProvider>
+        <AppShell>
+          <div>content</div>
+        </AppShell>
+      </AuthProvider>,
+    );
+    const primary = within(screen.getByRole("navigation", { name: "Primary" }));
+    expect(primary.getByRole("link", { name: "Runs" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(
+      primary.getByRole("link", { name: "Ongoing run" }),
+    ).not.toHaveAttribute("aria-current");
   });
 });

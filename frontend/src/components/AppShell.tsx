@@ -5,7 +5,7 @@ import { Link } from "@/components/Link";
 import { Wordmark } from "@/components/Wordmark";
 import type { AuthUser } from "@/lib/api/types";
 import { useAuth } from "@/lib/auth/useAuth";
-import { useIsActive, useLocation } from "@/lib/router";
+import { useLocation } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
 interface NavEntry {
@@ -29,8 +29,38 @@ const SECONDARY: NavEntry[] = [
   { to: "/help", label: "Help" },
 ];
 
-function NavItem({ entry, muted }: { entry: NavEntry; muted?: boolean }) {
-  const active = useIsActive(entry.to);
+/** Does `to` match `pathname` (exact, or a parent segment prefix)? */
+function matchesNav(pathname: string, to: string): boolean {
+  if (to === "/") return pathname === "/";
+  return pathname === to || pathname.startsWith(`${to}/`);
+}
+
+/** The single best-matching nav target — the LONGEST matching prefix — so a deeper
+ *  route (e.g. `/runs/ongoing`) lights only its own entry, never also a shallower one
+ *  (`/runs`), while `/runs/{id}` still lights "Runs". */
+function activeNavTarget(pathname: string, entries: NavEntry[]): string | null {
+  const clean = pathname.replace(/\/+$/, "") || "/";
+  let best: string | null = null;
+  for (const entry of entries) {
+    if (
+      matchesNav(clean, entry.to) &&
+      (best === null || entry.to.length > best.length)
+    ) {
+      best = entry.to;
+    }
+  }
+  return best;
+}
+
+function NavItem({
+  entry,
+  active,
+  muted,
+}: {
+  entry: NavEntry;
+  active: boolean;
+  muted?: boolean;
+}) {
   return (
     <Link
       to={entry.to}
@@ -81,6 +111,10 @@ function SignOutButton() {
  * a single scrolling content column.
  */
 export function AppShell({ children }: { children: ReactNode }) {
+  const pathname = useLocation();
+  // Resolve the active entry ONCE across every nav target, so only the longest match
+  // lights up (no double-highlight of "Runs" + "Ongoing run" on /runs/ongoing).
+  const activeTarget = activeNavTarget(pathname, [...PRIMARY, ...SECONDARY]);
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       <aside className="hidden w-[232px] shrink-0 flex-col border-r border-border bg-surface px-3.5 py-5 sm:flex">
@@ -91,7 +125,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
         <nav className="flex flex-col gap-0.5" aria-label="Primary">
           {PRIMARY.map((entry) => (
-            <NavItem key={entry.to} entry={entry} />
+            <NavItem
+              key={entry.to}
+              entry={entry}
+              active={entry.to === activeTarget}
+            />
           ))}
         </nav>
         <nav
@@ -99,7 +137,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           aria-label="Account and support"
         >
           {SECONDARY.map((entry) => (
-            <NavItem key={entry.to} entry={entry} muted />
+            <NavItem
+              key={entry.to}
+              entry={entry}
+              active={entry.to === activeTarget}
+              muted
+            />
           ))}
           <SignOutButton />
         </nav>
