@@ -19,6 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import JobKind, JobStatus
 from app.models.job import Job
+from app.models.organization_member import OrganizationMember
+from app.models.project import Project
 
 # Statuses a job can still leave (claimable or cancellable).
 _ACTIVE: tuple[JobStatus, ...] = (JobStatus.QUEUED, JobStatus.RUNNING)
@@ -65,6 +67,24 @@ class JobQueue:
 
     async def get(self, job_id: uuid.UUID) -> Job | None:
         return await self.session.get(Job, job_id)
+
+    async def latest_active_run_for_user(self, user_id: uuid.UUID) -> Job | None:
+        """The caller's most-recent still-active RUN job (queued/running) across every
+        project in their orgs, or None. Powers the "Ongoing run" view — scoped by org
+        membership so it never surfaces another tenant's run."""
+        stmt = (
+            select(Job)
+            .join(Project, Project.id == Job.project_id)
+            .join(OrganizationMember, OrganizationMember.org_id == Project.org_id)
+            .where(
+                Job.kind == JobKind.RUN,
+                Job.status.in_(_ACTIVE),
+                OrganizationMember.user_id == user_id,
+            )
+            .order_by(Job.created_at.desc(), Job.id.desc())
+            .limit(1)
+        )
+        return (await self.session.scalars(stmt)).first()
 
     # --- claim (FOR UPDATE SKIP LOCKED) --------------------------------------
 

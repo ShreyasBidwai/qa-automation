@@ -17,6 +17,7 @@ interface NavEntry {
 const PRIMARY: NavEntry[] = [
   { to: "/projects", label: "Projects" },
   { to: "/findings", label: "Findings" },
+  { to: "/runs/ongoing", label: "Ongoing run" },
   { to: "/runs", label: "Runs" },
 ];
 
@@ -150,7 +151,8 @@ function TopBar() {
 
 /** The current section, for the top-bar context label (route-derived, real). */
 function sectionLabel(pathname: string): string {
-  const segment = pathname.replace(/\/+$/, "").split("/").filter(Boolean)[0] ?? "";
+  const segment =
+    pathname.replace(/\/+$/, "").split("/").filter(Boolean)[0] ?? "";
   switch (segment) {
     case "":
     case "projects":

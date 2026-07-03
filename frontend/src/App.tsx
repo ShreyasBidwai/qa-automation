@@ -19,6 +19,7 @@ import { ProjectsListPage } from "@/features/projects/ProjectsListPage";
 import { ProjectTestsPage } from "@/features/projects/ProjectTestsPage";
 import { StartRunPage } from "@/features/projects/StartRunPage";
 import { LiveRunView } from "@/features/runs/LiveRunView";
+import { OngoingRunPage } from "@/features/runs/OngoingRunPage";
 import { RunDashboard } from "@/features/runs/RunDashboard";
 import { RunStatusPage } from "@/features/runs/RunStatusPage";
 import { RunsListPage } from "@/features/runs/RunsListPage";
@@ -49,7 +50,8 @@ function renderRoute(pathname: string): ReactElement {
 
   if (segments[0] === "projects") {
     if (segments.length === 1) return <ProjectsListPage />;
-    if (segments.length === 2 && segments[1] === "new") return <CreateProjectPage />;
+    if (segments.length === 2 && segments[1] === "new")
+      return <CreateProjectPage />;
     if (segments.length === 2) return <ProjectPage projectId={segments[1]} />;
     if (segments.length === 3 && segments[2] === "edit") {
       return <EditProjectPage projectId={segments[1]} />;
@@ -64,6 +66,10 @@ function renderRoute(pathname: string): ReactElement {
 
   if (segments[0] === "runs") {
     if (segments.length === 1) return <RunsListPage />;
+    // "ongoing" is reserved, matched before the `/runs/{id}` status route.
+    if (segments.length === 2 && segments[1] === "ongoing") {
+      return <OngoingRunPage />;
+    }
     if (segments.length === 3 && segments[2] === "findings") {
       return <RunDashboard runId={segments[1]} />;
     }
@@ -94,7 +100,8 @@ function renderRoute(pathname: string): ReactElement {
     );
   }
 
-  if (segments[0] === "help" && segments.length === 1) return <HelpCenterPage />;
+  if (segments[0] === "help" && segments.length === 1)
+    return <HelpCenterPage />;
 
   if (segments[0] === "status") {
     // In-shell the status page carried no page gutters (it rendered flush to the

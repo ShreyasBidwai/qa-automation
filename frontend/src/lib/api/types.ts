@@ -227,6 +227,15 @@ export interface RunResponse {
   status: JobStatusValue;
 }
 
+/** The caller's current in-progress run (GET /runs/active), or all-null if none.
+ *  Powers the "Ongoing run" view; `run_id` is the `/runs/{run_id}/live` handle. */
+export interface ActiveRunResponse {
+  run_id: string | null;
+  project_id: string | null;
+  mode: string | null;
+  status: JobStatusValue | null;
+}
+
 export interface RunStatus {
   run_id: string;
   project_id: string;

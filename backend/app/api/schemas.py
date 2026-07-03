@@ -366,6 +366,19 @@ class RunResponse(BaseModel):
     status: str
 
 
+class ActiveRunResponse(BaseModel):
+    """The caller's current in-progress run (queued/running), or all-null if none.
+
+    Powers the "Ongoing run" view: a single handle to the latest active run across the
+    user's projects. ``run_id`` is the job handle (``/runs/{run_id}/live``).
+    """
+
+    run_id: uuid.UUID | None = None
+    project_id: uuid.UUID | None = None
+    mode: str | None = None
+    status: str | None = None
+
+
 class RunStatusResponse(BaseModel):
     run_id: uuid.UUID
     project_id: uuid.UUID  # so a run view can link back to the project (tests, config)

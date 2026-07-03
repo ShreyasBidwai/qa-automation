@@ -1,6 +1,7 @@
 import { clearToken, getToken } from "@/lib/auth/session";
 
 import type {
+  ActiveRunResponse,
   AuthTokenResponse,
   AuthUser,
   ChangePasswordBody,
@@ -330,6 +331,8 @@ export const runApi = {
   /** POST /projects/{id}/runs — start a run (background job). */
   create: (projectId: string, body: RunCreateBody) =>
     postJson<RunResponse>(`${API_BASE}/projects/${projectId}/runs`, body),
+  /** GET /runs/active — the caller's current in-progress run (Ongoing view), or nulls. */
+  active: () => getJson<ActiveRunResponse>(`${API_BASE}/runs/active`),
   /** GET /projects/{id}/runs — list a project's runs (bounded, newest first). */
   list: (projectId: string, params: PageParams) =>
     getJson<RunListResponse>(

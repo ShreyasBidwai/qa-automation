@@ -48,6 +48,7 @@ from .finding_view import build_finding_response
 from .jobs import dispatch_job
 from .ports import run_request_to_payload, to_run_request
 from .schemas import (
+    ActiveRunResponse,
     AiUsageBucket,
     AiUsageRecord,
     CiSummaryResponse,
@@ -169,6 +170,26 @@ async def list_project_runs(
         total=await run_repo.count_for_project(project_id),
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get("/runs/active", response_model=ActiveRunResponse)
+async def active_run(
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ActiveRunResponse:
+    """The caller's current in-progress run, or an all-null response if none.
+
+    Declared BEFORE ``/runs/{run_id}`` so "active" isn't parsed as a run id. Scoped by
+    org membership (the query only sees runs in the user's projects) — no leak."""
+    job = await JobQueue(session).latest_active_run_for_user(current_user.id)
+    if job is None:
+        return ActiveRunResponse()
+    return ActiveRunResponse(
+        run_id=job.id,
+        project_id=job.project_id,
+        mode=job.mode or "",
+        status=job.status.value,
     )
 
 
