@@ -1,10 +1,20 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/api/client", () => ({ runApi: { create: vi.fn() } }));
+vi.mock("@/lib/api/client", () => ({
+  runApi: { create: vi.fn() },
+  projectApi: { importTests: vi.fn() },
+}));
 vi.mock("@/lib/router", () => ({ navigate: vi.fn() }));
+vi.mock("@/components/Link", () => ({
+  Link: ({ to, children }: { to: string; children: React.ReactNode }) => (
+    <a href={to}>{children}</a>
+  ),
+}));
 
-import { runApi } from "@/lib/api/client";
+import type React from "react";
+
+import { projectApi, runApi } from "@/lib/api/client";
 import { navigate } from "@/lib/router";
 
 import { RunTriggerForm } from "./RunTriggerForm";
@@ -12,6 +22,7 @@ import { RunTriggerForm } from "./RunTriggerForm";
 describe("RunTriggerForm", () => {
   beforeEach(() => {
     vi.mocked(navigate).mockReset();
+    vi.mocked(projectApi.importTests).mockReset();
     vi.mocked(runApi.create).mockReset();
     vi.mocked(runApi.create).mockResolvedValue({
       ok: true,
@@ -109,5 +120,63 @@ describe("RunTriggerForm", () => {
 
     expect(screen.getByText("Select at least one layer to test")).toBeInTheDocument();
     expect(runApi.create).not.toHaveBeenCalled();
+  });
+
+  it("imports a CSV and shows the summary + a link to the tests", async () => {
+    vi.mocked(projectApi.importTests).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { total: 2, created: 2, updated: 0, errors: [] },
+    });
+    render(<RunTriggerForm projectId="p1" />);
+
+    const file = new File(["method,path,expected_status\nGET,api/x,200\n"], "t.csv", {
+      type: "text/csv",
+    });
+    fireEvent.change(screen.getByLabelText("CSV file"), { target: { files: [file] } });
+
+    await waitFor(() =>
+      expect(projectApi.importTests).toHaveBeenCalledWith("p1", file),
+    );
+    expect(await screen.findByText(/Imported 2 tests \(2 new\)/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /View tests/ })).toHaveAttribute(
+      "href",
+      "/projects/p1/tests",
+    );
+  });
+
+  it("surfaces skipped rows from a partial import", async () => {
+    vi.mocked(projectApi.importTests).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: {
+        total: 1,
+        created: 1,
+        updated: 0,
+        errors: [{ row: 2, message: "method 'NOPE' must be one of [...]" }],
+      },
+    });
+    render(<RunTriggerForm projectId="p1" />);
+
+    const file = new File(["x"], "t.csv", { type: "text/csv" });
+    fireEvent.change(screen.getByLabelText("CSV file"), { target: { files: [file] } });
+
+    expect(await screen.findByText(/1 row skipped/)).toBeInTheDocument();
+    expect(screen.getByText(/method 'NOPE'/)).toBeInTheDocument();
+  });
+
+  it("shows an error when the import request fails", async () => {
+    vi.mocked(projectApi.importTests).mockResolvedValue({
+      ok: false,
+      status: 413,
+      data: null,
+      error: "CSV too large",
+    });
+    render(<RunTriggerForm projectId="p1" />);
+
+    const file = new File(["x"], "t.csv", { type: "text/csv" });
+    fireEvent.change(screen.getByLabelText("CSV file"), { target: { files: [file] } });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("CSV too large");
   });
 });

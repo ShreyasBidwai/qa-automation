@@ -8,6 +8,7 @@ import type {
   AuthConfigUpsertBody,
   CredentialStatus,
   CredentialUpsertBody,
+  CsvImportResponse,
   DbStateTierResponse,
   DbStateTierUpdateBody,
   DocumentListResponse,
@@ -150,7 +151,8 @@ async function request<T>(
         status: response.status,
         data: null,
         error: problemMessage(body, response.status),
-        fieldErrors: fieldErrors && fieldErrors.length > 0 ? fieldErrors : undefined,
+        fieldErrors:
+          fieldErrors && fieldErrors.length > 0 ? fieldErrors : undefined,
       };
     }
     return { ok: true, status: response.status, data: body as T };
@@ -239,7 +241,10 @@ export const orgApi = {
     postJson<InviteResponse>(`${API_BASE}/orgs/${orgId}/invites`, body),
   /** PATCH /orgs/{id}/members/{uid} — change a member's role. */
   changeRole: (orgId: string, userId: string, body: RoleUpdateBody) =>
-    patchJson<MemberResponse>(`${API_BASE}/orgs/${orgId}/members/${userId}`, body),
+    patchJson<MemberResponse>(
+      `${API_BASE}/orgs/${orgId}/members/${userId}`,
+      body,
+    ),
   /** DELETE /orgs/{id}/members/{uid} — remove a member (204). */
   removeMember: (orgId: string, userId: string) =>
     del(`${API_BASE}/orgs/${orgId}/members/${userId}`),
@@ -258,7 +263,8 @@ function pageQuery({ limit, offset }: PageParams): string {
 
 export const projectApi = {
   /** POST /projects — register a project. */
-  create: (body: ProjectCreateBody) => postJson<Project>(`${API_BASE}/projects`, body),
+  create: (body: ProjectCreateBody) =>
+    postJson<Project>(`${API_BASE}/projects`, body),
   /** GET /projects/{id}. */
   get: (id: string) => getJson<Project>(`${API_BASE}/projects/${id}`),
   /** GET /projects — list projects (bounded, newest first). */
@@ -275,12 +281,25 @@ export const projectApi = {
   /** GET /projects/{id}/tests — the generated test cases + their code (VIEW). */
   tests: (id: string) =>
     getJson<TestCaseListResponse>(`${API_BASE}/projects/${id}/tests`),
+  /** POST /projects/{id}/tests/import — import QA-authored scenarios from a CSV
+   *  (multipart, MANAGE_PROJECT). Returns a per-row summary; bad rows report. */
+  importTests: (id: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return postFormData<CsvImportResponse>(
+      `${API_BASE}/projects/${id}/tests/import`,
+      form,
+    );
+  },
   /** GET /projects/{id}/db-state-tier — the DB-state testing tier (needs VIEW). */
   getDbStateTier: (id: string) =>
     getJson<DbStateTierResponse>(`${API_BASE}/projects/${id}/db-state-tier`),
   /** PUT /projects/{id}/db-state-tier — set the tier (MANAGE_PROJECT; bad value → 422). */
   setDbStateTier: (id: string, body: DbStateTierUpdateBody) =>
-    putJson<DbStateTierResponse>(`${API_BASE}/projects/${id}/db-state-tier`, body),
+    putJson<DbStateTierResponse>(
+      `${API_BASE}/projects/${id}/db-state-tier`,
+      body,
+    ),
 };
 
 export const findingApi = {
@@ -331,7 +350,9 @@ export const jobApi = {
 export const documentApi = {
   /** GET /projects/{id}/documents. */
   list: (projectId: string) =>
-    getJson<DocumentListResponse>(`${API_BASE}/projects/${projectId}/documents`),
+    getJson<DocumentListResponse>(
+      `${API_BASE}/projects/${projectId}/documents`,
+    ),
   /** POST /projects/{id}/documents/upload — multipart (file + doc_kind, optional title). */
   upload: (
     projectId: string,
@@ -360,9 +381,13 @@ export const credentialApi = {
     getJson<CredentialStatus>(`${API_BASE}/projects/${projectId}/credentials`),
   /** PUT /projects/{id}/credentials — set/replace; returns the safe status. */
   put: (projectId: string, body: CredentialUpsertBody) =>
-    putJson<CredentialStatus>(`${API_BASE}/projects/${projectId}/credentials`, body),
+    putJson<CredentialStatus>(
+      `${API_BASE}/projects/${projectId}/credentials`,
+      body,
+    ),
   /** DELETE /projects/{id}/credentials — clear stored credentials. */
-  remove: (projectId: string) => del(`${API_BASE}/projects/${projectId}/credentials`),
+  remove: (projectId: string) =>
+    del(`${API_BASE}/projects/${projectId}/credentials`),
 };
 
 /** Login config for the authenticated crawl (ADR-0056) — where/how runs sign in.
@@ -373,7 +398,10 @@ export const authConfigApi = {
     getJson<AuthConfigStatus>(`${API_BASE}/projects/${projectId}/auth-config`),
   /** PUT /projects/{id}/auth-config — set/replace the login config. */
   put: (projectId: string, body: AuthConfigUpsertBody) =>
-    putJson<AuthConfigStatus>(`${API_BASE}/projects/${projectId}/auth-config`, body),
+    putJson<AuthConfigStatus>(
+      `${API_BASE}/projects/${projectId}/auth-config`,
+      body,
+    ),
   /** DELETE /projects/{id}/auth-config — clear it (crawl reverts to unauthenticated). */
   remove: (projectId: string) =>
     del(`${API_BASE}/projects/${projectId}/auth-config`),

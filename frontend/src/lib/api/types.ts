@@ -298,6 +298,23 @@ export interface TestCaseListResponse {
   total: number;
 }
 
+/** A CSV row the importer rejected, so QA can fix exactly that line.
+ *  `row` is 1-based (0 = a whole-file problem, e.g. a missing header). */
+export interface CsvImportRowError {
+  row: number;
+  message: string;
+}
+
+/** Summary of a CSV test-scenario import (POST /projects/{id}/tests/import).
+ *  A partial file succeeds — good rows land (`created` + `updated`), bad rows
+ *  come back in `errors` for the QA to correct. */
+export interface CsvImportResponse {
+  total: number;
+  created: number;
+  updated: number;
+  errors: CsvImportRowError[];
+}
+
 // --- target-account credentials (ADR-0053) ----------------------------------
 
 /** How a project's runs obtain a target-app account. */

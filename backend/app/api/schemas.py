@@ -710,6 +710,27 @@ class TestCaseListResponse(BaseModel):
     total: int
 
 
+class CsvImportRowError(BaseModel):
+    """A CSV row the importer rejected, so the QA can fix exactly that line."""
+
+    row: int  # 1-based data row (0 = a whole-file problem, e.g. a missing header)
+    message: str
+
+
+class CsvImportResponse(BaseModel):
+    """Summary of a CSV test-scenario import (POST /tests/import).
+
+    ``total`` scenarios parsed cleanly and were persisted (``created`` new lineages +
+    ``updated`` re-imports of an existing scenario); ``errors`` are the rows skipped
+    for the QA to correct. A partial import succeeds — good rows land, bad rows report.
+    """
+
+    total: int
+    created: int
+    updated: int
+    errors: list[CsvImportRowError]
+
+
 class SpecDivergenceResponse(BaseModel):
     """A concrete, high-confidence spec-vs-code divergence (B9, ADR-0039)."""
 

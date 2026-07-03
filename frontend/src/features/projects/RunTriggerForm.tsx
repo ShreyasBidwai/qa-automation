@@ -1,9 +1,15 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 
+import { Link } from "@/components/Link";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { runApi } from "@/lib/api/client";
-import type { RunCreateBody, RunLayer, SelectionStrategy } from "@/lib/api/types";
+import { projectApi, runApi } from "@/lib/api/client";
+import type {
+  CsvImportResponse,
+  RunCreateBody,
+  RunLayer,
+  SelectionStrategy,
+} from "@/lib/api/types";
 import { navigate } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
@@ -137,6 +143,8 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
               </button>
             ))}
           </div>
+
+          <CsvImportPanel projectId={projectId} />
         </div>
       ) : (
         <fieldset className="space-y-3">
@@ -210,6 +218,142 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
         {submitting ? "Starting…" : "Start run"}
       </Button>
     </form>
+  );
+}
+
+// A self-contained CSV template the QA can download, fill in, and re-upload — kept
+// inline (a data: URI) so it needs no extra route or asset and always matches the
+// columns the parser accepts.
+const CSV_TEMPLATE =
+  "name,method,path,expected_status,payload,description,authenticated\n" +
+  "List orders,GET,api/v1/orders,200,,lists all orders,true\n" +
+  'Create order,POST,api/v1/orders,201,"{""qty"": 2}",creates an order,true\n' +
+  'Reject empty cart,POST,api/v1/orders,422,"{""qty"": 0}",rejects a zero qty,true\n';
+
+const CSV_TEMPLATE_HREF =
+  "data:text/csv;charset=utf-8," + encodeURIComponent(CSV_TEMPLATE);
+
+/** Import QA-authored test scenarios from a CSV — a separate action from starting a
+ *  run (it persists reusable test cases the QA fully specified). Deterministic
+ *  server-side: no AI, so the QA's declared request→status becomes exactly that test. */
+function CsvImportPanel({ projectId }: { projectId: string }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState<CsvImportResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onFile(file: File) {
+    setError(null);
+    setResult(null);
+    setImporting(true);
+    const response = await projectApi.importTests(projectId, file);
+    setImporting(false);
+    // Let the QA pick the same file again after a fix (same value → no change event).
+    if (inputRef.current) inputRef.current.value = "";
+    if (response.ok && response.data) {
+      setResult(response.data);
+      return;
+    }
+    setError(response.error ?? "Could not import the CSV.");
+  }
+
+  return (
+    <div className="rounded-lg border border-dashed border-border bg-surface p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">Or import from CSV</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Upload QA-authored scenarios — each row becomes a runnable test.{" "}
+            <a
+              href={CSV_TEMPLATE_HREF}
+              download="polaris-tests-template.csv"
+              className="text-accent underline-offset-2 hover:underline"
+            >
+              Download template
+            </a>
+          </p>
+        </div>
+        <div className="shrink-0">
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="sr-only"
+            aria-label="CSV file"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void onFile(file);
+            }}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            disabled={importing}
+            onClick={() => inputRef.current?.click()}
+          >
+            {importing ? "Importing…" : "Choose CSV"}
+          </Button>
+        </div>
+      </div>
+
+      {error ? (
+        <p role="alert" className="mt-3 text-sm text-status-fail-fg">
+          {error}
+        </p>
+      ) : null}
+
+      {result ? <CsvImportSummary projectId={projectId} result={result} /> : null}
+    </div>
+  );
+}
+
+function CsvImportSummary({
+  projectId,
+  result,
+}: {
+  projectId: string;
+  result: CsvImportResponse;
+}) {
+  const persisted = result.created + result.updated;
+  return (
+    <div className="mt-3 space-y-2 border-t border-border pt-3">
+      {persisted > 0 ? (
+        <p className="text-sm text-status-pass-fg">
+          Imported {persisted} test{persisted === 1 ? "" : "s"} ({result.created} new
+          {result.updated > 0 ? `, ${result.updated} updated` : ""}).{" "}
+          <Link
+            to={`/projects/${projectId}/tests`}
+            className="text-accent underline-offset-2 hover:underline"
+          >
+            View tests →
+          </Link>
+        </p>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          No tests imported — fix the rows below and try again.
+        </p>
+      )}
+      {result.errors.length > 0 ? (
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-status-fail-fg">
+            {result.errors.length} row{result.errors.length === 1 ? "" : "s"} skipped:
+          </p>
+          <ul className="space-y-0.5">
+            {result.errors.map((rowError) => (
+              <li
+                key={`${rowError.row}-${rowError.message}`}
+                className="text-xs text-muted-foreground"
+              >
+                <span className="font-mono text-foreground">
+                  {rowError.row === 0 ? "file" : `row ${rowError.row}`}
+                </span>{" "}
+                — {rowError.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

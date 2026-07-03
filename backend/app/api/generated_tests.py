@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import Permission
@@ -19,12 +19,22 @@ from app.models.test_case import TestCase
 from app.repositories.node_repository import NodeRepository
 from app.repositories.test_case_repository import TestCaseRepository
 from app.repositories.test_script_repository import TestScriptRepository
+from app.services.csv_test_import_service import CsvTestImportService
 
 from .authz import authorize_project
 from .deps import CurrentUser, get_session
-from .schemas import TestCaseListResponse, TestCaseSummary
+from .schemas import (
+    CsvImportResponse,
+    CsvImportRowError,
+    TestCaseListResponse,
+    TestCaseSummary,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["tests"])
+
+# A CSV of scenarios is small text; cap it like the document upload so a pathological
+# file can't wedge the request (the row cap in csv_import.py is the second bound).
+_MAX_CSV_BYTES = 1_000_000
 
 
 def _target_label(case: TestCase, names: dict[uuid.UUID, str]) -> str:
@@ -87,3 +97,43 @@ async def list_project_tests(
 
     total = await case_repo.count_current(project_id)
     return TestCaseListResponse(items=items, total=total)
+
+
+@router.post("/projects/{project_id}/tests/import", response_model=CsvImportResponse)
+async def import_tests_csv(
+    project_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    file: Annotated[UploadFile, File()],
+) -> CsvImportResponse:
+    """Import QA-authored test scenarios from a CSV (multipart), MANAGE_PROJECT.
+
+    Each row becomes a deterministic, runnable test the QA fully specified — no AI, so
+    the import is reproducible and never invents an assertion. Idempotent: re-uploading
+    a corrected CSV updates each scenario in place. A partial file succeeds — valid
+    rows are persisted, invalid rows are returned for the QA to fix (never dropped).
+    """
+    await authorize_project(
+        session, project_id, current_user, Permission.MANAGE_PROJECT
+    )
+
+    raw = await file.read()
+    if len(raw) > _MAX_CSV_BYTES:
+        raise HTTPException(status_code=413, detail="CSV too large")
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="CSV must be UTF-8 text") from None
+    if not content.strip():
+        raise HTTPException(status_code=400, detail="CSV is empty")
+
+    result = await CsvTestImportService(session).import_csv(project_id, content)
+    return CsvImportResponse(
+        total=result.total,
+        created=result.created,
+        updated=result.updated,
+        errors=[
+            CsvImportRowError(row=error.row, message=error.message)
+            for error in result.errors
+        ],
+    )
