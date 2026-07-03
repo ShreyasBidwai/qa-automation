@@ -239,7 +239,11 @@ class OrchestratorRunExecutor:
         report = await orchestrator.run(
             project_id=project_id,
             strategy=strategy,
-            bounds=ModeBBounds(max_targets=request.max_targets, layers=request.layers),
+            bounds=ModeBBounds(
+                max_targets=request.max_targets,
+                layers=request.layers,
+                modules=request.modules,
+            ),
         )
         summary: dict[str, Any] = {
             "mode": "mode_b",

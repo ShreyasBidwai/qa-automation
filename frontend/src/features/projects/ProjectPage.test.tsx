@@ -155,6 +155,23 @@ describe("ProjectPage (overview)", () => {
     ).toBeInTheDocument();
   });
 
+  it("surfaces the Gitea + PM connectors as coming soon", async () => {
+    vi.mocked(projectApi.get).mockResolvedValue(ok(PROJECT));
+    vi.mocked(runApi.list).mockResolvedValue(
+      ok({ items: [], total: 0, limit: 5, offset: 0 }),
+    );
+    vi.mocked(findingApi.listForProject).mockResolvedValue(
+      ok({ items: [], total: 0, limit: 50, offset: 0 }),
+    );
+
+    render(<ProjectPage projectId="p1" />);
+
+    expect(await screen.findByText("Connectors")).toBeInTheDocument();
+    expect(screen.getByText("Gitea")).toBeInTheDocument();
+    expect(screen.getByText("Project management")).toBeInTheDocument();
+    expect(screen.getAllByText("Coming soon")).toHaveLength(2);
+  });
+
   it("shows an error state when the project can't be loaded", async () => {
     vi.mocked(projectApi.get).mockResolvedValue({
       ok: false,

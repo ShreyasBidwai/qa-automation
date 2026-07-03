@@ -152,6 +152,20 @@ export interface ModelStats {
   last_built_at: string | null;
 }
 
+/** One feature area of the app, derived from the Brain (ADR-0061). `total` = its
+ *  testable targets; `endpoint_count`/`page_count` split API vs UI (frontend). */
+export interface ModuleSummary {
+  key: string;
+  label: string;
+  endpoint_count: number;
+  page_count: number;
+  total: number;
+}
+
+export interface ModuleListResponse {
+  modules: ModuleSummary[];
+}
+
 /** PATCH body for a project — only the provided fields change (ProjectUpdate). */
 export interface ProjectUpdateBody {
   name?: string;
@@ -225,6 +239,9 @@ export interface ModeBRunBody {
   /** Layer scope (ADR-0052): which of ui/api/db to test. Omitted = the full set
    *  (existing behaviour unchanged); must be non-empty when present. */
   layers?: RunLayer[];
+  /** Module scope (ADR-0061): feature-area keys to test. Omitted = all modules;
+   *  composes with `layers` (a module + `ui` tests that module's frontend). */
+  modules?: string[];
 }
 
 export interface ModeCRunBody {

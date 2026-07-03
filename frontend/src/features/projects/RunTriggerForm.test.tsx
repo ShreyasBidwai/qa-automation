@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api/client", () => ({
   runApi: { create: vi.fn() },
-  projectApi: { importTests: vi.fn() },
+  projectApi: { importTests: vi.fn(), modules: vi.fn() },
 }));
 vi.mock("@/lib/router", () => ({ navigate: vi.fn() }));
 vi.mock("@/components/Link", () => ({
@@ -23,6 +23,30 @@ describe("RunTriggerForm", () => {
   beforeEach(() => {
     vi.mocked(navigate).mockReset();
     vi.mocked(projectApi.importTests).mockReset();
+    vi.mocked(projectApi.modules)
+      .mockReset()
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        data: {
+          modules: [
+            {
+              key: "orders",
+              label: "Orders",
+              endpoint_count: 3,
+              page_count: 1,
+              total: 4,
+            },
+            {
+              key: "users",
+              label: "Users",
+              endpoint_count: 2,
+              page_count: 0,
+              total: 2,
+            },
+          ],
+        },
+      });
     vi.mocked(runApi.create).mockReset();
     vi.mocked(runApi.create).mockResolvedValue({
       ok: true,
@@ -49,7 +73,9 @@ describe("RunTriggerForm", () => {
   it("sends a change_impact changeset as an array of paths", async () => {
     render(<RunTriggerForm projectId="p1" />);
     fireEvent.click(screen.getByRole("radio", { name: /Autonomous/ }));
-    fireEvent.click(screen.getByRole("radio", { name: /Test only what changed/ }));
+    fireEvent.click(
+      screen.getByRole("radio", { name: /Test only what changed/ }),
+    );
     fireEvent.change(screen.getByLabelText("Changed files"), {
       target: { value: "app/A.php\napp/B.php\n" },
     });
@@ -141,7 +167,65 @@ describe("RunTriggerForm", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: /DB/ }));
     fireEvent.click(screen.getByRole("button", { name: "Start run" }));
 
-    expect(screen.getByText("Select at least one layer to test")).toBeInTheDocument();
+    expect(
+      screen.getByText("Select at least one layer to test"),
+    ).toBeInTheDocument();
+    expect(runApi.create).not.toHaveBeenCalled();
+  });
+
+  it("scopes an autonomous run to the picked modules", async () => {
+    render(<RunTriggerForm projectId="p1" />);
+    fireEvent.click(screen.getByRole("radio", { name: /Autonomous/ }));
+    fireEvent.click(
+      screen.getByRole("radio", { name: /Test specific modules/ }),
+    );
+
+    // The module list loads (searchable) — pick "Orders", leave "Users".
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Orders/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Start run" }));
+
+    await waitFor(() =>
+      expect(runApi.create).toHaveBeenCalledWith("p1", {
+        mode: "mode_b",
+        strategy: "full_sweep",
+        modules: ["orders"],
+      }),
+    );
+  });
+
+  it("filters the module list by the search box", async () => {
+    render(<RunTriggerForm projectId="p1" />);
+    fireEvent.click(screen.getByRole("radio", { name: /Autonomous/ }));
+    fireEvent.click(
+      screen.getByRole("radio", { name: /Test specific modules/ }),
+    );
+
+    expect(
+      await screen.findByRole("checkbox", { name: /Orders/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Users/ })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Search modules"), {
+      target: { value: "ord" },
+    });
+    expect(
+      screen.getByRole("checkbox", { name: /Orders/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /Users/ })).toBeNull();
+  });
+
+  it("blocks a module-scoped run with no module selected", async () => {
+    render(<RunTriggerForm projectId="p1" />);
+    fireEvent.click(screen.getByRole("radio", { name: /Autonomous/ }));
+    fireEvent.click(
+      screen.getByRole("radio", { name: /Test specific modules/ }),
+    );
+    await screen.findByRole("checkbox", { name: /Orders/ });
+    fireEvent.click(screen.getByRole("button", { name: "Start run" }));
+
+    expect(
+      screen.getByText("Select at least one module to test."),
+    ).toBeInTheDocument();
     expect(runApi.create).not.toHaveBeenCalled();
   });
 
@@ -153,15 +237,23 @@ describe("RunTriggerForm", () => {
     });
     render(<RunTriggerForm projectId="p1" />);
 
-    const file = new File(["method,path,expected_status\nGET,api/x,200\n"], "t.csv", {
-      type: "text/csv",
+    const file = new File(
+      ["method,path,expected_status\nGET,api/x,200\n"],
+      "t.csv",
+      {
+        type: "text/csv",
+      },
+    );
+    fireEvent.change(screen.getByLabelText("CSV file"), {
+      target: { files: [file] },
     });
-    fireEvent.change(screen.getByLabelText("CSV file"), { target: { files: [file] } });
 
     await waitFor(() =>
       expect(projectApi.importTests).toHaveBeenCalledWith("p1", file),
     );
-    expect(await screen.findByText(/Imported 2 tests \(2 new\)/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Imported 2 tests \(2 new\)/),
+    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /View tests/ })).toHaveAttribute(
       "href",
       "/projects/p1/tests",
@@ -182,7 +274,9 @@ describe("RunTriggerForm", () => {
     render(<RunTriggerForm projectId="p1" />);
 
     const file = new File(["x"], "t.csv", { type: "text/csv" });
-    fireEvent.change(screen.getByLabelText("CSV file"), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText("CSV file"), {
+      target: { files: [file] },
+    });
 
     expect(await screen.findByText(/1 row skipped/)).toBeInTheDocument();
     expect(screen.getByText(/method 'NOPE'/)).toBeInTheDocument();
@@ -198,7 +292,9 @@ describe("RunTriggerForm", () => {
     render(<RunTriggerForm projectId="p1" />);
 
     const file = new File(["x"], "t.csv", { type: "text/csv" });
-    fireEvent.change(screen.getByLabelText("CSV file"), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText("CSV file"), {
+      target: { files: [file] },
+    });
 
     expect(await screen.findByRole("alert")).toHaveTextContent("CSV too large");
   });

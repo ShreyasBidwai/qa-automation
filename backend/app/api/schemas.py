@@ -101,6 +101,22 @@ class ModelStatsResponse(BaseModel):
     last_built_at: datetime | None = None
 
 
+class ModuleSummaryResponse(BaseModel):
+    """One feature area of the app, derived from the Brain (ADR-0061). ``key`` is the
+    stable identifier a run scopes on; ``label`` is the human name; the counts show how
+    many API endpoints / UI pages it holds (so a run can target its API or frontend)."""
+
+    key: str
+    label: str
+    endpoint_count: int
+    page_count: int
+    total: int
+
+
+class ModuleListResponse(BaseModel):
+    modules: list[ModuleSummaryResponse]
+
+
 # --- DB-state testing tier (B10, ADR-0043) ----------------------------------
 
 DbStateTierLiteral = Literal["off", "read_only", "full"]
@@ -334,6 +350,12 @@ class JobStatusResponse(BaseModel):
 RunLayer = Literal["ui", "api", "db"]
 
 
+# Bounds on the module scope — a module key is only ever string-compared (never fed to
+# SQL/paths/commands), so these guard resource use, not injection.
+_MAX_MODULES = 200
+_MAX_MODULE_KEY_LEN = 128
+
+
 class ModeBRunRequest(BaseModel):
     """Autonomous run: a selection strategy + (for change_impact) a changeset."""
 
@@ -344,6 +366,9 @@ class ModeBRunRequest(BaseModel):
     # Optional layer scope (ADR-0052): which of ui/api/db the run tests. Omitted/null
     # = the full set (existing behaviour unchanged); deduped, must be non-empty.
     layers: list[RunLayer] | None = None
+    # Optional module scope (ADR-0061): which feature areas to test. Omitted = all;
+    # deduped, lower-cased, bounded. Composes with layers (module + ui = its frontend).
+    modules: list[str] | None = None
 
     @model_validator(mode="after")
     def _require_changeset_for_change_impact(self) -> ModeBRunRequest:
@@ -358,6 +383,19 @@ class ModeBRunRequest(BaseModel):
                 raise ValueError("layers, when given, must list at least one layer")
             # Dedupe while preserving a deterministic order.
             self.layers = sorted(set(self.layers))
+        return self
+
+    @model_validator(mode="after")
+    def _normalize_modules(self) -> ModeBRunRequest:
+        if self.modules is not None:
+            cleaned = sorted({m.strip().lower() for m in self.modules if m.strip()})
+            if not cleaned:
+                raise ValueError("modules, when given, must list at least one module")
+            if len(cleaned) > _MAX_MODULES:
+                raise ValueError(f"too many modules (max {_MAX_MODULES})")
+            if any(len(m) > _MAX_MODULE_KEY_LEN for m in cleaned):
+                raise ValueError("a module key is too long")
+            self.modules = cleaned
         return self
 
 

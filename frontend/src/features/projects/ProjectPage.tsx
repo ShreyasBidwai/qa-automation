@@ -1,4 +1,11 @@
-import { AlertTriangle, ArrowDown, ArrowUp } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  ClipboardList,
+  GitBranch,
+  type LucideIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Link } from "@/components/Link";
@@ -100,7 +107,10 @@ export function ProjectPage({ projectId }: { projectId: string }) {
 
           <RecentRuns runs={runs} />
 
-          <ModelCard projectId={projectId} />
+          <div className="grid gap-3.5 lg:grid-cols-2">
+            <ModelCard projectId={projectId} />
+            <ConnectorsCard />
+          </div>
         </>
       )}
     </div>
@@ -436,6 +446,58 @@ function ModelCard({ projectId }: { projectId: string }) {
           {ingest.error}
         </p>
       ) : null}
+    </section>
+  );
+}
+
+// ---- connectors -------------------------------------------------------------
+
+// Integrations on the roadmap — surfaced now (disabled) so operators know they're
+// coming. Static/frontend-only; no backend until each connector actually ships.
+const CONNECTORS: { name: string; description: string; icon: LucideIcon }[] = [
+  {
+    name: "Gitea",
+    description: "Ingest repos and open PRs against your self-hosted Gitea.",
+    icon: GitBranch,
+  },
+  {
+    name: "Project management",
+    description: "Push findings to your tracker (Jira, Linear, …).",
+    icon: ClipboardList,
+  },
+];
+
+function ConnectorsCard() {
+  return (
+    <section className="rounded-xl border border-border bg-surface p-5 shadow-card">
+      <h2 className="text-sm font-semibold text-foreground">Connectors</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Link Polaris to your git host and project tools.
+      </p>
+      <ul className="mt-3 space-y-2.5">
+        {CONNECTORS.map((connector) => (
+          <li
+            key={connector.name}
+            className="flex items-center gap-3 rounded-lg border border-dashed border-border bg-background px-3.5 py-2.5"
+          >
+            <connector.icon
+              className="h-4 w-4 shrink-0 text-status-neutral-solid"
+              aria-hidden="true"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-medium text-foreground">
+                {connector.name}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                {connector.description}
+              </p>
+            </div>
+            <span className="shrink-0 rounded-full bg-status-neutral-bg px-2 py-0.5 text-[11px] font-medium text-status-neutral-fg">
+              Coming soon
+            </span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

@@ -22,8 +22,9 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.brain.modules import aggregate_modules
 from app.core.permissions import Permission
-from app.models.enums import JobKind
+from app.models.enums import JobKind, NodeKind
 from app.models.project import Project
 from app.reporting.project_summary import (
     STATUS_NEVER_RUN,
@@ -47,6 +48,8 @@ from .schemas import (
     LastRunSummary,
     ModelKindCount,
     ModelStatsResponse,
+    ModuleListResponse,
+    ModuleSummaryResponse,
     ProjectCreate,
     ProjectListItem,
     ProjectListResponse,
@@ -206,6 +209,34 @@ async def get_project_model(
             )
         ],
         last_built_at=await nodes.last_built_at(project_id) if node_count else None,
+    )
+
+
+@router.get("/projects/{project_id}/modules", response_model=ModuleListResponse)
+async def list_project_modules(
+    project_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ModuleListResponse:
+    """The project's feature areas ("modules"), derived from the Brain's testable
+    targets (ADR-0061), each with its endpoint/page counts — so a run can be scoped to
+    just the modules a QA cares about (VIEW). Empty until the model is built."""
+    await authorize_project(session, project_id, current_user, Permission.VIEW)
+    repo = NodeRepository(session)
+    nodes = []
+    for kind in (NodeKind.ENDPOINT, NodeKind.PAGE):
+        nodes.extend(await repo.list_by_kind(project_id, kind))
+    return ModuleListResponse(
+        modules=[
+            ModuleSummaryResponse(
+                key=module.key,
+                label=module.label,
+                endpoint_count=module.endpoint_count,
+                page_count=module.page_count,
+                total=module.total,
+            )
+            for module in aggregate_modules(nodes)
+        ]
     )
 
 

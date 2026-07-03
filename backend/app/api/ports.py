@@ -30,6 +30,8 @@ class RunRequest:
     prompt: str | None = None
     # Optional layer scope (ADR-0052); None = the full set (UI/API/DB). Mode B only.
     layers: frozenset[str] | None = None
+    # Optional module scope (ADR-0061); None = all feature areas. Mode B only.
+    modules: frozenset[str] | None = None
     # Mode C only: which authoring engine ("ui" page-journey | "api" endpoint tests).
     layer: str | None = None
 
@@ -71,6 +73,7 @@ def to_run_request(body: ModeBRunRequest | ModeCRunRequest) -> RunRequest:
             changeset=tuple(body.changeset or ()),
             max_targets=body.max_targets,
             layers=frozenset(body.layers) if body.layers else None,
+            modules=frozenset(body.modules) if body.modules else None,
         )
     return RunRequest(mode=RunMode.C, prompt=body.prompt, layer=body.layer)
 
@@ -84,6 +87,7 @@ def run_request_to_payload(request: RunRequest) -> dict[str, Any]:
         "max_targets": request.max_targets,
         "prompt": request.prompt,
         "layers": sorted(request.layers) if request.layers else None,
+        "modules": sorted(request.modules) if request.modules else None,
         "layer": request.layer,
     }
 
@@ -92,6 +96,7 @@ def run_request_from_payload(payload: dict[str, Any]) -> RunRequest:
     """Rebuild a run request from a durable job payload (the worker's input)."""
     strategy = payload.get("strategy")
     layers = payload.get("layers")
+    modules = payload.get("modules")
     return RunRequest(
         mode=RunMode(payload["mode"]),
         strategy=SelectionStrategyKind(strategy) if strategy else None,
@@ -99,5 +104,6 @@ def run_request_from_payload(payload: dict[str, Any]) -> RunRequest:
         max_targets=payload.get("max_targets", 50),
         prompt=payload.get("prompt"),
         layers=frozenset(layers) if layers else None,
+        modules=frozenset(modules) if modules else None,
         layer=payload.get("layer"),
     )

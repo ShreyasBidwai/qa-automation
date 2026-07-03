@@ -21,6 +21,7 @@ from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.brain.modules import derive_module_key
 from app.impact.selector import ChangeSet, ImpactResolver, ImpactSelector
 from app.models.enums import NodeKind
 from app.models.model_node import ModelNode
@@ -91,6 +92,25 @@ def targets_for_layers(
     if layers is None:
         return targets
     return tuple(t for t in targets if _LAYER_OF_KIND.get(t.kind) in layers)
+
+
+def targets_for_modules(
+    targets: tuple[Target, ...], modules: frozenset[str] | None
+) -> tuple[Target, ...]:
+    """Keep only targets in one of the selected modules (ADR-0061), case-insensitive.
+
+    ``modules=None`` or empty means no module scope — returned unchanged. Composes with
+    ``targets_for_layers``: modules ∩ ``ui`` = a module's frontend (its page targets),
+    modules ∩ ``api`` = its endpoints. Filter-only, so an unknown key simply matches
+    nothing within the project (never crosses a tenant boundary)."""
+    if not modules:
+        return targets
+    wanted = {module.lower() for module in modules}
+    return tuple(
+        target
+        for target in targets
+        if (derive_module_key(target.kind, target.name) or "") in wanted
+    )
 
 
 class FullSweepStrategy:

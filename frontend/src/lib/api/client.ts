@@ -26,6 +26,7 @@ import type {
   MemberListResponse,
   MemberResponse,
   ModelStats,
+  ModuleListResponse,
   OpenFindingsResponse,
   OrgListResponse,
   PageParams,
@@ -273,6 +274,9 @@ export const projectApi = {
   /** GET /projects/{id}/model — the built-model summary (node/edge counts, by kind). */
   model: (id: string) =>
     getJson<ModelStats>(`${API_BASE}/projects/${id}/model`),
+  /** GET /projects/{id}/modules — the feature areas a run can be scoped to (ADR-0061). */
+  modules: (id: string) =>
+    getJson<ModuleListResponse>(`${API_BASE}/projects/${id}/modules`),
   /** GET /projects — list projects (bounded, newest first). */
   list: (params: PageParams) =>
     getJson<ProjectListResponse>(`${API_BASE}/projects?${pageQuery(params)}`),

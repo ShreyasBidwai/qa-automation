@@ -11,13 +11,17 @@ export function StartRunPage({ projectId }: { projectId: string }) {
     <>
       <PageHeader
         eyebrow={
-          <Link to={`/projects/${projectId}`}>{project?.name ?? "Project"}</Link>
+          <Link to={`/projects/${projectId}`}>
+            {project?.name ?? "Project"}
+          </Link>
         }
         title="Start a run"
         description="Describe a scenario to test, or run autonomously across the model."
       />
       <main className="flex-1 px-6 py-8">
-        <div className="max-w-2xl">
+        {/* Wider than a single column so the module picker (ADR-0061) can lay its
+            searchable list across the width instead of leaving the right side empty. */}
+        <div className="max-w-4xl">
           <RunTriggerForm projectId={projectId} />
         </div>
       </main>

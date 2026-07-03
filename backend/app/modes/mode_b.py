@@ -64,6 +64,7 @@ from .selection import (
     SelectionStrategyKind,
     Target,
     targets_for_layers,
+    targets_for_modules,
 )
 
 logger = logging.getLogger("app.modes.mode_b")
@@ -105,6 +106,9 @@ class ModeBBounds:
     # Optional layer scope (ADR-0052): which of ui/api/db this run exercises. None =
     # the full set — targets are unfiltered and the DB-state phase runs as before.
     layers: frozenset[str] | None = None
+    # Optional module scope (ADR-0061): which feature areas to test. None/empty = all.
+    # Composes with ``layers`` — e.g. these modules + ``ui`` = their frontend.
+    modules: frozenset[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -222,9 +226,12 @@ class ModeBOrchestrator:
             selection = await FullSweepStrategy(self._session).select(project_id)
             full_sweep_fallback = True
 
-        # Layer scope (ADR-0052): narrow to the requested layers' targets BEFORE the
-        # count bound, so a UI-only run drives UI targets (None = full, unchanged).
+        # Layer + module scope, applied BEFORE the count bound so the bound sees the
+        # already-narrowed set. Layers pick ui/api/db (ADR-0052); modules pick feature
+        # areas (ADR-0061). Composed, "these modules + ui" drives just their frontend.
+        # None on either = the full set (unchanged behaviour).
         scoped = targets_for_layers(selection.targets, bounds.layers)
+        scoped = targets_for_modules(scoped, bounds.modules)
         targets = scoped[: bounds.max_targets]  # hard count bound
         await emit(
             phase=PHASE_SELECT,
@@ -234,6 +241,7 @@ class ModeBOrchestrator:
                 "targets": len(targets),
                 "full_sweep_fallback": full_sweep_fallback,
                 "layers": sorted(bounds.layers) if bounds.layers else None,
+                "modules": sorted(bounds.modules) if bounds.modules else None,
             },
         )
         # Run-durability: persist the run row (status=running) BEFORE generation, so

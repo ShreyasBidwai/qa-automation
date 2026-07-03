@@ -1,4 +1,5 @@
-import { useRef, useState, type FormEvent } from "react";
+import { Loader2, Search } from "lucide-react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 
 import { Link } from "@/components/Link";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,12 @@ import type {
 import { navigate } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
+import { useProjectModules } from "./useProjectModules";
+
 type Mode = "describe" | "autonomous";
+// The autonomous scope: a backend strategy, or "modules" (a full sweep narrowed to
+// selected feature areas — ADR-0061). "modules" maps to strategy full_sweep + a filter.
+type AutoScope = SelectionStrategy | "modules";
 
 // Examples are layer-specific: a UI journey reads as a user flow across pages, an
 // API contract as an endpoint's request→response behaviour.
@@ -63,8 +69,11 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
   const [prompt, setPrompt] = useState("");
   // Which authoring engine "Describe it" uses (Mode C): UI journey vs API contract.
   const [authoringLayer, setAuthoringLayer] = useState<AuthoringLayer>("ui");
-  const [strategy, setStrategy] = useState<SelectionStrategy>("full_sweep");
+  // Autonomous scope: sweep everything, only what changed, or specific modules.
+  const [scope, setScope] = useState<AutoScope>("full_sweep");
   const [changeset, setChangeset] = useState("");
+  // The module keys to test when scope === "modules" (ADR-0061).
+  const [selectedModules, setSelectedModules] = useState<string[]>([]);
   // Layer scope (Mode B). Default = all on = the full set = current behaviour.
   const [layers, setLayers] = useState<Record<RunLayer, boolean>>({
     ui: true,
@@ -96,7 +105,7 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
     const layerScope: { layers?: RunLayer[] } =
       selectedLayers.length === LAYERS.length ? {} : { layers: selectedLayers };
 
-    if (strategy === "change_impact") {
+    if (scope === "change_impact") {
       const paths = changeset
         .split("\n")
         .map((line) => line.trim())
@@ -105,9 +114,29 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
         setError("List at least one changed file for change-impact selection.");
         return null;
       }
-      return { mode: "mode_b", strategy, changeset: paths, ...layerScope };
+      return {
+        mode: "mode_b",
+        strategy: "change_impact",
+        changeset: paths,
+        ...layerScope,
+      };
     }
-    return { mode: "mode_b", strategy, ...layerScope };
+
+    if (scope === "modules") {
+      if (selectedModules.length === 0) {
+        setError("Select at least one module to test.");
+        return null;
+      }
+      // A module scope is a full sweep NARROWED to those feature areas (ADR-0061).
+      return {
+        mode: "mode_b",
+        strategy: "full_sweep",
+        modules: selectedModules,
+        ...layerScope,
+      };
+    }
+
+    return { mode: "mode_b", strategy: "full_sweep", ...layerScope };
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -222,19 +251,33 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
           </legend>
           <StrategyOption
             value="full_sweep"
-            selected={strategy === "full_sweep"}
-            onSelect={() => setStrategy("full_sweep")}
+            selected={scope === "full_sweep"}
+            onSelect={() => setScope("full_sweep")}
             title="Test everything"
             description="A full sweep across every testable target."
           />
           <StrategyOption
+            value="modules"
+            selected={scope === "modules"}
+            onSelect={() => setScope("modules")}
+            title="Test specific modules"
+            description="Pick the feature areas to test — their API and/or frontend."
+          />
+          {scope === "modules" ? (
+            <ModulePicker
+              projectId={projectId}
+              selected={selectedModules}
+              onChange={setSelectedModules}
+            />
+          ) : null}
+          <StrategyOption
             value="change_impact"
-            selected={strategy === "change_impact"}
-            onSelect={() => setStrategy("change_impact")}
+            selected={scope === "change_impact"}
+            onSelect={() => setScope("change_impact")}
             title="Test only what changed"
             description="Change-impact selection from a list of changed files."
           />
-          {strategy === "change_impact" ? (
+          {scope === "change_impact" ? (
             <div className="space-y-1.5 pl-1">
               <label
                 htmlFor="changeset"
@@ -437,6 +480,150 @@ function CsvImportSummary({
           </ul>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * The module picker (ADR-0061): a searchable, multi-select list of the project's
+ * feature areas, laid out across the width. Selecting modules narrows the run to
+ * those areas — combined with the layer toggles, to just their API and/or frontend.
+ * Controlled: the parent owns the selected keys.
+ */
+function ModulePicker({
+  projectId,
+  selected,
+  onChange,
+}: {
+  projectId: string;
+  selected: string[];
+  onChange: (keys: string[]) => void;
+}) {
+  const { modules, loading, error } = useProjectModules(projectId);
+  const [query, setQuery] = useState("");
+  const selectedSet = new Set(selected);
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return modules;
+    return modules.filter(
+      (module) =>
+        module.label.toLowerCase().includes(needle) ||
+        module.key.includes(needle),
+    );
+  }, [modules, query]);
+
+  function toggle(key: string) {
+    onChange(
+      selectedSet.has(key)
+        ? selected.filter((existing) => existing !== key)
+        : [...selected, key],
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="ml-1 flex items-center gap-2 rounded-lg border border-dashed border-border bg-surface px-3 py-4 text-[13px] text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        Loading modules…
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <p
+        role="alert"
+        className="ml-1 rounded-lg border border-status-fail-border bg-status-fail-bg px-3 py-2.5 text-[13px] text-status-fail-fg"
+      >
+        {error}
+      </p>
+    );
+  }
+  if (modules.length === 0) {
+    return (
+      <p className="ml-1 rounded-lg border border-dashed border-border bg-surface px-3 py-4 text-center text-[13px] text-muted-foreground">
+        No modules yet — build the model first, and the app’s feature areas
+        appear here.
+      </p>
+    );
+  }
+
+  return (
+    <div className="ml-1 rounded-xl border border-border bg-surface p-3">
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5">
+        <Search
+          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+          aria-hidden="true"
+        />
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search modules…"
+          aria-label="Search modules"
+          className="w-full bg-transparent text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none"
+        />
+      </div>
+
+      <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+        <span aria-live="polite">
+          {selected.length} of {modules.length} selected
+        </span>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => onChange(filtered.map((module) => module.key))}
+            className="font-medium text-accent hover:underline"
+          >
+            Select {query ? "matching" : "all"}
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange([])}
+            className="font-medium text-muted-foreground hover:text-foreground hover:underline"
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+
+      <ul className="mt-2 grid max-h-[300px] gap-1.5 overflow-y-auto sm:grid-cols-2 xl:grid-cols-3">
+        {filtered.map((module) => {
+          const checked = selectedSet.has(module.key);
+          return (
+            <li key={module.key}>
+              <label
+                className={cn(
+                  "flex cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-2",
+                  checked
+                    ? "border-accent bg-accent-subtle"
+                    : "border-border bg-surface hover:bg-background",
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggle(module.key)}
+                  className="h-4 w-4 shrink-0 text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-medium text-foreground">
+                    {module.label}
+                  </span>
+                  <span className="block text-[11px] text-status-neutral-solid">
+                    {module.endpoint_count} API · {module.page_count} UI
+                  </span>
+                </span>
+              </label>
+            </li>
+          );
+        })}
+        {filtered.length === 0 ? (
+          <li className="col-span-full px-1 py-3 text-center text-[13px] text-muted-foreground">
+            No modules match “{query}”.
+          </li>
+        ) : null}
+      </ul>
     </div>
   );
 }

@@ -38,9 +38,10 @@ from app.modes.selection import (
     Target,
     build_selection_strategy,
     targets_for_layers,
+    targets_for_modules,
 )
 from app.repositories.organization_repository import OrganizationRepository
-from tests.factories import make_project, make_run, make_result, make_test_case
+from tests.factories import make_project, make_result, make_run, make_test_case
 from tests.test_mode_b import (
     _ENV,
     _FakeResolver,
@@ -108,6 +109,82 @@ def test_run_request_round_trip_preserves_layers() -> None:
     plain = to_run_request(ModeBRunRequest(mode="mode_b", strategy="full_sweep"))
     assert plain.layers is None
     assert run_request_from_payload(run_request_to_payload(plain)).layers is None
+
+
+# --- module scope (ADR-0061) -------------------------------------------------
+
+
+def test_targets_for_modules_filters_by_module() -> None:
+    orders_ep = Target(
+        node_id=uuid.uuid4(), kind=NodeKind.ENDPOINT, name="GET api/v1/orders"
+    )
+    orders_pg = Target(node_id=uuid.uuid4(), kind=NodeKind.PAGE, name="/orders/new")
+    users_ep = Target(
+        node_id=uuid.uuid4(), kind=NodeKind.ENDPOINT, name="GET api/v1/users"
+    )
+    targets = (orders_ep, orders_pg, users_ep)
+    assert targets_for_modules(targets, None) == targets  # no scope = unchanged
+    assert targets_for_modules(targets, frozenset()) == targets  # empty = unchanged
+    # Both the orders endpoint AND the orders page belong to the "orders" module.
+    assert targets_for_modules(targets, frozenset({"orders"})) == (orders_ep, orders_pg)
+    assert targets_for_modules(targets, frozenset({"users"})) == (users_ep,)
+    assert targets_for_modules(targets, frozenset({"missing"})) == ()
+
+
+def test_mode_b_request_modules_validation() -> None:
+    request = ModeBRunRequest(
+        mode="mode_b", strategy="full_sweep", modules=[" Orders ", "orders", "users"]
+    )
+    assert request.modules == ["orders", "users"]  # trimmed, lower-cased, deduped
+    assert ModeBRunRequest(mode="mode_b", strategy="full_sweep").modules is None
+    with pytest.raises(ValidationError):
+        ModeBRunRequest(mode="mode_b", strategy="full_sweep", modules=[])
+    with pytest.raises(ValidationError):
+        ModeBRunRequest(mode="mode_b", strategy="full_sweep", modules=["   "])
+
+
+def test_run_request_round_trip_preserves_modules() -> None:
+    request = to_run_request(
+        ModeBRunRequest(mode="mode_b", strategy="full_sweep", modules=["orders"])
+    )
+    assert request.modules == frozenset({"orders"})
+    payload = run_request_to_payload(request)
+    assert payload["modules"] == ["orders"]
+    assert run_request_from_payload(payload).modules == frozenset({"orders"})
+
+    plain = to_run_request(ModeBRunRequest(mode="mode_b", strategy="full_sweep"))
+    assert plain.modules is None
+    assert run_request_from_payload(run_request_to_payload(plain)).modules is None
+
+
+async def test_mode_b_module_scope_drives_only_that_module(
+    db_session: AsyncSession,
+) -> None:
+    project_id = await _project(db_session)
+    orders = await _node(db_session, project_id, NodeKind.ENDPOINT, "GET api/orders")
+    users = await _node(db_session, project_id, NodeKind.ENDPOINT, "GET api/users")
+
+    generator = _StubGenerator(db_session)
+    orchestrator = ModeBOrchestrator(
+        session=db_session,
+        runner=_StubRunner(Outcome.FAIL),
+        target_env=_ENV,
+        resolver=_FakeResolver(),
+        generator=generator,
+    )
+    strategy = build_selection_strategy(
+        SelectionStrategyKind.FULL_SWEEP, session=db_session
+    )
+    report = await orchestrator.run(
+        project_id=project_id,
+        strategy=strategy,
+        bounds=ModeBBounds(max_targets=10, modules=frozenset({"orders"})),
+    )
+
+    # Only the "orders" module target was driven; "users" was filtered out.
+    assert generator.generated_for == [orders.id]
+    assert users.id not in generator.generated_for
+    assert report.targets_selected == 1
 
 
 async def test_mode_b_layer_scope_drives_only_that_layer(
