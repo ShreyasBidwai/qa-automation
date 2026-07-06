@@ -26,6 +26,7 @@ from app.reporting.project_summary import (
     STATUS_NEVER_RUN,
     STATUS_PASSING,
     ProjectSummaryReader,
+    pass_rate,
 )
 from app.repositories.finding_repository import FindingRepository
 from app.repositories.finding_triage_repository import FindingTriageRepository
@@ -36,6 +37,19 @@ from app.repositories.test_case_repository import TestCaseRepository
 from tests.factories import make_project, make_result, make_run, make_test_case
 
 _BASE = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+def test_pass_rate_excludes_skipped_from_both_sides() -> None:
+    # SKIPPED (reachable-but-unverified) is neither pass nor fail — it must not drag a
+    # genuinely-passing run's rate down (ADR-0064). 4 pass / (4 pass + 1 fail) = 0.8.
+    counts = {Outcome.PASS: 4, Outcome.FAIL: 1, Outcome.SKIPPED: 7}
+    assert pass_rate(counts) == 0.8
+
+
+def test_pass_rate_is_none_when_nothing_was_verified() -> None:
+    # A module of only un-verifiable endpoints has NO pass-rate, not a misleading 0%.
+    assert pass_rate({Outcome.SKIPPED: 11}) is None
+    assert pass_rate({}) is None
 
 
 async def _project(session: AsyncSession) -> uuid.UUID:

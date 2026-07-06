@@ -78,10 +78,17 @@ def _test_identifier(script: PestScript) -> str:
 
 
 def _aggregate(outcomes: list[Outcome]) -> Outcome:
+    # A real defect/crash dominates; then a verified pass; a script whose cases are ALL
+    # skipped (reachable-but-unverified, ADR-0064) is itself SKIPPED, NOT a silent pass
+    # — else a skip would wrongly count toward pass-rate and seed a heal candidate.
     if Outcome.ERROR in outcomes:
         return Outcome.ERROR
     if Outcome.FAIL in outcomes:
         return Outcome.FAIL
+    if Outcome.PASS in outcomes:
+        return Outcome.PASS
+    if Outcome.SKIPPED in outcomes:
+        return Outcome.SKIPPED
     return Outcome.PASS
 
 

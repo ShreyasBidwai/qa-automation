@@ -222,8 +222,11 @@ class FindingAssembler:
     ) -> list[_Prepared]:
         prepared: list[_Prepared] = []
         for result in results:
-            if result.outcome is Outcome.PASS:
-                continue  # passing results are not findings
+            if result.outcome in (Outcome.PASS, Outcome.SKIPPED):
+                # Passing results are not findings; SKIPPED ones are reachable-but-
+                # unverified observations (no defect, no crash) — surfaced as a run
+                # count, never a finding (ADR-0064).
+                continue
             case = await self._cases.get(project_id, result.test_case_id)
             if case is None:
                 raise FindingAssemblyError(

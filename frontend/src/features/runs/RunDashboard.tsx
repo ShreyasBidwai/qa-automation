@@ -213,7 +213,7 @@ function StatCards({
       aria-label="Run stats"
       className="mb-[18px] grid flex-none grid-cols-1 gap-3.5 sm:grid-cols-2 min-[1024px]:grid-cols-4"
     >
-      <PassRateCard passRate={metrics.passRate} delta={delta} />
+      <PassRateCard metrics={metrics} delta={delta} />
       <FindingsCard findings={findings} />
       <NewRegressionsCard findings={findings} />
       <ConfidenceCard findings={findings} />
@@ -234,14 +234,17 @@ const BIG_NUMBER =
   "text-[30px] font-semibold leading-none tracking-[-0.02em] tabular-nums";
 
 function PassRateCard({
-  passRate,
+  metrics,
   delta,
 }: {
-  passRate: number | null;
+  metrics: RunMetrics;
   delta: PassRateDelta | null;
 }) {
+  const { passRate, passed, failed, errors, skipped } = metrics;
   const pct =
     passRate === null ? 0 : Math.round(passRate <= 1 ? passRate * 100 : passRate);
+  const verified = (passed ?? 0) + (failed ?? 0) + (errors ?? 0);
+  const unverified = skipped ?? 0;
   return (
     <StatCard label="Pass rate">
       <div className="mt-2.5 flex items-baseline gap-2">
@@ -256,6 +259,25 @@ function PassRateCard({
           style={{ width: `${pct}%` }}
         />
       </div>
+      {/* Verified vs unverified — so an all-green wall doesn't hide that many endpoints
+          only returned a precondition (4xx/redirect) we couldn't assert success on. */}
+      {verified > 0 || unverified > 0 ? (
+        <p
+          className="mt-2 text-[11px] text-status-neutral-solid"
+          title={
+            unverified > 0
+              ? "Unverified = reachable, but returned a 4xx/redirect precondition (auth, missing data, required params, or not served in the test boot) — success couldn't be asserted."
+              : undefined
+          }
+        >
+          {[
+            passed !== null ? `${passed}/${verified} verified` : null,
+            unverified > 0 ? `${unverified} unverified` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      ) : null}
     </StatCard>
   );
 }

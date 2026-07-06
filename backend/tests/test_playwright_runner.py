@@ -121,7 +121,7 @@ def test_parse_maps_result_statuses_to_outcomes() -> None:
     assert by_file["f.spec.ts"].outcome is Outcome.FAIL
     assert by_file["f.spec.ts"].message == "expected visible"
     assert by_file["t.spec.ts"].outcome is Outcome.ERROR  # did not complete
-    assert by_file["s.spec.ts"].outcome is Outcome.ERROR  # did not run
+    assert by_file["s.spec.ts"].outcome is Outcome.SKIPPED  # ran-but-unverified skip
 
 
 def test_parse_recurses_nested_suites() -> None:

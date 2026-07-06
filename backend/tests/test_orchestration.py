@@ -100,7 +100,7 @@ async def test_run_walking_skeleton_chains_extract_generate_execute_report(
     # Report: the full fixture endpoint, oracle-honest breakdown, all green.
     assert report.endpoint == "POST /api/users"
     assert report.total == 14
-    assert report.outcomes == {"pass": 14, "fail": 0, "error": 0}
+    assert report.outcomes == {"pass": 14, "fail": 0, "error": 0, "skipped": 0}
     assert report.oracle.rule_derived == 13
     assert report.oracle.characterization == 1
     assert report.oracle.spec_grounded == 0

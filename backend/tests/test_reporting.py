@@ -36,7 +36,7 @@ def test_counts_outcomes_and_oracle_breakdown() -> None:
     report = _report_from_known_set()
     assert report.total == 4
     assert report.by_type == {"happy": 1, "negative": 2, "edge": 1}
-    assert report.outcomes == {"pass": 2, "fail": 1, "error": 1}
+    assert report.outcomes == {"pass": 2, "fail": 1, "error": 1, "skipped": 0}
     assert report.oracle.rule_derived == 3
     assert report.oracle.characterization == 1
     assert report.oracle.spec_grounded == 0

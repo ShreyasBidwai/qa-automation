@@ -23,7 +23,7 @@ _XML = """<?xml version="1.0" encoding="UTF-8"?>
     </testcase>
     <testcase name="later" classname="P\\Tests\\Feature\\Later"
               file="/app/tests/Feature/_generated/later.php" time="0.0">
-      <skipped/>
+      <skipped message="reachable but unverified: HTTP 404"/>
     </testcase>
   </testsuite>
 </testsuites>
@@ -38,7 +38,10 @@ def test_parse_junit_maps_each_status() -> None:
     assert by_name["missing name"].outcome is Outcome.FAIL
     assert "expected 201" in (by_name["missing name"].message or "")
     assert by_name["boom"].outcome is Outcome.ERROR
-    assert by_name["later"].outcome is Outcome.ERROR  # skipped == did not run
+    # A <skipped> is SKIPPED (ran, reachable-but-unverified) — NOT an error — and its
+    # reason survives so the run can self-explain (ADR-0064).
+    assert by_name["later"].outcome is Outcome.SKIPPED
+    assert "HTTP 404" in (by_name["later"].message or "")
     # The file attribute is preserved (used to map results back to scripts).
     assert by_name["happy path"].file.endswith("happy.php")  # type: ignore[union-attr]
 

@@ -245,6 +245,11 @@ class OrchestratorRunExecutor:
                 modules=request.modules,
             ),
         )
+        counts = report.outcome_counts
+        # Verified = pass + fail + error; SKIPPED (reachable-but-unverified) is excluded
+        # so a passing run isn't dragged down, and an all-skipped module has no rate
+        # rather than a misleading 0% (ADR-0064). Mirrors project_summary.pass_rate.
+        verified = counts["pass"] + counts["fail"] + counts["error"]
         summary: dict[str, Any] = {
             "mode": "mode_b",
             "strategy": report.strategy.value,
@@ -254,6 +259,13 @@ class OrchestratorRunExecutor:
             "cases_reused": report.cases_reused,
             "status": report.status,
             "findings": len(report.ranked_findings),
+            # The run's outcome breakdown, so the dashboard self-explains (ADR-0064).
+            "tests": sum(counts.values()),
+            "passed": counts["pass"],
+            "failed": counts["fail"],
+            "errors": counts["error"],
+            "skipped": counts["skipped"],
+            "pass_rate": (round(counts["pass"] / verified, 4) if verified else None),
             # The account-provisioning decision (never the secret) — ADR-0053.
             "auth_mode": auth_mode,
         }

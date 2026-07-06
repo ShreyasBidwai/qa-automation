@@ -135,6 +135,36 @@ async def test_lifecycle_marks_failed_when_a_test_fails(
     assert {r.outcome for r in rows} == {Outcome.PASS, Outcome.FAIL}
 
 
+async def test_lifecycle_stays_passed_with_only_pass_and_skipped(
+    db_session: AsyncSession,
+) -> None:
+    # A SKIPPED result (reachable-but-unverified — a precondition 4xx/redirect) is NOT
+    # a defect, so a run of passes + skips completes PASSED, not red (ADR-0064).
+    project = make_project()
+    db_session.add(project)
+    await db_session.flush()
+    cases = await _seed_cases(db_session, project.id, 2)
+
+    runner = _FakeRunner(
+        results=[
+            _result(cases[0].id, Outcome.PASS),
+            _result(cases[1].id, Outcome.SKIPPED),
+        ]
+    )
+    run = await RunLifecycle(runner=runner).execute(
+        session=db_session,
+        project_id=project.id,
+        scripts=[],
+        target_env=_ENV,
+        trigger=RunTrigger.CI,
+        mode=RunMode.A,
+    )
+
+    assert run.status == STATUS_PASSED
+    rows = await ResultRepository(db_session).list_for_run(project.id, run.id)
+    assert {r.outcome for r in rows} == {Outcome.PASS, Outcome.SKIPPED}
+
+
 async def test_lifecycle_completes_as_failed_when_a_result_errored(
     db_session: AsyncSession,
 ) -> None:

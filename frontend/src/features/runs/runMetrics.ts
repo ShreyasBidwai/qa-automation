@@ -6,8 +6,14 @@
 
 export interface RunMetrics {
   passRate: number | null;
+  passed: number | null;
   failed: number | null;
   errors: number | null;
+  // Reachable-but-unverified — the endpoint responded with a precondition 4xx/redirect,
+  // so success couldn't be asserted (neither pass nor fail). Surfaced so the run
+  // self-explains instead of reading as blindly all-green (ADR-0064).
+  skipped: number | null;
+  tests: number | null;
   coverage: number | null;
   priorPassRate: number | null;
   target: string | null;
@@ -27,8 +33,11 @@ export function readMetrics(summary: Record<string, unknown> | null): RunMetrics
   const s = summary ?? {};
   return {
     passRate: num(s.pass_rate),
+    passed: num(s.passed),
     failed: num(s.failed),
     errors: num(s.errors),
+    skipped: num(s.skipped),
+    tests: num(s.tests),
     coverage: num(s.coverage),
     priorPassRate: num(s.prior_pass_rate),
     target: str(s.target) ?? str(s.project),

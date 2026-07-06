@@ -133,6 +133,13 @@ class Outcome(str, enum.Enum):
     PASS = "pass"
     FAIL = "fail"
     ERROR = "error"
+    # The test RAN and the endpoint was reachable, but its success could not be
+    # verified — it returned a precondition status (a 4xx/redirect: auth, missing
+    # record, required query params, or a route that isn't served in the test boot).
+    # NEITHER a pass (nothing was proven) NOR a fail (no defect, no crash). Kept out of
+    # pass-rate and never a finding, but surfaced so a run self-explains (ADR-0064). A
+    # framework `<skipped>` (e.g. an unavailable-factory skip, ADR-0037) maps here too.
+    SKIPPED = "skipped"
 
 
 class Triage(str, enum.Enum):

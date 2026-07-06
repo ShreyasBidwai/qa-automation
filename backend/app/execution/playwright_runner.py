@@ -74,10 +74,16 @@ def _spec_stem(file: str) -> str:
 
 
 def _aggregate(outcomes: list[Outcome]) -> Outcome:
+    # A real defect/crash dominates; then a verified pass; a set that is ONLY skips
+    # (reachable-but-unverified, ADR-0064) aggregates to SKIPPED, not a silent pass.
     if Outcome.ERROR in outcomes:
         return Outcome.ERROR
     if Outcome.FAIL in outcomes:
         return Outcome.FAIL
+    if Outcome.PASS in outcomes:
+        return Outcome.PASS
+    if Outcome.SKIPPED in outcomes:
+        return Outcome.SKIPPED
     return Outcome.PASS
 
 

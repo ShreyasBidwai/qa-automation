@@ -74,6 +74,26 @@ describe("RunDashboard", () => {
     expect(within(cards).getByText("All rule-derived")).toBeInTheDocument();
   });
 
+  it("surfaces the verified/unverified breakdown so all-green doesn't hide skips", async () => {
+    // A module where 8 endpoints were only REACHABLE (returned a precondition 4xx) and
+    // 3 verified: the run must SAY so, not read as a blank/blindly-passing dashboard.
+    vi.mocked(runApi.get).mockResolvedValue(
+      summaryResult({
+        pass_rate: 1,
+        passed: 3,
+        failed: 0,
+        errors: 0,
+        skipped: 8,
+        tests: 11,
+      }),
+    );
+    vi.mocked(runApi.findings).mockResolvedValue(findingsResult([]));
+
+    render(<RunDashboard runId="r1" />);
+
+    expect(await screen.findByText("3/3 verified · 8 unverified")).toBeInTheDocument();
+  });
+
   it("renders the ranked findings with trust marks + badges, in order", async () => {
     vi.mocked(runApi.get).mockResolvedValue(summaryResult({}));
     vi.mocked(runApi.findings).mockResolvedValue(

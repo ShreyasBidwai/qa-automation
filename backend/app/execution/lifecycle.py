@@ -49,7 +49,7 @@ def _capture_screenshot(run_id: uuid.UUID, result: ExecutionResult) -> str | Non
     bytes, and any storage failure is logged, never raised — capturing a screenshot
     can't break or fail a run (the same rule as incident capture).
     """
-    if result.outcome is Outcome.PASS or result.screenshot is None:
+    if result.outcome in (Outcome.PASS, Outcome.SKIPPED) or result.screenshot is None:
         return None
     try:
         return store_screenshot(result.screenshot)
@@ -173,17 +173,26 @@ class RunLifecycle:
                     phase=progress.PHASE_EXECUTE,
                     step=er.name,
                     status=(
-                        progress.STATUS_PASSED
-                        if er.outcome is Outcome.PASS
-                        else progress.STATUS_FAILED
+                        progress.STATUS_SKIPPED
+                        if er.outcome is Outcome.SKIPPED
+                        else (
+                            progress.STATUS_PASSED
+                            if er.outcome is Outcome.PASS
+                            else progress.STATUS_FAILED
+                        )
                     ),
                     detail={"test": er.name, "outcome": er.outcome.value},
                     screenshot_ref=shot_ref,
                 )
+            # A run FAILS only on a real defect or crash (FAIL/ERROR); a SKIPPED result
+            # (reachable-but-unverified — a precondition 4xx/redirect, ADR-0064) does
+            # NOT fail the run, so a module of un-verifiable endpoints reads PASSED.
             status = (
-                STATUS_PASSED
-                if all(er.outcome is Outcome.PASS for er in exec_results)
-                else STATUS_FAILED
+                STATUS_FAILED
+                if any(
+                    er.outcome in (Outcome.FAIL, Outcome.ERROR) for er in exec_results
+                )
+                else STATUS_PASSED
             )
         finally:
             run.status = status

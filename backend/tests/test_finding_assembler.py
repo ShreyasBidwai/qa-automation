@@ -184,6 +184,23 @@ async def test_passing_result_produces_no_finding(db_session: AsyncSession) -> N
     assert findings == []
 
 
+async def test_skipped_result_produces_no_finding(db_session: AsyncSession) -> None:
+    # A SKIPPED result (reachable-but-unverified — a precondition 4xx/redirect) is an
+    # observation, not a defect: surfaced as a run count, never a finding (ADR-0064).
+    project_id = await _project(db_session)
+    run_id = await _run_id(db_session, project_id)
+    case = await _case(db_session, project_id, layer=TestLayer.API)
+    result = await _result(
+        db_session, project_id, run_id, case.id, outcome=Outcome.SKIPPED
+    )
+
+    findings = await FindingAssembler(db_session, resolver=_FakeResolver({})).assemble(
+        project_id=project_id, results=[result]
+    )
+
+    assert findings == []
+
+
 async def test_assembly_is_project_scoped(db_session: AsyncSession) -> None:
     project_a = await _project(db_session)
     project_b = await _project(db_session)

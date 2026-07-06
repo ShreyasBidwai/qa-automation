@@ -70,7 +70,8 @@ class RunReport:
             ),
             (
                 f"Outcomes: {self.outcomes['pass']} passed · "
-                f"{self.outcomes['fail']} failed · {self.outcomes['error']} errored"
+                f"{self.outcomes['fail']} failed · {self.outcomes['error']} errored · "
+                f"{self.outcomes['skipped']} unverified"
             ),
             "",
             "Oracle honesty:",
@@ -124,6 +125,8 @@ def summarize(
         "pass": sum(1 for o in outcomes if o is Outcome.PASS),
         "fail": sum(1 for o in outcomes if o is Outcome.FAIL),
         "error": sum(1 for o in outcomes if o is Outcome.ERROR),
+        # Reachable-but-unverified — a precondition 4xx/redirect (ADR-0064).
+        "skipped": sum(1 for o in outcomes if o is Outcome.SKIPPED),
     }
     oracle = OracleBreakdown(
         rule_derived=sum(1 for s in oracle_sources if s is OracleSource.RULE_DERIVED),
