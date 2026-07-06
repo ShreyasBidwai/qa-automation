@@ -66,6 +66,26 @@ def derive_auth_required(middleware: list[str]) -> bool:
     return False
 
 
+def derive_is_api(middleware: object, uri: str) -> bool:
+    """Is this a JSON api route or a web (session/redirect) route?
+
+    Laravel's route class dictates how it responds to the SAME event — a validation
+    failure is a 422 JSON envelope on an api route but a 302 redirect + session errors
+    on a web route; an unauthenticated call is 401 vs a redirect to /login. Generation
+    must branch on this or it asserts the wrong contract for half the app (ADR-0063).
+    The ``api``/``web`` middleware group is the reliable signal; fall back to the
+    conventional ``api/`` URI prefix, then default to api (the historical assumption)
+    so a route we genuinely can't classify keeps the old behaviour.
+    """
+    groups = {entry.lower() for entry in _as_middleware_list(middleware)}
+    if "api" in groups:
+        return True
+    if "web" in groups:
+        return False
+    normalized = uri.lstrip("/")
+    return normalized == "api" or normalized.startswith("api/")
+
+
 def roles_from_middleware(middleware: list[str]) -> list[str]:
     """Role names named by middleware (`role:admin`, `role:admin,editor`, …).
 

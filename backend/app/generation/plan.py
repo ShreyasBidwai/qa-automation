@@ -8,10 +8,42 @@ structural expected shape, oracle_source, and any DB-state dependency.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
 
 from app.ingestion.models import EndpointSpec, ValidationField
 from app.models.enums import OracleSource, TestType
+
+
+class ResponseExpectation(str, Enum):
+    """HOW a case's outcome must be asserted — not just a status number (ADR-0063).
+
+    Static generation cannot observe the running app, so it must assert only what the
+    framework GUARANTEES for the route's class. The same event asserts differently on
+    an api (JSON) route vs a web (session/redirect) route, so the plan tags each case
+    with the assertion SEMANTICS and the renderer emits the matching PHPUnit call.
+    """
+
+    # Exact status (+ optional structural body / validation-error shape). Used where
+    # the framework guarantees a precise code: api validation → 422, api auth → 401.
+    STATUS = "status"
+    # Happy on an api route: any 2xx, plus the body is JSON. Not a hardcoded 200/201 —
+    # the exact success code (200 vs 201 vs 204) is the app's choice, not ours to guess.
+    SUCCESS_JSON = "success_json"
+    # Happy on a web route: a 2xx page OR a 3xx redirect (a login/OAuth/form route
+    # legitimately redirects). Never asserts a JSON body.
+    SUCCESS_OR_REDIRECT = "success_or_redirect"
+    # Happy on a route with model-bound path params we cannot seed statically: assert
+    # only that it did NOT server-error (< 500). A record-missing 404 is expected and
+    # must not false-fail; a 500 still does. The honest floor for an un-seedable route.
+    REACHABLE = "reachable"
+    # Unauthenticated call to a web route: Laravel's auth middleware redirects to the
+    # login page (3xx), it does NOT return 401 (that is the api behaviour).
+    REDIRECT = "redirect"
+    # Validation failure on a web route: a 3xx redirect BACK with the field errors in
+    # the session (assertSessionHasErrors), NOT a 422 JSON envelope.
+    REDIRECT_WITH_ERRORS = "redirect_with_errors"
+
 
 # A clearly-wrong value per type, used to violate a type/format rule (→ 422).
 # Types absent here (string, unknown) have no reliable "wrong type" value.
@@ -34,6 +66,10 @@ class ExpectedOutcome:
     status: int
     # Structural only — describes which keys/fields to assert, never values.
     shape: dict[str, Any]
+    # HOW to assert this outcome (ADR-0063). Defaults to an exact-status assertion so
+    # every existing rule-derived case (422/401) keeps its precise, framework-guaranteed
+    # check; only the happy/auth/validation cases opt into a route-class-aware band.
+    expectation: ResponseExpectation = ResponseExpectation.STATUS
 
 
 @dataclass(frozen=True)
@@ -130,12 +166,75 @@ def _sized(field_spec: ValidationField, delta: int) -> Any:
 
 
 def _success_status(method: str) -> int:
+    """The CONVENTIONAL success code for a method — a representative hint only.
+
+    Real assertions use a 2xx BAND (SUCCESS_JSON), never this exact code, because the
+    app is free to answer 200 vs 201 vs 204; hardcoding it is the guess that made every
+    happy test false-fail (ADR-0063). Kept to seed the context so the model has a hint.
+    """
     upper = method.upper()
     if upper == "POST":
         return 201
     if upper == "DELETE":
         return 204
     return 200
+
+
+def _happy_outcome(spec: EndpointSpec, happy_shape: dict[str, Any]) -> ExpectedOutcome:
+    """The honest expected outcome for a happy characterization request (ADR-0063).
+
+    Ordered by how much we can guarantee statically:
+    - model-bound path params we cannot seed → only assert "no server error" (a
+      record-missing 404 is expected, a 500 is a real bug);
+    - api route → any 2xx + a JSON body;
+    - web route → a 2xx page or a 3xx redirect, never a JSON body.
+    """
+    representative = _success_status(spec.method)
+    if spec.path_params:
+        return ExpectedOutcome(
+            status=representative,
+            shape={},
+            expectation=ResponseExpectation.REACHABLE,
+        )
+    if spec.is_api:
+        return ExpectedOutcome(
+            status=representative,
+            shape=happy_shape,
+            expectation=ResponseExpectation.SUCCESS_JSON,
+        )
+    return ExpectedOutcome(
+        status=representative,
+        shape={},
+        expectation=ResponseExpectation.SUCCESS_OR_REDIRECT,
+    )
+
+
+def _auth_outcome(spec: EndpointSpec) -> ExpectedOutcome:
+    """Unauthenticated call: 401 JSON on an api route, a 3xx redirect to login on a web
+    route (Laravel's auth middleware behaves differently per route class — ADR-0063)."""
+    if spec.is_api:
+        return ExpectedOutcome(
+            status=401, shape={}, expectation=ResponseExpectation.STATUS
+        )
+    return ExpectedOutcome(
+        status=302, shape={}, expectation=ResponseExpectation.REDIRECT
+    )
+
+
+def _validation_outcome(spec: EndpointSpec, field_name: str) -> ExpectedOutcome:
+    """A validation failure: a 422 JSON error envelope on an api route, a 3xx redirect
+    back with the field errors in the session on a web route (ADR-0063)."""
+    if spec.is_api:
+        return ExpectedOutcome(
+            status=422,
+            shape={"errors_for": [field_name]},
+            expectation=ResponseExpectation.STATUS,
+        )
+    return ExpectedOutcome(
+        status=302,
+        shape={"errors_for": [field_name]},
+        expectation=ResponseExpectation.REDIRECT_WITH_ERRORS,
+    )
 
 
 # --- dependency derivation --------------------------------------------------
@@ -255,9 +354,7 @@ def plan_cases(spec: EndpointSpec) -> list[PlannedCase]:
             payload=payload,
             path_values=dict(path_values),
             authenticated=auth,
-            expected=ExpectedOutcome(
-                status=422, shape={"errors_for": [field_spec.name]}
-            ),
+            expected=_validation_outcome(spec, field_spec.name),
             oracle_source=OracleSource.RULE_DERIVED,
             dependencies=_dependencies(
                 spec,
@@ -267,7 +364,9 @@ def plan_cases(spec: EndpointSpec) -> list[PlannedCase]:
             ),
         )
 
-    # 1. Happy path — characterization (status + structural shape only).
+    # 1. Happy path — characterization: assert the honest success band for the route's
+    #    class (api JSON 2xx / web 2xx-or-redirect / un-seedable → no server error),
+    #    never a guessed exact status + JSON body (ADR-0063).
     cases.append(
         PlannedCase(
             name="happy",
@@ -278,15 +377,14 @@ def plan_cases(spec: EndpointSpec) -> list[PlannedCase]:
             payload=dict(base_payload),
             path_values=dict(path_values),
             authenticated=auth,
-            expected=ExpectedOutcome(
-                status=_success_status(spec.method), shape=happy_shape
-            ),
+            expected=_happy_outcome(spec, happy_shape),
             oracle_source=OracleSource.CHARACTERIZATION,
             dependencies=_dependencies(spec, base_payload),
         )
     )
 
-    # 2. Auth — request without authentication (rule-derived).
+    # 2. Auth — request without authentication (rule-derived): 401 on api, redirect to
+    #    login on web (ADR-0063).
     if auth:
         cases.append(
             PlannedCase(
@@ -298,7 +396,7 @@ def plan_cases(spec: EndpointSpec) -> list[PlannedCase]:
                 payload=dict(base_payload),
                 path_values=dict(path_values),
                 authenticated=False,
-                expected=ExpectedOutcome(status=401, shape={}),
+                expected=_auth_outcome(spec),
                 oracle_source=OracleSource.RULE_DERIVED,
                 dependencies=_dependencies(spec, base_payload),
             )

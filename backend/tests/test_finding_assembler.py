@@ -202,6 +202,35 @@ async def test_assembly_is_project_scoped(db_session: AsyncSession) -> None:
     assert await repo.list_for_run(project_b, run_id) == []  # no cross-project bleed
 
 
+async def test_unresolved_target_names_the_endpoint_from_the_case_key(
+    db_session: AsyncSession,
+) -> None:
+    # A case with no target_node (never linked a Brain node) still names the failing
+    # endpoint from its stable case_key — "at GET /login/apple", not "unknown target"
+    # (ADR-0063 reporting fidelity).
+    project_id = await _project(db_session)
+    run_id = await _run_id(db_session, project_id)
+    case = await _case(
+        db_session,
+        project_id,
+        layer=TestLayer.API,
+        target_node=None,
+        case_key="GET /login/apple::happy::happy",
+    )
+    result = await _result(
+        db_session, project_id, run_id, case.id, outcome=Outcome.FAIL
+    )
+
+    findings = await FindingAssembler(db_session, resolver=_FakeResolver({})).assemble(
+        project_id=project_id, results=[result]
+    )
+
+    assert len(findings) == 1
+    assert findings[0].location["endpoints"] == ["GET /login/apple"]
+    assert "GET /login/apple" in findings[0].title
+    assert "unknown target" not in findings[0].title
+
+
 async def test_result_for_a_foreign_case_is_rejected(db_session: AsyncSession) -> None:
     project_a = await _project(db_session)
     project_b = await _project(db_session)

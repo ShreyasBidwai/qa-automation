@@ -32,40 +32,60 @@ from .extract import (
 from .plan import PlannedCase
 
 _INSTRUCTION = (
-    "You are rendering ONE Laravel/PHPUnit feature test CLASS for an API endpoint. "
+    "You are rendering ONE Laravel/PHPUnit feature test CLASS for a route. "
     "Emit a PHP class in `namespace Tests\\Feature;` that extends `Tests\\TestCase`, "
     "uses `Illuminate\\Foundation\\Testing\\RefreshDatabase`, and has a SINGLE public "
-    "method `test_<case>(): void`. Drive the endpoint with Laravel's JSON test "
-    "helpers ($this->getJson/postJson/putJson/patchJson/deleteJson) and assert with "
-    "$response->assertStatus(...) / assertJson... — do NOT use Pest's it()/test()/"
-    "uses()/expect(). Use EXACTLY the HTTP request (method, URI, path values, "
-    "payload) and the expected status given in the context below; do NOT invent or "
-    "change any payload value or the expected status.\n\n"
+    "method `test_<case>(): void`. Do NOT use Pest's it()/test()/uses()/expect(). Use "
+    "EXACTLY the HTTP request (method, URI, path values, payload) given in the "
+    "context; do NOT invent or change any payload value.\n\n"
+    # The request helper depends on the route CLASS: api routes speak JSON, web routes
+    # speak sessions/redirects. Using the JSON helper on a web route (and asserting a
+    # JSON body) is the single biggest source of false failures — ADR-0063.
+    "CHOOSE THE REQUEST HELPER by `endpoint.is_api`: if is_api is true, drive it with "
+    "the JSON helpers ($this->getJson/postJson/putJson/patchJson/deleteJson) so "
+    "Laravel sets the JSON Accept header; if is_api is FALSE (a web route), use the "
+    "plain helpers ($this->get/post/put/patch/delete) and do NOT assert a JSON body — "
+    "a web route returns HTML or a redirect, not JSON.\n\n"
     # Self-analysis in the SAME call: reason about the contract, record the intent as
-    # a PHP comment (valid code, so output stays code-only), then assert THAT
-    # behaviour — grounded only in the context, never an invented value.
+    # a PHP comment (valid code, so output stays code-only), then assert THAT behaviour.
     "FIRST, analyse the contract from the context — the HTTP method's semantics, the "
-    "endpoint's validation rules, this case's intent/target field, the expected "
-    "status, and the response shape — and open the test method body with a concise "
-    "`// Intent:` comment (1-2 lines) stating WHAT behaviour this verifies and WHY it "
-    "matters for THIS endpoint. THEN write assertions that verify exactly that "
-    "behaviour, grounded ONLY in the context: never assert a specific body field "
-    "VALUE you cannot derive from the context — an ungrounded value is a false "
-    "failure.\n\n"
-    "For a 'characterization' / happy case: assert the success status, AND — when the "
-    "context's expected.shape lists keys — assert that structure with "
-    "$response->assertJsonStructure([...]); if no shape is given, assert the body is "
-    "JSON ($this->assertIsArray($response->json())). If the context's expected.shape "
-    "has an `echo` object (a create/update that returns the resource), ALSO assert the "
-    "response echoes those exact field:value pairs with "
-    "$response->assertJsonFragment([...]) — you SENT those values so the endpoint must "
-    "return them, and assertJsonFragment matches inside a `data` wrapper too. Never "
-    "assert a value that is NOT in `echo` (the server may transform/hide it). "
-    "For a 'rule-derived' / negative case: assert the EXACT expected status and, for "
-    "422s, that the validation error envelope reports the targeted field(s) — matching "
-    "the field's validation rule shown in the context — via "
-    "$response->assertJsonValidationErrors([...]); for an auth case, assert the "
-    "unauthenticated / forbidden status."
+    "route class (is_api), the endpoint's validation rules, this case's intent/target "
+    "field, and `expected` — and open the test method body with a concise `// Intent:` "
+    "comment (1-2 lines) stating WHAT behaviour this verifies and WHY. THEN assert "
+    "exactly that, grounded ONLY in the context: never assert a body field VALUE you "
+    "cannot derive from the context — an ungrounded value is a false failure.\n\n"
+    # The assertion is driven by expected.assert — NEVER a hardcoded status. Guessing an
+    # exact 200 for every happy case is precisely the bug this replaces (ADR-0063).
+    "ASSERT ACCORDING TO `expected.assert`:\n"
+    "- 'success_json' (happy, api): assert a success response with "
+    "$response->assertSuccessful() (any 2xx — NEVER hardcode assertStatus(200)); if "
+    "expected.shape lists keys, assert that structure via assertJsonStructure([...]), "
+    "else assert the body is JSON ($this->assertIsArray($response->json())). If "
+    "expected.shape has an `echo` object, ALSO assert the response echoes those exact "
+    "field:value pairs via assertJsonFragment([...]) (you SENT them; matches inside a "
+    "`data` wrapper too). Never assert a value NOT in `echo`.\n"
+    "- 'success_or_redirect' (happy, web): capture the status FIRST, then assert it is "
+    "a 2xx success or a 3xx redirect, and put the actual status in the failure message "
+    "so it stays debuggable and triage-able (never a bare assertTrue) — "
+    "`$status = $response->getStatusCode(); "
+    "$this->assertTrue($status >= 200 && $status < 400, "
+    '"expected a 2xx success or 3xx redirect, got HTTP {$status}");`. Do NOT assert '
+    "a JSON body (a login/OAuth/form route may 200 OR 302).\n"
+    "- 'reachable' (happy, un-seedable path params): assert only that it did not "
+    "server-error, WITH the status in the message — "
+    "`$status = $response->getStatusCode(); "
+    '$this->assertLessThan(500, $status, "expected no server error, got HTTP '
+    '{$status}");`. A record-missing 404 is expected here and must NOT fail the test; '
+    "only a 5xx does.\n"
+    "- 'status' (rule-derived negative/auth): assert the EXACT expected.status via "
+    "$response->assertStatus(expected.status). For a 422, ALSO assert the validation "
+    "envelope reports the targeted field(s) via assertJsonValidationErrors([...]) from "
+    "expected.shape.errors_for; for a 401, assert it is unauthorized.\n"
+    "- 'redirect' (auth on a web route): assert $response->assertRedirect() — an "
+    "unauthenticated web request is redirected to login, it is NOT a 401.\n"
+    "- 'redirect_with_errors' (validation on a web route): assert "
+    "$response->assertSessionHasErrors([...]) for expected.shape.errors_for — a web "
+    "validation failure redirects back with session errors, it is NOT a 422 JSON body."
 )
 # Defense in depth: demand code-only output so there's nothing to strip. The
 # extractor (extract.py) is the belt; this is the suspenders.
@@ -121,6 +141,9 @@ def build_context(spec: EndpointSpec, case: PlannedCase) -> Subgraph:
                 "uri": spec.uri,
                 "route_name": spec.route_name,
                 "auth_required": spec.auth_required,
+                # api (JSON) vs web (session/redirect) route — dictates the request
+                # helper and the whole assertion style (ADR-0063).
+                "is_api": spec.is_api,
                 "path_params": spec.path_params,
                 "query_params": spec.query_params,
                 # The REAL validation contract — so a negative asserts the RIGHT field
@@ -151,7 +174,15 @@ def build_context(spec: EndpointSpec, case: PlannedCase) -> Subgraph:
                 "authenticated": case.authenticated,
                 "payload": case.payload,
             },
-            "expected": {"status": case.expected.status, "shape": case.expected.shape},
+            "expected": {
+                "status": case.expected.status,
+                "shape": case.expected.shape,
+                # HOW to assert (ADR-0063) — the renderer instruction maps each value
+                # to the exact PHPUnit call. The status above is a representative hint
+                # for the bands (success_json / success_or_redirect / reachable), and
+                # the exact code for the status / redirect kinds.
+                "assert": case.expected.expectation.value,
+            },
             "dependencies": [asdict(dep) for dep in case.dependencies],
         },
         indent=2,
@@ -172,8 +203,8 @@ def _header(case: PlannedCase) -> str:
     ]
     if case.oracle_source is OracleSource.CHARACTERIZATION:
         lines.append(
-            "// CHARACTERIZATION: asserts only the success status + structural "
-            "shape (body is JSON)."
+            "// CHARACTERIZATION: pins the honest success band for the route's class "
+            "(api 2xx+JSON / web 2xx-or-redirect), never a guessed exact status."
         )
         lines.append(
             "// It asserts NO specific body values — upgrade to spec-grounded "
