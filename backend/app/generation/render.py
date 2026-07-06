@@ -64,19 +64,13 @@ _INSTRUCTION = (
     "expected.shape has an `echo` object, ALSO assert the response echoes those exact "
     "field:value pairs via assertJsonFragment([...]) (you SENT them; matches inside a "
     "`data` wrapper too). Never assert a value NOT in `echo`.\n"
-    "- 'success_or_redirect' (happy, web): capture the status FIRST, then assert it is "
-    "a 2xx success or a 3xx redirect, and put the actual status in the failure message "
-    "so it stays debuggable and triage-able (never a bare assertTrue) — "
-    "`$status = $response->getStatusCode(); "
-    "$this->assertTrue($status >= 200 && $status < 400, "
-    '"expected a 2xx success or 3xx redirect, got HTTP {$status}");`. Do NOT assert '
-    "a JSON body (a login/OAuth/form route may 200 OR 302).\n"
-    "- 'reachable' (happy, un-seedable path params): assert only that it did not "
-    "server-error, WITH the status in the message — "
+    "- 'reachable' (happy, web route or un-seedable path params): assert only that the "
+    "app handled it without a server error, WITH the status in the message so it stays "
+    "debuggable and triage-able (never a bare assertTrue) — "
     "`$status = $response->getStatusCode(); "
     '$this->assertLessThan(500, $status, "expected no server error, got HTTP '
-    '{$status}");`. A record-missing 404 is expected here and must NOT fail the test; '
-    "only a 5xx does.\n"
+    '{$status}");`. A 401/403/404 or a redirect (auth/config/missing-record '
+    "precondition) is expected here and must NOT fail the test; only a 5xx does.\n"
     "- 'status' (rule-derived negative/auth): assert the EXACT expected.status via "
     "$response->assertStatus(expected.status). For a 422, ALSO assert the validation "
     "envelope reports the targeted field(s) via assertJsonValidationErrors([...]) from "
@@ -179,8 +173,8 @@ def build_context(spec: EndpointSpec, case: PlannedCase) -> Subgraph:
                 "shape": case.expected.shape,
                 # HOW to assert (ADR-0063) — the renderer instruction maps each value
                 # to the exact PHPUnit call. The status above is a representative hint
-                # for the bands (success_json / success_or_redirect / reachable), and
-                # the exact code for the status / redirect kinds.
+                # for the bands (success_json / reachable), and the exact code for the
+                # status / redirect kinds.
                 "assert": case.expected.expectation.value,
             },
             "dependencies": [asdict(dep) for dep in case.dependencies],
@@ -203,8 +197,8 @@ def _header(case: PlannedCase) -> str:
     ]
     if case.oracle_source is OracleSource.CHARACTERIZATION:
         lines.append(
-            "// CHARACTERIZATION: pins the honest success band for the route's class "
-            "(api 2xx+JSON / web 2xx-or-redirect), never a guessed exact status."
+            "// CHARACTERIZATION: pins the honest floor for the route's class "
+            "(api CRUD 2xx+JSON / else handled without a 5xx), never a guessed status."
         )
         lines.append(
             "// It asserts NO specific body values — upgrade to spec-grounded "

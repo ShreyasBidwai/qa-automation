@@ -45,18 +45,27 @@ the exact PHPUnit call:
 
 | Case | api (JSON) route | web (session) route |
 |---|---|---|
-| Happy (no bound param) | `SUCCESS_JSON` — `assertSuccessful()` (any 2xx) + JSON body | `SUCCESS_OR_REDIRECT` — 2xx **or** 3xx, no JSON |
-| Happy (model-bound path param) | `REACHABLE` — `< 500` only (a record-missing 404 is expected; a 5xx is a real bug) | `REACHABLE` |
+| Happy (no bound param) | `SUCCESS_JSON` — `assertSuccessful()` (any 2xx) + JSON body | `REACHABLE` — `< 500` only |
+| Happy (model-bound path param) | `REACHABLE` — `< 500` only | `REACHABLE` |
 | Unauthenticated | `STATUS` 401 | `REDIRECT` — redirect to login |
 | Validation failure | `STATUS` 422 + `assertJsonValidationErrors` | `REDIRECT_WITH_ERRORS` — `assertSessionHasErrors` |
 
 The guiding principle is **honesty over precision (ADR-0025)**: static generation cannot
 observe the running app, so a characterization test must assert only what the
 framework *guarantees* for the route's class — never a guessed exact status. Asserting
-a hardcoded `200` was not characterization at all; it was an invented spec. A true
-characterization now pins the honest success **band** and stays a crash/regression
-tripwire, while the rule-derived tier keeps its precise, framework-guaranteed checks
-(422/401 on api).
+a hardcoded `200` was not characterization at all; it was an invented spec.
+
+The strong `SUCCESS_JSON` (2xx + JSON) assertion is earned only by the one case we can
+actually set up: an **api** route driven with a complete, valid payload and **no
+un-seedable path param** — the CRUD happy path. For everything else the route's success
+is **not knowable statically**: a **web** route may be auth/OAuth-gated, redirect, or be
+**conditionally registered** (config-gated) so the running app returns 404 for a route
+the static parser saw (ADR-0055); a **model-bound path param** we can't seed 404s on the
+missing row. There the honest floor is `REACHABLE` — the app *handled* the request
+without a **5xx** (a `401/403/404`/redirect is a real precondition, not a defect). This
+is what stops the false-failure noise; the rule-derived tier still carries the precise,
+framework-guaranteed checks (422/401 on api, redirect/session-errors on web), and a real
+`5xx` crash still fails.
 
 **Reporting fidelity.** A finding whose case never linked a Brain node used to read
 "failure at **unknown target**". The failing case's stable `case_key` already names the

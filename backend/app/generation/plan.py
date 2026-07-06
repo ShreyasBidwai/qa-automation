@@ -27,15 +27,16 @@ class ResponseExpectation(str, Enum):
     # Exact status (+ optional structural body / validation-error shape). Used where
     # the framework guarantees a precise code: api validation → 422, api auth → 401.
     STATUS = "status"
-    # Happy on an api route: any 2xx, plus the body is JSON. Not a hardcoded 200/201 —
-    # the exact success code (200 vs 201 vs 204) is the app's choice, not ours to guess.
+    # Happy on an api route with a complete payload and no un-seedable path param: any
+    # 2xx, plus the body is JSON. Not a hardcoded 200/201 — the exact success code
+    # (200 vs 201 vs 204) is the app's choice, not ours to guess.
     SUCCESS_JSON = "success_json"
-    # Happy on a web route: a 2xx page OR a 3xx redirect (a login/OAuth/form route
-    # legitimately redirects). Never asserts a JSON body.
-    SUCCESS_OR_REDIRECT = "success_or_redirect"
-    # Happy on a route with model-bound path params we cannot seed statically: assert
-    # only that it did NOT server-error (< 500). A record-missing 404 is expected and
-    # must not false-fail; a 500 still does. The honest floor for an un-seedable route.
+    # Happy on a route whose success we cannot know statically — a web route (auth /
+    # OAuth / redirect / conditionally-registered so the app 404s a parsed route,
+    # ADR-0055) or one with a model-bound path param we cannot seed: assert only that
+    # the app HANDLED it without a server error (< 500). A 401/403/404/redirect is a
+    # real precondition and must not false-fail; only a 5xx does. The honest floor when
+    # reachability is not statically known.
     REACHABLE = "reachable"
     # Unauthenticated call to a web route: Laravel's auth middleware redirects to the
     # login page (3xx), it does NOT return 401 (that is the api behaviour).
@@ -183,20 +184,19 @@ def _success_status(method: str) -> int:
 def _happy_outcome(spec: EndpointSpec, happy_shape: dict[str, Any]) -> ExpectedOutcome:
     """The honest expected outcome for a happy characterization request (ADR-0063).
 
-    Ordered by how much we can guarantee statically:
-    - model-bound path params we cannot seed → only assert "no server error" (a
-      record-missing 404 is expected, a 500 is a real bug);
-    - api route → any 2xx + a JSON body;
-    - web route → a 2xx page or a 3xx redirect, never a JSON body.
+    A strong 2xx-and-JSON assertion is only fair for the case we can actually set up:
+    an **api** route driven with a complete, valid payload and NO un-seedable path
+    param — the CRUD happy path. For everything else the route's success is not knowable
+    statically:
+    - a **web** route may be auth/OAuth-gated, redirect, or be conditionally registered
+      (config-gated) so the running app 404s a route the static parser saw — ADR-0055;
+    - a route with a **model-bound path param** we cannot seed 404s on the missing row.
+    In those cases the honest characterization floor is "the app HANDLED the request
+    without a server error" (< 500): a 401/403/404/redirect is a real precondition, not
+    a defect; only a 5xx is. Asserting 2xx there just manufactures false failures.
     """
     representative = _success_status(spec.method)
-    if spec.path_params:
-        return ExpectedOutcome(
-            status=representative,
-            shape={},
-            expectation=ResponseExpectation.REACHABLE,
-        )
-    if spec.is_api:
+    if spec.is_api and not spec.path_params:
         return ExpectedOutcome(
             status=representative,
             shape=happy_shape,
@@ -205,7 +205,7 @@ def _happy_outcome(spec: EndpointSpec, happy_shape: dict[str, Any]) -> ExpectedO
     return ExpectedOutcome(
         status=representative,
         shape={},
-        expectation=ResponseExpectation.SUCCESS_OR_REDIRECT,
+        expectation=ResponseExpectation.REACHABLE,
     )
 
 
@@ -364,8 +364,8 @@ def plan_cases(spec: EndpointSpec) -> list[PlannedCase]:
             ),
         )
 
-    # 1. Happy path — characterization: assert the honest success band for the route's
-    #    class (api JSON 2xx / web 2xx-or-redirect / un-seedable → no server error),
+    # 1. Happy path — characterization: assert the honest floor for the route's class
+    #    (api CRUD → JSON 2xx; web or un-seedable path param → handled without a 5xx),
     #    never a guessed exact status + JSON body (ADR-0063).
     cases.append(
         PlannedCase(

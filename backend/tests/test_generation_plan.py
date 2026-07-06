@@ -140,10 +140,11 @@ def _web_login_post() -> EndpointSpec:
     )
 
 
-def test_web_happy_asserts_success_or_redirect_not_json() -> None:
+def test_web_happy_only_asserts_reachable_not_json() -> None:
     happy = _by_name(plan_cases(_web_login_post()))["happy"]
-    # A web happy path may 200 (view) OR 302 (redirect) — never a JSON body.
-    assert happy.expected.expectation == ResponseExpectation.SUCCESS_OR_REDIRECT
+    # A web route's success isn't knowable statically (auth/OAuth/redirect/config-gated),
+    # so the honest floor is "handled without a 5xx" — never a JSON body (ADR-0063).
+    assert happy.expected.expectation == ResponseExpectation.REACHABLE
     assert happy.expected.shape == {}  # no JSON structure/echo on a web route
 
 
@@ -191,3 +192,20 @@ def test_happy_with_bound_path_params_only_asserts_reachable() -> None:
     assert happy.expected.expectation == ResponseExpectation.REACHABLE
     assert happy.expected.shape == {}
     assert happy.path_values == {"encId": 1}
+
+
+def test_api_happy_with_a_bound_path_param_is_reachable_not_success_json() -> None:
+    # Even an api GET /resource/{id}: the record isn't seeded, so a 404 is expected —
+    # only the payload-complete, param-free api CRUD case earns the strong 2xx assertion.
+    spec = EndpointSpec(
+        method="GET",
+        uri="api/users/{id}",
+        route_name="users.show",
+        auth_required=False,
+        path_params=["id"],
+        query_params=[],
+        validation_fields=[],
+        is_api=True,
+    )
+    happy = _by_name(plan_cases(spec))["happy"]
+    assert happy.expected.expectation == ResponseExpectation.REACHABLE
