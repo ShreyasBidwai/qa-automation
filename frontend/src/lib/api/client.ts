@@ -155,8 +155,7 @@ async function request<T>(
         status: response.status,
         data: null,
         error: problemMessage(body, response.status),
-        fieldErrors:
-          fieldErrors && fieldErrors.length > 0 ? fieldErrors : undefined,
+        fieldErrors: fieldErrors && fieldErrors.length > 0 ? fieldErrors : undefined,
       };
     }
     return { ok: true, status: response.status, data: body as T };
@@ -245,10 +244,7 @@ export const orgApi = {
     postJson<InviteResponse>(`${API_BASE}/orgs/${orgId}/invites`, body),
   /** PATCH /orgs/{id}/members/{uid} — change a member's role. */
   changeRole: (orgId: string, userId: string, body: RoleUpdateBody) =>
-    patchJson<MemberResponse>(
-      `${API_BASE}/orgs/${orgId}/members/${userId}`,
-      body,
-    ),
+    patchJson<MemberResponse>(`${API_BASE}/orgs/${orgId}/members/${userId}`, body),
   /** DELETE /orgs/{id}/members/{uid} — remove a member (204). */
   removeMember: (orgId: string, userId: string) =>
     del(`${API_BASE}/orgs/${orgId}/members/${userId}`),
@@ -267,13 +263,11 @@ function pageQuery({ limit, offset }: PageParams): string {
 
 export const projectApi = {
   /** POST /projects — register a project. */
-  create: (body: ProjectCreateBody) =>
-    postJson<Project>(`${API_BASE}/projects`, body),
+  create: (body: ProjectCreateBody) => postJson<Project>(`${API_BASE}/projects`, body),
   /** GET /projects/{id}. */
   get: (id: string) => getJson<Project>(`${API_BASE}/projects/${id}`),
   /** GET /projects/{id}/model — the built-model summary (node/edge counts, by kind). */
-  model: (id: string) =>
-    getJson<ModelStats>(`${API_BASE}/projects/${id}/model`),
+  model: (id: string) => getJson<ModelStats>(`${API_BASE}/projects/${id}/model`),
   /** GET /projects/{id}/modules — the feature areas a run can be scoped to (ADR-0061). */
   modules: (id: string) =>
     getJson<ModuleListResponse>(`${API_BASE}/projects/${id}/modules`),
@@ -288,9 +282,14 @@ export const projectApi = {
   /** POST /projects/{id}/ingest — kick off Brain build (background job). */
   ingest: (id: string) =>
     postJson<IngestResponse>(`${API_BASE}/projects/${id}/ingest`, {}),
-  /** GET /projects/{id}/tests — the generated test cases + their code (VIEW). */
-  tests: (id: string) =>
-    getJson<TestCaseListResponse>(`${API_BASE}/projects/${id}/tests`),
+  /** GET /projects/{id}/tests — the generated test cases + their code (VIEW).
+   *  Pass ``run`` to scope to just the cases a single run exercised (ADR-0062). */
+  tests: (id: string, run?: string | null) =>
+    getJson<TestCaseListResponse>(
+      run
+        ? `${API_BASE}/projects/${id}/tests?run=${encodeURIComponent(run)}`
+        : `${API_BASE}/projects/${id}/tests`,
+    ),
   /** POST /projects/{id}/tests/import — import QA-authored scenarios from a CSV
    *  (multipart, MANAGE_PROJECT). Returns a per-row summary; bad rows report. */
   importTests: (id: string, file: File) => {
@@ -318,10 +317,7 @@ export const projectApi = {
     getJson<DbStateTierResponse>(`${API_BASE}/projects/${id}/db-state-tier`),
   /** PUT /projects/{id}/db-state-tier — set the tier (MANAGE_PROJECT; bad value → 422). */
   setDbStateTier: (id: string, body: DbStateTierUpdateBody) =>
-    putJson<DbStateTierResponse>(
-      `${API_BASE}/projects/${id}/db-state-tier`,
-      body,
-    ),
+    putJson<DbStateTierResponse>(`${API_BASE}/projects/${id}/db-state-tier`, body),
 };
 
 export const findingApi = {
@@ -341,6 +337,9 @@ export const runApi = {
     postJson<RunResponse>(`${API_BASE}/projects/${projectId}/runs`, body),
   /** GET /runs/active — the caller's current in-progress run (Ongoing view), or nulls. */
   active: () => getJson<ActiveRunResponse>(`${API_BASE}/runs/active`),
+  /** POST /runs/{id}/rerun — start a fresh run with the same preferences (ADR-0062). */
+  rerun: (runId: string) =>
+    postJson<RunResponse>(`${API_BASE}/runs/${runId}/rerun`, {}),
   /** GET /projects/{id}/runs — list a project's runs (bounded, newest first). */
   list: (projectId: string, params: PageParams) =>
     getJson<RunListResponse>(
@@ -374,9 +373,7 @@ export const jobApi = {
 export const documentApi = {
   /** GET /projects/{id}/documents. */
   list: (projectId: string) =>
-    getJson<DocumentListResponse>(
-      `${API_BASE}/projects/${projectId}/documents`,
-    ),
+    getJson<DocumentListResponse>(`${API_BASE}/projects/${projectId}/documents`),
   /** POST /projects/{id}/documents/upload — multipart (file + doc_kind, optional title). */
   upload: (
     projectId: string,
@@ -405,13 +402,9 @@ export const credentialApi = {
     getJson<CredentialStatus>(`${API_BASE}/projects/${projectId}/credentials`),
   /** PUT /projects/{id}/credentials — set/replace; returns the safe status. */
   put: (projectId: string, body: CredentialUpsertBody) =>
-    putJson<CredentialStatus>(
-      `${API_BASE}/projects/${projectId}/credentials`,
-      body,
-    ),
+    putJson<CredentialStatus>(`${API_BASE}/projects/${projectId}/credentials`, body),
   /** DELETE /projects/{id}/credentials — clear stored credentials. */
-  remove: (projectId: string) =>
-    del(`${API_BASE}/projects/${projectId}/credentials`),
+  remove: (projectId: string) => del(`${API_BASE}/projects/${projectId}/credentials`),
 };
 
 /** Login config for the authenticated crawl (ADR-0056) — where/how runs sign in.
@@ -422,11 +415,7 @@ export const authConfigApi = {
     getJson<AuthConfigStatus>(`${API_BASE}/projects/${projectId}/auth-config`),
   /** PUT /projects/{id}/auth-config — set/replace the login config. */
   put: (projectId: string, body: AuthConfigUpsertBody) =>
-    putJson<AuthConfigStatus>(
-      `${API_BASE}/projects/${projectId}/auth-config`,
-      body,
-    ),
+    putJson<AuthConfigStatus>(`${API_BASE}/projects/${projectId}/auth-config`, body),
   /** DELETE /projects/{id}/auth-config — clear it (crawl reverts to unauthenticated). */
-  remove: (projectId: string) =>
-    del(`${API_BASE}/projects/${projectId}/auth-config`),
+  remove: (projectId: string) => del(`${API_BASE}/projects/${projectId}/auth-config`),
 };

@@ -4,21 +4,25 @@ import {
   ArrowUp,
   ClipboardList,
   GitBranch,
+  RotateCcw,
   type LucideIcon,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { Link } from "@/components/Link";
 import { Skeleton } from "@/components/Skeleton";
 import { StatePanel } from "@/components/StatePanel";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
+import { runApi } from "@/lib/api/client";
 import type { Finding, RunListItem } from "@/lib/api/types";
+import { navigate } from "@/lib/router";
 import { relativeTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 import { severityCounts } from "../runs/findingStats";
 import { modeLabel } from "../runs/modeLabel";
+import { runPreferencesLabel } from "../runs/runPreferences";
 import { passTone } from "../runs/runMetrics";
 import { runRowStatusDescriptor, runStatusDescriptor } from "../runs/runStatus";
 import { useIngest } from "./useIngest";
@@ -93,6 +97,9 @@ export function ProjectPage({ projectId }: { projectId: string }) {
               <Button variant="outline" asChild>
                 <Link to={`/projects/${projectId}/edit`}>Edit</Link>
               </Button>
+              <Button variant="outline" asChild>
+                <Link to={`/projects/${projectId}/tests`}>View all tests</Link>
+              </Button>
               <Button asChild>
                 <Link to={`/projects/${projectId}/run`}>Start run</Link>
               </Button>
@@ -132,9 +139,7 @@ function HealthSummary({
   const prior = runs[1] ?? null;
   const severity = severityCounts(openFindings);
   const pct =
-    latest && latest.pass_rate !== null
-      ? Math.round(latest.pass_rate * 100)
-      : null;
+    latest && latest.pass_rate !== null ? Math.round(latest.pass_rate * 100) : null;
   const tone = pct === null ? null : passTone(pct);
 
   return (
@@ -146,10 +151,7 @@ function HealthSummary({
               <span className="text-[30px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">
                 {pct}%
               </span>
-              <PassTrend
-                latest={latest!.pass_rate!}
-                prior={prior?.pass_rate ?? null}
-              />
+              <PassTrend latest={latest!.pass_rate!} prior={prior?.pass_rate ?? null} />
             </div>
             <div className="mt-3 h-[5px] overflow-hidden rounded-full bg-border-subtle">
               <div
@@ -212,30 +214,16 @@ function HealthSummary({
   );
 }
 
-function HealthCard({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
+function HealthCard({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="rounded-xl border border-border bg-surface px-5 py-[18px] shadow-card">
-      <div className="mb-2.5 text-xs font-medium text-muted-foreground">
-        {label}
-      </div>
+      <div className="mb-2.5 text-xs font-medium text-muted-foreground">{label}</div>
       {children}
     </div>
   );
 }
 
-function PassTrend({
-  latest,
-  prior,
-}: {
-  latest: number;
-  prior: number | null;
-}) {
+function PassTrend({ latest, prior }: { latest: number; prior: number | null }) {
   if (prior === null) return null;
   const delta = Math.round((latest - prior) * 100);
   if (delta === 0)
@@ -268,10 +256,7 @@ function SevCount({
 }) {
   return (
     <span className={cn("inline-flex items-center gap-1.5", text)}>
-      <span
-        className={cn("h-[7px] w-[7px] rounded-full", dot)}
-        aria-hidden="true"
-      />
+      <span className={cn("h-[7px] w-[7px] rounded-full", dot)} aria-hidden="true" />
       {n} {label}
     </span>
   );
@@ -279,7 +264,7 @@ function SevCount({
 
 // ---- recent runs ------------------------------------------------------------
 
-const RUN_COLS = "grid-cols-[0.8fr_2fr_1fr_1.4fr_1fr]";
+const RUN_COLS = "grid-cols-[1.6fr_0.8fr_0.6fr_1.2fr_0.9fr_auto]";
 
 function RecentRuns({ runs }: { runs: RunListItem[] }) {
   return (
@@ -308,6 +293,7 @@ function RecentRuns({ runs }: { runs: RunListItem[] }) {
               <ColHead>Pass</ColHead>
               <ColHead>Status</ColHead>
               <ColHead>When</ColHead>
+              <span aria-hidden="true" />
             </div>
             {runs.map((run) => (
               <RunRow key={run.id} run={run} />
@@ -321,16 +307,26 @@ function RecentRuns({ runs }: { runs: RunListItem[] }) {
 
 function RunRow({ run }: { run: RunListItem }) {
   const pct = run.pass_rate === null ? null : Math.round(run.pass_rate * 100);
+  const preferences = runPreferencesLabel(run.preferences);
   return (
-    <Link
-      to={`/runs/${run.id}/findings`}
-      className={`grid ${RUN_COLS} items-center border-b border-border-subtle px-5 py-3.5 transition-colors last:border-b-0 hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent`}
+    // A div (not a whole-row Link) so the Re-run button can live inside it without
+    // nesting interactives; the run id is the link to its findings.
+    <div
+      className={`grid ${RUN_COLS} items-center gap-2 border-b border-border-subtle px-5 py-3 last:border-b-0`}
     >
-      <span
-        className="truncate font-mono text-[13px] font-medium text-foreground"
-        title={run.id}
-      >
-        {run.id.slice(0, 8)}
+      <span className="min-w-0">
+        <Link
+          to={`/runs/${run.id}/findings`}
+          title={run.id}
+          className="block truncate font-mono text-[13px] font-medium text-foreground hover:text-accent hover:underline"
+        >
+          {run.id.slice(0, 8)}
+        </Link>
+        {preferences ? (
+          <span className="mt-0.5 block truncate text-[11px] text-status-neutral-solid">
+            {preferences}
+          </span>
+        ) : null}
       </span>
       <span className="min-w-0">
         <span className="rounded-[5px] bg-status-neutral-bg px-[7px] py-0.5 font-mono text-[10.5px] text-status-neutral-fg">
@@ -351,7 +347,38 @@ function RunRow({ run }: { run: RunListItem }) {
       <span className="text-xs text-status-neutral-solid">
         {relativeTime(run.created_at)}
       </span>
-    </Link>
+      <span className="justify-self-end">
+        <RerunButton runId={run.id} />
+      </span>
+    </div>
+  );
+}
+
+/** Start a fresh run with the SAME preferences as this one (ADR-0062) — no
+ *  reconfiguring — then jump to the new live run. */
+function RerunButton({ runId }: { runId: string }) {
+  const [busy, setBusy] = useState(false);
+  async function rerun() {
+    setBusy(true);
+    const result = await runApi.rerun(runId);
+    if (result.ok && result.data) {
+      navigate(`/runs/${result.data.run_id}/live`);
+      return;
+    }
+    setBusy(false);
+  }
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      disabled={busy}
+      onClick={rerun}
+      title="Re-run with the same preferences"
+    >
+      <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+      {busy ? "Starting…" : "Re-run"}
+    </Button>
   );
 }
 
@@ -431,11 +458,7 @@ function ModelCard({ projectId }: { projectId: string }) {
 
       <div className="mt-3 flex items-center gap-3">
         <Button variant="outline" onClick={ingest.start} disabled={ingest.busy}>
-          {ingest.busy
-            ? "Building model…"
-            : built
-              ? "Rebuild model"
-              : "Build model"}
+          {ingest.busy ? "Building model…" : built ? "Rebuild model" : "Build model"}
         </Button>
         {ingest.status ? (
           <StatusBadge status={runStatusDescriptor(ingest.status)} />
@@ -454,16 +477,23 @@ function ModelCard({ projectId }: { projectId: string }) {
 
 // Integrations on the roadmap — surfaced now (disabled) so operators know they're
 // coming. Static/frontend-only; no backend until each connector actually ships.
-const CONNECTORS: { name: string; description: string; icon: LucideIcon }[] = [
+const CONNECTORS: {
+  name: string;
+  description: string;
+  icon: LucideIcon;
+  to: string;
+}[] = [
   {
     name: "Gitea",
     description: "Ingest repos and open PRs against your self-hosted Gitea.",
     icon: GitBranch,
+    to: "/connectors/gitea",
   },
   {
     name: "Project management",
     description: "Push findings to your tracker (Jira, Linear, …).",
     icon: ClipboardList,
+    to: "/connectors/pm",
   },
 ];
 
@@ -476,25 +506,27 @@ function ConnectorsCard() {
       </p>
       <ul className="mt-3 space-y-2.5">
         {CONNECTORS.map((connector) => (
-          <li
-            key={connector.name}
-            className="flex items-center gap-3 rounded-lg border border-dashed border-border bg-background px-3.5 py-2.5"
-          >
-            <connector.icon
-              className="h-4 w-4 shrink-0 text-status-neutral-solid"
-              aria-hidden="true"
-            />
-            <div className="min-w-0 flex-1">
-              <p className="text-[13px] font-medium text-foreground">
-                {connector.name}
-              </p>
-              <p className="truncate text-xs text-muted-foreground">
-                {connector.description}
-              </p>
-            </div>
-            <span className="shrink-0 rounded-full bg-status-neutral-bg px-2 py-0.5 text-[11px] font-medium text-status-neutral-fg">
-              Coming soon
-            </span>
+          <li key={connector.name}>
+            <Link
+              to={connector.to}
+              className="flex items-center gap-3 rounded-lg border border-dashed border-border bg-background px-3.5 py-2.5 transition-colors hover:border-border hover:bg-surface"
+            >
+              <connector.icon
+                className="h-4 w-4 shrink-0 text-status-neutral-solid"
+                aria-hidden="true"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-medium text-foreground">
+                  {connector.name}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {connector.description}
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full bg-status-neutral-bg px-2 py-0.5 text-[11px] font-medium text-status-neutral-fg">
+                Coming soon
+              </span>
+            </Link>
           </li>
         ))}
       </ul>

@@ -1,12 +1,14 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api/client", () => ({
   projectApi: { get: vi.fn(), ingest: vi.fn(), model: vi.fn() },
-  runApi: { list: vi.fn() },
+  runApi: { list: vi.fn(), rerun: vi.fn() },
   findingApi: { listForProject: vi.fn() },
   jobApi: { get: vi.fn() },
 }));
+
+vi.mock("@/lib/router", () => ({ navigate: vi.fn() }));
 
 import { findingApi, projectApi, runApi } from "@/lib/api/client";
 import type { Finding, Project, RunListItem } from "@/lib/api/types";
@@ -104,9 +106,7 @@ describe("ProjectPage (overview)", () => {
     render(<ProjectPage projectId="p1" />);
 
     // Health summary (78% also shows on the latest run's row, so allow >1).
-    expect((await screen.findAllByText("78%")).length).toBeGreaterThanOrEqual(
-      1,
-    );
+    expect((await screen.findAllByText("78%")).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Open findings")).toBeInTheDocument();
     expect(screen.getByText("1 critical")).toBeInTheDocument();
 
@@ -120,6 +120,62 @@ describe("ProjectPage (overview)", () => {
 
     // Recent runs.
     expect(screen.getByText("Recent runs")).toBeInTheDocument();
+  });
+
+  it("shows each recent run's preferences and re-runs it with one click", async () => {
+    vi.mocked(projectApi.get).mockResolvedValue(ok(PROJECT));
+    vi.mocked(runApi.list).mockResolvedValue(
+      ok({
+        items: [
+          run({
+            id: "r1",
+            preferences: {
+              mode: "mode_b",
+              strategy: "full_sweep",
+              layers: ["api"],
+              modules: ["orders"],
+              changeset_size: null,
+              layer: null,
+            },
+          }),
+        ],
+        total: 1,
+        limit: 5,
+        offset: 0,
+      }),
+    );
+    vi.mocked(findingApi.listForProject).mockResolvedValue(
+      ok({ items: [], total: 0, limit: 50, offset: 0 }),
+    );
+    vi.mocked(runApi.rerun).mockResolvedValue(ok({ run_id: "r2", status: "queued" }));
+
+    render(<ProjectPage projectId="p1" />);
+
+    // The run's preferences are legible on its row (so it can be recognised + reused).
+    expect(
+      await screen.findByText("Autonomous · modules: orders · API"),
+    ).toBeInTheDocument();
+
+    // One click re-runs it with the SAME preferences (the backend copies the payload).
+    fireEvent.click(screen.getByRole("button", { name: /Re-run/ }));
+    await waitFor(() => expect(runApi.rerun).toHaveBeenCalledWith("r1"));
+  });
+
+  it("offers a View-all-tests shortcut in the header", async () => {
+    vi.mocked(projectApi.get).mockResolvedValue(ok(PROJECT));
+    vi.mocked(runApi.list).mockResolvedValue(
+      ok({ items: [], total: 0, limit: 5, offset: 0 }),
+    );
+    vi.mocked(findingApi.listForProject).mockResolvedValue(
+      ok({ items: [], total: 0, limit: 50, offset: 0 }),
+    );
+
+    render(<ProjectPage projectId="p1" />);
+
+    expect(await screen.findByRole("link", { name: "View all tests" })).toHaveAttribute(
+      "href",
+      "/projects/p1/tests",
+    );
   });
 
   it("shows the built-model summary with node/edge counts and kinds", async () => {
@@ -150,9 +206,7 @@ describe("ProjectPage (overview)", () => {
     expect(screen.getByText(/1 edge/)).toBeInTheDocument();
     expect(screen.getByText("Endpoints")).toBeInTheDocument();
     // A built model offers a rebuild, not a first build.
-    expect(
-      screen.getByRole("button", { name: "Rebuild model" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Rebuild model" })).toBeInTheDocument();
   });
 
   it("surfaces the Gitea + PM connectors as coming soon", async () => {
@@ -188,8 +242,6 @@ describe("ProjectPage (overview)", () => {
 
     render(<ProjectPage projectId="p1" />);
 
-    expect(
-      await screen.findByText("Couldn't load this project"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Couldn't load this project")).toBeInTheDocument();
   });
 });

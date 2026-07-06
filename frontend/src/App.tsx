@@ -4,6 +4,7 @@ import { AppShell } from "@/components/AppShell";
 import { AuthSplash } from "@/components/AuthSplash";
 import { GenericErrorPage } from "@/components/GenericErrorPage";
 import { NotFoundPage } from "@/components/NotFoundPage";
+import { ConnectorPage } from "@/features/connectors/ConnectorPage";
 import { ForgotPasswordPage } from "@/features/auth/ForgotPasswordPage";
 import { SignInPage } from "@/features/auth/SignInPage";
 import { SignUpPage } from "@/features/auth/SignUpPage";
@@ -50,8 +51,7 @@ function renderRoute(pathname: string): ReactElement {
 
   if (segments[0] === "projects") {
     if (segments.length === 1) return <ProjectsListPage />;
-    if (segments.length === 2 && segments[1] === "new")
-      return <CreateProjectPage />;
+    if (segments.length === 2 && segments[1] === "new") return <CreateProjectPage />;
     if (segments.length === 2) return <ProjectPage projectId={segments[1]} />;
     if (segments.length === 3 && segments[2] === "edit") {
       return <EditProjectPage projectId={segments[1]} />;
@@ -79,6 +79,11 @@ function renderRoute(pathname: string): ReactElement {
     if (segments.length === 2) return <RunStatusPage runId={segments[1]} />;
   }
 
+  if (segments[0] === "connectors" && segments.length === 2) {
+    if (segments[1] === "gitea") return <ConnectorPage kind="gitea" />;
+    if (segments[1] === "pm") return <ConnectorPage kind="pm" />;
+  }
+
   if (segments[0] === "findings" && segments.length === 1) {
     return <FindingsInboxPage />;
   }
@@ -100,8 +105,7 @@ function renderRoute(pathname: string): ReactElement {
     );
   }
 
-  if (segments[0] === "help" && segments.length === 1)
-    return <HelpCenterPage />;
+  if (segments[0] === "help" && segments.length === 1) return <HelpCenterPage />;
 
   if (segments[0] === "status") {
     // In-shell the status page carried no page gutters (it rendered flush to the

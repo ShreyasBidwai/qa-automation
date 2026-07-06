@@ -548,12 +548,24 @@ export interface ProjectListResponse {
   offset: number;
 }
 
+/** The choices a run was started with (ADR-0062) — so recent runs are distinguishable
+ *  and re-runnable. Derived from the run's durable job payload. */
+export interface RunPreferences {
+  mode: string; // mode_b | mode_c
+  strategy: string | null; // full_sweep | change_impact (mode_b)
+  layers: string[] | null; // ui/api/db subset; null = all
+  modules: string[] | null; // module keys; null = all
+  changeset_size: number | null; // number of changed files (change_impact)
+  layer: string | null; // mode_c authoring layer (ui | api)
+}
+
 export interface RunListItem {
   id: string;
   mode: string; // the persisted Run.mode ("B" / "C")
   status: string; // the persisted Run.status (passed/failed/errored/…)
   created_at: string;
   pass_rate: number | null;
+  preferences?: RunPreferences | null;
 }
 
 export interface RunListResponse {

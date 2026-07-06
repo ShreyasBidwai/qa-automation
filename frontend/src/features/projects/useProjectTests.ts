@@ -12,11 +12,13 @@ export interface ProjectTestsState {
 
 /** Load a project's generated test cases + their code (read-only viewer).
  *
+ * ``runId`` scopes to the cases a single run exercised (ADR-0062); omit it for all.
  * ``reloadToken`` re-fetches when it changes — the caller bumps it after an authoring
  * job completes so freshly-proposed cases appear without a manual refresh. */
 export function useProjectTests(
   projectId: string,
   reloadToken = 0,
+  runId: string | null = null,
 ): ProjectTestsState {
   const [state, setState] = useState<ProjectTestsState>({
     tests: [],
@@ -28,7 +30,7 @@ export function useProjectTests(
   useEffect(() => {
     let cancelled = false;
     setState((prev) => ({ ...prev, loading: true, error: null }));
-    void projectApi.tests(projectId).then((result) => {
+    void projectApi.tests(projectId, runId).then((result) => {
       if (cancelled) return;
       if (result.ok && result.data) {
         setState({
@@ -49,7 +51,7 @@ export function useProjectTests(
     return () => {
       cancelled = true;
     };
-  }, [projectId, reloadToken]);
+  }, [projectId, reloadToken, runId]);
 
   return state;
 }

@@ -40,6 +40,8 @@ describe("ProjectTestsPage", () => {
     vi.mocked(projectApi.tests).mockReset();
     vi.mocked(projectApi.acceptTest).mockReset();
     vi.mocked(projectApi.discardTest).mockReset();
+    // The page reads ?run / ?authoring off the URL — start each test from a clean one.
+    window.history.replaceState({}, "", "/projects/p1/tests");
   });
 
   it("lists generated tests and reveals the runnable code on click", async () => {
@@ -70,6 +72,26 @@ describe("ProjectTestsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Negative/ }));
     expect(screen.queryByRole("button", { name: /GET a/ })).toBeNull();
     expect(screen.getByRole("button", { name: /GET b/ })).toBeInTheDocument();
+  });
+
+  it("scopes to a single run when opened with ?run and links back to all tests", async () => {
+    window.history.replaceState({}, "", "/projects/p1/tests?run=run-9");
+    vi.mocked(projectApi.tests).mockResolvedValue(ok([testCase()]));
+
+    render(<ProjectTestsPage projectId="p1" />);
+
+    // The run id is threaded to the API so only that run's cases load (ADR-0062).
+    await vi.waitFor(() =>
+      expect(projectApi.tests).toHaveBeenCalledWith("p1", "run-9"),
+    );
+    expect(
+      screen.getByRole("heading", { name: "Tests from this run" }),
+    ).toBeInTheDocument();
+    // An escape hatch back to the project-wide list is always offered.
+    expect(screen.getByRole("link", { name: "View all tests" })).toHaveAttribute(
+      "href",
+      "/projects/p1/tests",
+    );
   });
 
   it("shows an empty state when nothing has been generated yet", async () => {

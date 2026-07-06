@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, ListChecks } from "lucide-react";
+import { Activity, AlertTriangle, ListChecks, RotateCcw } from "lucide-react";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 
 import { Link } from "@/components/Link";
@@ -8,12 +8,14 @@ import { StatePanel } from "@/components/StatePanel";
 import { Button } from "@/components/ui/button";
 import type { ProjectListItem, RunListItem } from "@/lib/api/types";
 import { projectApi, runApi } from "@/lib/api/client";
+import { navigate } from "@/lib/router";
 import { relativeTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { usePagedList, type PagedList } from "@/lib/usePagedList";
 
 import { modeLabel } from "./modeLabel";
 import { passTone } from "./runMetrics";
+import { runPreferencesLabel } from "./runPreferences";
 import { runRowStatusDescriptor } from "./runStatus";
 
 const PAGE_SIZE = 20;
@@ -22,7 +24,7 @@ const ALL = "all";
 // The file's runs table is 6 columns. RunListItem carries run / mode / pass_rate /
 // status / created_at — but NOT a per-run findings-by-severity breakdown, so the
 // "Findings" cell is an honest "—" (the linked run dashboard shows the breakdown).
-const RUN_COLS = "grid-cols-[0.7fr_2.2fr_0.9fr_1.4fr_1fr_1fr]";
+const RUN_COLS = "grid-cols-[2.2fr_0.9fr_0.7fr_0.9fr_1.2fr_0.9fr_auto]";
 
 /** Project-scoped runs list (Polaris Runs.dc.html, screen 6). */
 export function RunsListPage() {
@@ -279,6 +281,7 @@ function RunsTable({
         <ColHead>Findings</ColHead>
         <ColHead>Status</ColHead>
         <ColHead>When</ColHead>
+        <span aria-hidden="true" />
       </div>
 
       {visible.map((run) => (
@@ -319,16 +322,26 @@ function RunRow({ run }: { run: RunListItem }) {
   const pct = run.pass_rate === null ? null : Math.round(run.pass_rate * 100);
   const descriptor = runRowStatusDescriptor(run.status);
   const tone = STATUS_TONE[descriptor.level];
+  const preferences = runPreferencesLabel(run.preferences);
   return (
-    <Link
-      to={`/runs/${run.id}/findings`}
-      className={`grid ${RUN_COLS} items-center border-b border-border-subtle px-5 py-3.5 transition-colors last:border-b-0 hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent`}
+    // A div (not a whole-row Link) so the Re-run button can sit in the row without
+    // nesting interactives; the run id links to its findings.
+    <div
+      className={`grid ${RUN_COLS} items-center gap-2 border-b border-border-subtle px-5 py-3 last:border-b-0`}
     >
-      <span
-        className="truncate font-mono text-[13px] font-medium text-foreground"
-        title={run.id}
-      >
-        {run.id.slice(0, 8)}
+      <span className="min-w-0">
+        <Link
+          to={`/runs/${run.id}/findings`}
+          title={run.id}
+          className="block truncate font-mono text-[13px] font-medium text-foreground hover:text-accent hover:underline"
+        >
+          {run.id.slice(0, 8)}
+        </Link>
+        {preferences ? (
+          <span className="mt-0.5 block truncate text-[11px] text-status-neutral-solid">
+            {preferences}
+          </span>
+        ) : null}
       </span>
       <span className="min-w-0">
         <span
@@ -365,7 +378,38 @@ function RunRow({ run }: { run: RunListItem }) {
       <span className="text-xs text-status-neutral-solid">
         {relativeTime(run.created_at)}
       </span>
-    </Link>
+      <span className="justify-self-end">
+        <RerunButton runId={run.id} />
+      </span>
+    </div>
+  );
+}
+
+/** Start a fresh run with the SAME preferences as this one (ADR-0062), then jump
+ *  to the new live run. */
+function RerunButton({ runId }: { runId: string }) {
+  const [busy, setBusy] = useState(false);
+  async function rerun() {
+    setBusy(true);
+    const result = await runApi.rerun(runId);
+    if (result.ok && result.data) {
+      navigate(`/runs/${result.data.run_id}/live`);
+      return;
+    }
+    setBusy(false);
+  }
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      disabled={busy}
+      onClick={rerun}
+      title="Re-run with the same preferences"
+    >
+      <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+      {busy ? "Starting…" : "Re-run"}
+    </Button>
   );
 }
 

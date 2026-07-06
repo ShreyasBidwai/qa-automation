@@ -11,10 +11,13 @@ export interface ProjectModulesState {
 
 /**
  * The project's feature areas ("modules", ADR-0061) for the run form's module picker.
- * Fetched only when the picker is mounted, so it costs nothing until the operator
- * chooses to scope by module. Empty until the model has been built.
+ * `enabled` gates the fetch so it costs nothing until the operator is on the autonomous
+ * mode (where module scoping lives). Empty until the model has been built.
  */
-export function useProjectModules(projectId: string): ProjectModulesState {
+export function useProjectModules(
+  projectId: string,
+  enabled = true,
+): ProjectModulesState {
   const [state, setState] = useState<ProjectModulesState>({
     modules: [],
     loading: true,
@@ -22,6 +25,7 @@ export function useProjectModules(projectId: string): ProjectModulesState {
   });
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     setState((prev) => ({ ...prev, loading: true, error: null }));
     void projectApi.modules(projectId).then((result) => {
@@ -39,7 +43,7 @@ export function useProjectModules(projectId: string): ProjectModulesState {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, enabled]);
 
   return state;
 }

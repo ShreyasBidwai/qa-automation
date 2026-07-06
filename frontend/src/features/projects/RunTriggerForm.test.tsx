@@ -73,9 +73,7 @@ describe("RunTriggerForm", () => {
   it("sends a change_impact changeset as an array of paths", async () => {
     render(<RunTriggerForm projectId="p1" />);
     fireEvent.click(screen.getByRole("radio", { name: /Autonomous/ }));
-    fireEvent.click(
-      screen.getByRole("radio", { name: /Test only what changed/ }),
-    );
+    fireEvent.click(screen.getByRole("radio", { name: /Test only what changed/ }));
     fireEvent.change(screen.getByLabelText("Changed files"), {
       target: { value: "app/A.php\napp/B.php\n" },
     });
@@ -167,20 +165,17 @@ describe("RunTriggerForm", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: /DB/ }));
     fireEvent.click(screen.getByRole("button", { name: "Start run" }));
 
-    expect(
-      screen.getByText("Select at least one layer to test"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Select at least one layer to test")).toBeInTheDocument();
     expect(runApi.create).not.toHaveBeenCalled();
   });
 
-  it("scopes an autonomous run to the picked modules", async () => {
+  it("scopes an autonomous run to the picked modules (layers auto-set to fit)", async () => {
     render(<RunTriggerForm projectId="p1" />);
     fireEvent.click(screen.getByRole("radio", { name: /Autonomous/ }));
-    fireEvent.click(
-      screen.getByRole("radio", { name: /Test specific modules/ }),
-    );
+    fireEvent.click(screen.getByRole("radio", { name: /Test specific modules/ }));
 
-    // The module list loads (searchable) — pick "Orders", leave "Users".
+    // Orders has API + UI targets, so picking it auto-sets the layers to ui+api
+    // (DB isn't a per-module target, so it drops off).
     fireEvent.click(await screen.findByRole("checkbox", { name: /Orders/ }));
     fireEvent.click(screen.getByRole("button", { name: "Start run" }));
 
@@ -189,6 +184,28 @@ describe("RunTriggerForm", () => {
         mode: "mode_b",
         strategy: "full_sweep",
         modules: ["orders"],
+        layers: ["ui", "api"],
+      }),
+    );
+  });
+
+  it("auto-sets the layers to what an API-only module supports", async () => {
+    render(<RunTriggerForm projectId="p1" />);
+    fireEvent.click(screen.getByRole("radio", { name: /Autonomous/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /Test specific modules/ }));
+
+    // Users has endpoints but no pages → picking it leaves API on, UI off.
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Users/ }));
+    expect(screen.getByRole("checkbox", { name: /^UI/ })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /^API/ })).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Start run" }));
+
+    await waitFor(() =>
+      expect(runApi.create).toHaveBeenCalledWith("p1", {
+        mode: "mode_b",
+        strategy: "full_sweep",
+        modules: ["users"],
+        layers: ["api"],
       }),
     );
   });
@@ -196,36 +213,26 @@ describe("RunTriggerForm", () => {
   it("filters the module list by the search box", async () => {
     render(<RunTriggerForm projectId="p1" />);
     fireEvent.click(screen.getByRole("radio", { name: /Autonomous/ }));
-    fireEvent.click(
-      screen.getByRole("radio", { name: /Test specific modules/ }),
-    );
+    fireEvent.click(screen.getByRole("radio", { name: /Test specific modules/ }));
 
-    expect(
-      await screen.findByRole("checkbox", { name: /Orders/ }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("checkbox", { name: /Orders/ })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: /Users/ })).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Search modules"), {
       target: { value: "ord" },
     });
-    expect(
-      screen.getByRole("checkbox", { name: /Orders/ }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Orders/ })).toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: /Users/ })).toBeNull();
   });
 
   it("blocks a module-scoped run with no module selected", async () => {
     render(<RunTriggerForm projectId="p1" />);
     fireEvent.click(screen.getByRole("radio", { name: /Autonomous/ }));
-    fireEvent.click(
-      screen.getByRole("radio", { name: /Test specific modules/ }),
-    );
+    fireEvent.click(screen.getByRole("radio", { name: /Test specific modules/ }));
     await screen.findByRole("checkbox", { name: /Orders/ });
     fireEvent.click(screen.getByRole("button", { name: "Start run" }));
 
-    expect(
-      screen.getByText("Select at least one module to test."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Select at least one module to test.")).toBeInTheDocument();
     expect(runApi.create).not.toHaveBeenCalled();
   });
 
@@ -237,13 +244,9 @@ describe("RunTriggerForm", () => {
     });
     render(<RunTriggerForm projectId="p1" />);
 
-    const file = new File(
-      ["method,path,expected_status\nGET,api/x,200\n"],
-      "t.csv",
-      {
-        type: "text/csv",
-      },
-    );
+    const file = new File(["method,path,expected_status\nGET,api/x,200\n"], "t.csv", {
+      type: "text/csv",
+    });
     fireEvent.change(screen.getByLabelText("CSV file"), {
       target: { files: [file] },
     });
@@ -251,9 +254,7 @@ describe("RunTriggerForm", () => {
     await waitFor(() =>
       expect(projectApi.importTests).toHaveBeenCalledWith("p1", file),
     );
-    expect(
-      await screen.findByText(/Imported 2 tests \(2 new\)/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Imported 2 tests \(2 new\)/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /View tests/ })).toHaveAttribute(
       "href",
       "/projects/p1/tests",

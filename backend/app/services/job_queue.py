@@ -10,6 +10,7 @@ future ``available_at`` until ``max_attempts``.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -67,6 +68,15 @@ class JobQueue:
 
     async def get(self, job_id: uuid.UUID) -> Job | None:
         return await self.session.get(Job, job_id)
+
+    async def get_many(self, ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, Job]:
+        """Fetch many jobs by id in one query, keyed by id (no N+1). Used to attach
+        each run's preferences — a run's id equals its job's id (ADR-0036)."""
+        wanted = set(ids)
+        if not wanted:
+            return {}
+        stmt = select(Job).where(Job.id.in_(wanted))
+        return {job.id: job for job in (await self.session.scalars(stmt)).all()}
 
     async def latest_active_run_for_user(self, user_id: uuid.UUID) -> Job | None:
         """The caller's most-recent still-active RUN job (queued/running) across every

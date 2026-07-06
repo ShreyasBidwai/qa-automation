@@ -21,6 +21,13 @@ const PRIMARY: NavEntry[] = [
   { to: "/runs", label: "Runs" },
 ];
 
+// Connectors get their own sidebar tabs (Gitea + PM tool) — roadmap integrations,
+// each a real destination that explains itself. Kept apart from the workflow nav.
+const CONNECTORS: NavEntry[] = [
+  { to: "/connectors/gitea", label: "Gitea" },
+  { to: "/connectors/pm", label: "PM tool" },
+];
+
 // The quiet bottom cluster (Settings is pinned bottom in the file; we keep our
 // account/settings/help set).
 const SECONDARY: NavEntry[] = [
@@ -114,7 +121,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useLocation();
   // Resolve the active entry ONCE across every nav target, so only the longest match
   // lights up (no double-highlight of "Runs" + "Ongoing run" on /runs/ongoing).
-  const activeTarget = activeNavTarget(pathname, [...PRIMARY, ...SECONDARY]);
+  const activeTarget = activeNavTarget(pathname, [
+    ...PRIMARY,
+    ...CONNECTORS,
+    ...SECONDARY,
+  ]);
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       <aside className="hidden w-[232px] shrink-0 flex-col border-r border-border bg-surface px-3.5 py-5 sm:flex">
@@ -125,10 +136,22 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
         <nav className="flex flex-col gap-0.5" aria-label="Primary">
           {PRIMARY.map((entry) => (
+            <NavItem key={entry.to} entry={entry} active={entry.to === activeTarget} />
+          ))}
+        </nav>
+        <nav
+          className="mt-4 flex flex-col gap-0.5 border-t border-border-subtle pt-3"
+          aria-label="Connectors"
+        >
+          <p className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-marker">
+            Connectors
+          </p>
+          {CONNECTORS.map((entry) => (
             <NavItem
               key={entry.to}
               entry={entry}
               active={entry.to === activeTarget}
+              muted
             />
           ))}
         </nav>
@@ -194,8 +217,7 @@ function TopBar() {
 
 /** The current section, for the top-bar context label (route-derived, real). */
 function sectionLabel(pathname: string): string {
-  const segment =
-    pathname.replace(/\/+$/, "").split("/").filter(Boolean)[0] ?? "";
+  const segment = pathname.replace(/\/+$/, "").split("/").filter(Boolean)[0] ?? "";
   switch (segment) {
     case "":
     case "projects":
@@ -204,6 +226,8 @@ function sectionLabel(pathname: string): string {
       return "Findings";
     case "runs":
       return "Runs";
+    case "connectors":
+      return "Connectors";
     case "account":
       return "Account";
     case "settings":

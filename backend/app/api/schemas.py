@@ -636,6 +636,19 @@ class SeverityBreakdown(BaseModel):
     minor: int = 0
 
 
+class RunPreferences(BaseModel):
+    """The choices a run was started with (from its durable job payload, ADR-0062) — so
+    recent runs are distinguishable at a glance and can be re-run without reconfiguring.
+    Read-only summary; the authoritative copy stays in the job for a faithful re-run."""
+
+    mode: str  # mode_b | mode_c
+    strategy: str | None = None  # full_sweep | change_impact (mode_b)
+    layers: list[str] | None = None  # ui/api/db subset; null = all layers
+    modules: list[str] | None = None  # module keys; null = all modules
+    changeset_size: int | None = None  # number of changed files (change_impact)
+    layer: str | None = None  # mode_c authoring layer (ui | api)
+
+
 class RunListItem(BaseModel):
     id: uuid.UUID
     mode: str
@@ -647,6 +660,9 @@ class RunListItem(BaseModel):
     run_number: int | None = None
     finished_at: datetime | None = None
     severity_breakdown: SeverityBreakdown = Field(default_factory=SeverityBreakdown)
+    # The run's preferences (ADR-0062), derived from its job payload; null if the job
+    # row is gone (very old runs).
+    preferences: RunPreferences | None = None
 
 
 class RunListResponse(BaseModel):

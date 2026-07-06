@@ -44,16 +44,40 @@ describe("AppShell", () => {
     }
 
     // The wordmark links home (sidebar + mobile top bar).
-    expect(
-      screen.getAllByLabelText("Polaris — home").length,
-    ).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByLabelText("Polaris — home").length).toBeGreaterThanOrEqual(1);
     // The top bar carries the route-derived context + an account link.
     const topBar = within(screen.getByRole("banner"));
     expect(topBar.getByText("Projects")).toBeInTheDocument();
-    expect(
-      topBar.getByRole("link", { name: "Your account" }),
-    ).toBeInTheDocument();
+    expect(topBar.getByRole("link", { name: "Your account" })).toBeInTheDocument();
     expect(screen.getByText("page content")).toBeInTheDocument();
+  });
+
+  it("exposes Gitea + PM-tool connector tabs in their own nav group", () => {
+    window.history.pushState({}, "", "/connectors/gitea");
+    render(
+      <AuthProvider>
+        <AppShell>
+          <div>content</div>
+        </AppShell>
+      </AuthProvider>,
+    );
+    const connectors = within(screen.getByRole("navigation", { name: "Connectors" }));
+    expect(connectors.getByRole("link", { name: "Gitea" })).toHaveAttribute(
+      "href",
+      "/connectors/gitea",
+    );
+    expect(connectors.getByRole("link", { name: "PM tool" })).toHaveAttribute(
+      "href",
+      "/connectors/pm",
+    );
+    // The open connector's tab is marked current; its sibling is not.
+    expect(connectors.getByRole("link", { name: "Gitea" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(connectors.getByRole("link", { name: "PM tool" })).not.toHaveAttribute(
+      "aria-current",
+    );
   });
 
   it("highlights only the deepest matching nav entry", () => {
@@ -90,8 +114,8 @@ describe("AppShell", () => {
       "aria-current",
       "page",
     );
-    expect(
-      primary.getByRole("link", { name: "Ongoing run" }),
-    ).not.toHaveAttribute("aria-current");
+    expect(primary.getByRole("link", { name: "Ongoing run" })).not.toHaveAttribute(
+      "aria-current",
+    );
   });
 });

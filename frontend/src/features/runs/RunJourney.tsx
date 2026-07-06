@@ -189,13 +189,9 @@ function RunSummaryRow({
             live && "motion-safe:animate-pulse",
           )}
         />
-        <span className={cn("text-sm font-semibold", TONE_TEXT[tone])}>
-          {label}
-        </span>
+        <span className={cn("text-sm font-semibold", TONE_TEXT[tone])}>{label}</span>
         {live ? (
-          <span className="text-[13px] text-muted-foreground">
-            — watching live
-          </span>
+          <span className="text-[13px] text-muted-foreground">— watching live</span>
         ) : null}
         {elapsed !== null ? (
           <span className="text-[13px] tabular-nums text-muted-foreground">
@@ -242,19 +238,14 @@ function phaseState(group: PhaseGroup, currentSeq: number | null): PhaseState {
 
 /** The phase holding the current step (live), else the last phase with any events
  *  (where a finished run ended), else the first phase. Drives the default tab. */
-function activePhaseKey(
-  groups: PhaseGroup[],
-  currentSeq: number | null,
-): string {
+function activePhaseKey(groups: PhaseGroup[], currentSeq: number | null): string {
   if (currentSeq !== null) {
     const running = groups.find((group) =>
       group.events.some((event) => event.seq === currentSeq),
     );
     if (running) return running.spec.key;
   }
-  const lastWithEvents = [...groups]
-    .reverse()
-    .find((group) => group.events.length > 0);
+  const lastWithEvents = [...groups].reverse().find((group) => group.events.length > 0);
   return lastWithEvents?.spec.key ?? groups[0]?.spec.key ?? "select";
 }
 
@@ -326,10 +317,7 @@ function PhaseTab({
       )}
     >
       {state === "running" ? (
-        <Loader2
-          className="h-3 w-3 motion-safe:animate-spin"
-          aria-hidden="true"
-        />
+        <Loader2 className="h-3 w-3 motion-safe:animate-spin" aria-hidden="true" />
       ) : state === "passed" ? (
         <Check className="h-3 w-3" aria-hidden="true" />
       ) : state === "failed" ? (
@@ -341,9 +329,7 @@ function PhaseTab({
         />
       )}
       {group.spec.label}
-      {count > 0 ? (
-        <span className="tabular-nums opacity-70">{count}</span>
-      ) : null}
+      {count > 0 ? <span className="tabular-nums opacity-70">{count}</span> : null}
     </button>
   );
 }
@@ -371,11 +357,7 @@ function PhaseBody({
   const isGenerate = group.spec.key === "generate";
 
   return (
-    <section
-      role="tabpanel"
-      aria-label={group.spec.label}
-      className="space-y-4"
-    >
+    <section role="tabpanel" aria-label={group.spec.label} className="space-y-4">
       <div className="flex items-baseline gap-2">
         <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-foreground">
           {group.spec.label}
@@ -387,15 +369,14 @@ function PhaseBody({
         ) : null}
         {group.events.length > 0 ? (
           <span className="text-[12px] tabular-nums text-status-neutral-solid">
-            · {group.events.length}{" "}
-            {group.events.length === 1 ? "step" : "steps"}
+            · {group.events.length} {group.events.length === 1 ? "step" : "steps"}
           </span>
         ) : null}
       </div>
 
       {/* Generate: one link through to the full generated-tests page. */}
       {isGenerate && projectId ? (
-        <GeneratedTestsCTA projectId={projectId} />
+        <GeneratedTestsCTA projectId={projectId} runId={runId} />
       ) : null}
 
       {/* Explore/Execute: the live browser window as Polaris drives the app. */}
@@ -436,10 +417,11 @@ function PhaseBody({
 
 // --- generated tests call-to-action -----------------------------------------
 
-/** One link through to the full generated-tests page — the tests a run authored are
- *  reviewed there (code, accept/discard), not in a per-test popup here. */
-function GeneratedTestsCTA({ projectId }: { projectId: string }) {
-  const { total, loading } = useProjectTests(projectId);
+/** One link through to the generated-tests page, scoped to THIS run's cases
+ *  (ADR-0062) — the tests a run authored are reviewed there (code, accept/discard),
+ *  not in a per-test popup here. */
+function GeneratedTestsCTA({ projectId, runId }: { projectId: string; runId: string }) {
+  const { total, loading } = useProjectTests(projectId, 0, runId);
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-3.5 shadow-card">
       <div className="flex items-center gap-2.5">
@@ -449,15 +431,15 @@ function GeneratedTestsCTA({ projectId }: { projectId: string }) {
         />
         <p className="text-[13.5px] text-foreground-secondary">
           {loading
-            ? "Loading the generated tests…"
+            ? "Loading this run's tests…"
             : total === 0
               ? "No tests authored yet."
-              : `Polaris authored ${total} ${total === 1 ? "test" : "tests"} from the model.`}
+              : `Polaris authored ${total} ${total === 1 ? "test" : "tests"} in this run.`}
         </p>
       </div>
       <Button asChild variant="outline" size="sm">
-        <Link to={`/projects/${projectId}/tests`}>
-          View generated tests
+        <Link to={`/projects/${projectId}/tests?run=${runId}`}>
+          View this run's tests
           <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
         </Link>
       </Button>
@@ -555,9 +537,7 @@ function StepRow({
                 />
                 {revealed ? "Hide screenshot" : "Show screenshot"}
               </button>
-              {revealed ? (
-                <ScreenshotPanel runId={runId} seq={event.seq} />
-              ) : null}
+              {revealed ? <ScreenshotPanel runId={runId} seq={event.seq} /> : null}
             </div>
           ) : null}
         </div>
@@ -567,8 +547,7 @@ function StepRow({
 }
 
 function StepStatusIcon({ status }: { status: string }) {
-  const base =
-    "flex h-5 w-5 shrink-0 items-center justify-center rounded-full mt-0.5";
+  const base = "flex h-5 w-5 shrink-0 items-center justify-center rounded-full mt-0.5";
   if (status === "started") {
     return (
       <span className={cn(base, "text-accent")} aria-hidden="true">
@@ -598,10 +577,7 @@ function StepStatusIcon({ status }: { status: string }) {
   }
   if (status === "skipped") {
     return (
-      <span
-        className={cn(base, "text-status-neutral-solid")}
-        aria-hidden="true"
-      >
+      <span className={cn(base, "text-status-neutral-solid")} aria-hidden="true">
         <Minus className="h-3.5 w-3.5" />
       </span>
     );
@@ -676,9 +652,7 @@ function LiveBrowserFrame({
       </div>
 
       <div className="border-t border-border px-3 py-2">
-        <p className="truncate text-[12.5px] text-foreground-secondary">
-          {event.step}
-        </p>
+        <p className="truncate text-[12.5px] text-foreground-secondary">{event.step}</p>
       </div>
     </div>
   );
@@ -708,10 +682,7 @@ function ScreenshotPanel({ runId, seq }: { runId: string; seq: number }) {
         </>
       ) : (
         <>
-          <Loader2
-            className="h-4 w-4 motion-safe:animate-spin"
-            aria-hidden="true"
-          />
+          <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
           <p className="text-[12.5px]">Loading screenshot…</p>
         </>
       )}
