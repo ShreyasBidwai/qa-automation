@@ -57,20 +57,23 @@ _INSTRUCTION = (
     # The assertion is driven by expected.assert — NEVER a hardcoded status. Guessing an
     # exact 200 for every happy case is precisely the bug this replaces (ADR-0063).
     "ASSERT ACCORDING TO `expected.assert`:\n"
-    "- 'success_json' (happy, api): assert a success response with "
-    "$response->assertSuccessful() (any 2xx — NEVER hardcode assertStatus(200)); if "
-    "expected.shape lists keys, assert that structure via assertJsonStructure([...]), "
-    "else assert the body is JSON ($this->assertIsArray($response->json())). If "
-    "expected.shape has an `echo` object, ALSO assert the response echoes those exact "
-    "field:value pairs via assertJsonFragment([...]) (you SENT them; matches inside a "
-    "`data` wrapper too). Never assert a value NOT in `echo`.\n"
-    "- 'reachable' (happy, web route or un-seedable path params): assert only that the "
-    "app handled it without a server error, WITH the status in the message so it stays "
-    "debuggable and triage-able (never a bare assertTrue) — "
-    "`$status = $response->getStatusCode(); "
+    "- 'reachable' (EVERY happy characterization): capture the status and assert the "
+    "app handled it WITHOUT a server error, WITH the status in the message so it stays "
+    "debuggable and triage-able (never a bare assertTrue) — `$status = "
+    "$response->getStatusCode(); "
     '$this->assertLessThan(500, $status, "expected no server error, got HTTP '
-    '{$status}");`. A 401/403/404 or a redirect (auth/config/missing-record '
-    "precondition) is expected here and must NOT fail the test; only a 5xx does.\n"
+    '{$status}");`. A 401/403/404 or a redirect (an auth / config / missing-record / '
+    "required-query-param precondition we cannot satisfy statically) is EXPECTED and "
+    "must NOT fail the test; only a 5xx does. THEN, ONLY when expected.shape is "
+    "non-empty (an api route) AND the response is a 2xx success, ALSO assert the body "
+    "is well-formed inside an `if ($status >= 200 && $status < 300) { ... }` block: "
+    "assert JSON ($this->assertIsArray($response->json())); if expected.shape lists "
+    "keys assert "
+    "the structure via assertJsonStructure([...]); if expected.shape has an `echo` "
+    "object assert the response echoes those exact field:value pairs via "
+    "assertJsonFragment([...]) (you SENT them; matches inside a `data` wrapper too). "
+    "Never assert a value NOT in `echo`, and NEVER fail the test for a non-2xx "
+    "response.\n"
     "- 'status' (rule-derived negative/auth): assert the EXACT expected.status via "
     "$response->assertStatus(expected.status). For a 422, ALSO assert the validation "
     "envelope reports the targeted field(s) via assertJsonValidationErrors([...]) from "
@@ -173,7 +176,7 @@ def build_context(spec: EndpointSpec, case: PlannedCase) -> Subgraph:
                 "shape": case.expected.shape,
                 # HOW to assert (ADR-0063) — the renderer instruction maps each value
                 # to the exact PHPUnit call. The status above is a representative hint
-                # for the bands (success_json / reachable), and the exact code for the
+                # for the reachable band, and the exact code for the
                 # status / redirect kinds.
                 "assert": case.expected.expectation.value,
             },
@@ -197,8 +200,8 @@ def _header(case: PlannedCase) -> str:
     ]
     if case.oracle_source is OracleSource.CHARACTERIZATION:
         lines.append(
-            "// CHARACTERIZATION: pins the honest floor for the route's class "
-            "(api CRUD 2xx+JSON / else handled without a 5xx), never a guessed status."
+            "// CHARACTERIZATION: asserts only that the app HANDLED the request "
+            "without a 5xx (api: + well-formed JSON when the response is 2xx)."
         )
         lines.append(
             "// It asserts NO specific body values — upgrade to spec-grounded "

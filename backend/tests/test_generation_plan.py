@@ -39,14 +39,20 @@ def test_plans_exactly_the_expected_case_set(endpoint_spec: object) -> None:
     assert [case.name for case in cases] == EXPECTED_CASES
 
 
-def test_happy_case_is_valid_payload_with_success_status(endpoint_spec: object) -> None:
+def test_happy_case_is_valid_payload_with_reachable_and_carries_echo(
+    endpoint_spec: object,
+) -> None:
     happy = _by_name(plan_cases(endpoint_spec))["happy"]  # type: ignore[arg-type]
     assert happy.case_type == TestType.HAPPY
     assert happy.oracle_source == OracleSource.CHARACTERIZATION
-    # An api route with no bound path params asserts a 2xx BAND, not a hardcoded code
-    # (ADR-0063); 201 is only the representative hint for POST.
-    assert happy.expected.expectation == ResponseExpectation.SUCCESS_JSON
+    # No happy path asserts an exact 2xx statically (ADR-0063); the honest floor is
+    # REACHABLE (no 5xx). 201 is only a representative hint for POST.
+    assert happy.expected.expectation == ResponseExpectation.REACHABLE
     assert happy.expected.status == 201  # POST → 201 (representative)
+    # An api route still carries the JSON/echo shape — the renderer asserts it ONLY when
+    # the response is actually 2xx (a successful api response must be well-formed).
+    assert happy.expected.shape.get("json_object") is True
+    assert "name" in happy.expected.shape.get("echo", {})  # a safe echoed field
     assert happy.authenticated is True
     assert set(happy.payload) == {"name", "email", "age", "country_id", "newsletter"}
     assert happy.payload["age"] == 18

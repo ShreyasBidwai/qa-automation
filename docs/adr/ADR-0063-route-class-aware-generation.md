@@ -45,27 +45,30 @@ the exact PHPUnit call:
 
 | Case | api (JSON) route | web (session) route |
 |---|---|---|
-| Happy (no bound param) | `SUCCESS_JSON` — `assertSuccessful()` (any 2xx) + JSON body | `REACHABLE` — `< 500` only |
-| Happy (model-bound path param) | `REACHABLE` — `< 500` only | `REACHABLE` |
+| Happy (any) | `REACHABLE` — `< 500`; **and only when the response is 2xx**, also assert JSON body / echoed fields | `REACHABLE` — `< 500` only, never JSON |
 | Unauthenticated | `STATUS` 401 | `REDIRECT` — redirect to login |
 | Validation failure | `STATUS` 422 + `assertJsonValidationErrors` | `REDIRECT_WITH_ERRORS` — `assertSessionHasErrors` |
 
 The guiding principle is **honesty over precision (ADR-0025)**: static generation cannot
 observe the running app, so a characterization test must assert only what the
-framework *guarantees* for the route's class — never a guessed exact status. Asserting
-a hardcoded `200` was not characterization at all; it was an invented spec.
+framework *guarantees* — never a guessed exact status. Asserting a hardcoded `200` was
+not characterization at all; it was an invented spec.
 
-The strong `SUCCESS_JSON` (2xx + JSON) assertion is earned only by the one case we can
-actually set up: an **api** route driven with a complete, valid payload and **no
-un-seedable path param** — the CRUD happy path. For everything else the route's success
-is **not knowable statically**: a **web** route may be auth/OAuth-gated, redirect, or be
-**conditionally registered** (config-gated) so the running app returns 404 for a route
-the static parser saw (ADR-0055); a **model-bound path param** we can't seed 404s on the
-missing row. There the honest floor is `REACHABLE` — the app *handled* the request
-without a **5xx** (a `401/403/404`/redirect is a real precondition, not a defect). This
-is what stops the false-failure noise; the rule-derived tier still carries the precise,
-framework-guaranteed checks (422/401 on api, redirect/session-errors on web), and a real
-`5xx` crash still fails.
+**Static generation can never guarantee a specific 2xx.** A well-formed request may
+legitimately return 4xx because of a precondition we cannot satisfy statically — auth,
+required query params, absent data, or a route that is OAuth/config-gated or
+**conditionally registered** so the running app returns 404 for a route the static
+parser saw (ADR-0055) — and this happens on **both** api and web routes (the login,
+guest, *and* cms modules all hit it). So the honest floor for **every** happy
+characterization is `REACHABLE`: the app *handled* the request without a **5xx**. A
+`401/403/404`/redirect is a real precondition, not a defect, and must not false-fail;
+only a `5xx` does. For an api route the JSON/echo shape is asserted **additionally but
+only when the response is actually 2xx** — a successful api response must be well-formed
+(you sent those echoed values, ADR-0025), while a precondition 4xx is tolerated. The
+strong *unconditional* "must be 2xx + this exact shape" assertion belongs to the
+**spec-grounded** tier, which only exists once a real contract is ingested. The
+rule-derived tier still carries its precise, framework-guaranteed checks (422/401 on
+api, redirect/session-errors on web), and a real `5xx` crash still fails.
 
 **Reporting fidelity.** A finding whose case never linked a Brain node used to read
 "failure at **unknown target**". The failing case's stable `case_key` already names the
