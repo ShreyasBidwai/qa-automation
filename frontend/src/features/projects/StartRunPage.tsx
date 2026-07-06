@@ -11,9 +11,7 @@ export function StartRunPage({ projectId }: { projectId: string }) {
     <>
       <PageHeader
         eyebrow={
-          <Link to={`/projects/${projectId}`}>
-            {project?.name ?? "Project"}
-          </Link>
+          <Link to={`/projects/${projectId}`}>{project?.name ?? "Project"}</Link>
         }
         title="Start a run"
         description="Describe a scenario to test, or run autonomously across the model."

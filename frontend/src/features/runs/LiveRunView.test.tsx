@@ -85,9 +85,7 @@ describe("LiveRunView", () => {
   it("renders the page shell and the run journey tabs", async () => {
     render(<LiveRunView runId="r1" />);
     // Page chrome — the back link to the run overview.
-    expect(
-      screen.getByRole("link", { name: /Run overview/ }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Run overview/ })).toBeInTheDocument();
     // Delegates to RunJourney → the phase tablist renders.
     expect(
       await screen.findByRole("tablist", { name: "Run phases" }),

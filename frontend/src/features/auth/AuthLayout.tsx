@@ -40,11 +40,7 @@ export function AuthLayout({
       <div className="flex w-full flex-col min-[900px]:w-[720px] min-[900px]:flex-none">
         {/* Header — the wordmark shows here only below 900px (the brand panel hides). */}
         <header className="flex h-16 flex-none items-center px-6 min-[900px]:px-14">
-          <Link
-            to="/"
-            aria-label="Polaris — home"
-            className="flex min-[900px]:hidden"
-          >
+          <Link to="/" aria-label="Polaris — home" className="flex min-[900px]:hidden">
             <Wordmark className="text-[19px]" />
           </Link>
         </header>
@@ -57,9 +53,7 @@ export function AuthLayout({
             >
               {title}
             </h1>
-            <p className="mt-1.5 text-[13.5px] text-muted-foreground">
-              {subtitle}
-            </p>
+            <p className="mt-1.5 text-[13.5px] text-muted-foreground">{subtitle}</p>
             <div className="mt-[26px]">{children}</div>
             {footer ? (
               <p className="mt-6 text-center text-[13px] text-muted-foreground">
@@ -89,9 +83,8 @@ function BrandPanel() {
               Tests you can trust.
             </h2>
             <p className="mt-3 max-w-[400px] text-[14.5px] leading-[1.6] text-muted-foreground">
-              Polaris reads your codebase, generates and runs tests, and reports
-              ranked findings each with a mark telling you how much to believe
-              it.
+              Polaris reads your codebase, generates and runs tests, and reports ranked
+              findings each with a mark telling you how much to believe it.
             </p>
           </div>
 
@@ -245,10 +238,7 @@ export function AuthField({
         {...props}
       />
       {error ? (
-        <p
-          id={`${id}-error`}
-          className="mt-1.5 text-[13px] text-status-fail-fg"
-        >
+        <p id={`${id}-error`} className="mt-1.5 text-[13px] text-status-fail-fg">
           {error}
         </p>
       ) : null}

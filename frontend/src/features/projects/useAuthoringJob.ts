@@ -3,11 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { jobApi } from "@/lib/api/client";
 import type { JobStatusValue } from "@/lib/api/types";
 
-const TERMINAL: readonly JobStatusValue[] = [
-  "succeeded",
-  "failed",
-  "cancelled",
-];
+const TERMINAL: readonly JobStatusValue[] = ["succeeded", "failed", "cancelled"];
 const POLL_MS = 1500;
 
 export interface AuthoringJobState {
