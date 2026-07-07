@@ -18,6 +18,11 @@ export interface ToastInput {
 
 export interface ToastContextValue {
   notify: (toast: ToastInput) => void;
+  /** Whether toasts are shown at all — the Settings "Notifications" preference
+   *  (persisted). Exposed here (rather than a separate provider) so there is one
+   *  place that decides whether a notification ever reaches the screen. */
+  notificationsEnabled: boolean;
+  setNotificationsEnabled: (enabled: boolean) => void;
 }
 
 export const ToastContext = createContext<ToastContextValue | null>(null);

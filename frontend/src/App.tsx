@@ -13,7 +13,6 @@ import { AccountPage } from "@/features/account/AccountPage";
 import { FindingsInboxPage } from "@/features/findings/FindingsInboxPage";
 import { SingleFindingPage } from "@/features/findings/SingleFindingPage";
 import { HelpCenterPage } from "@/features/help/HelpCenterPage";
-import { PlaceholderPage } from "@/features/placeholders/PlaceholderPage";
 import { CreateProjectPage } from "@/features/projects/CreateProjectPage";
 import { EditProjectPage } from "@/features/projects/EditProjectPage";
 import { ProjectPage } from "@/features/projects/ProjectPage";
@@ -25,6 +24,7 @@ import { OngoingRunPage } from "@/features/runs/OngoingRunPage";
 import { RunDashboard } from "@/features/runs/RunDashboard";
 import { RunStatusPage } from "@/features/runs/RunStatusPage";
 import { RunsListPage } from "@/features/runs/RunsListPage";
+import { SettingsPage } from "@/features/settings/SettingsPage";
 import { SystemStatusPage } from "@/features/system-status/SystemStatusPage";
 import { useAuth } from "@/lib/auth/useAuth";
 import { navigate, useLocation } from "@/lib/router";
@@ -101,12 +101,7 @@ function renderRoute(pathname: string): ReactElement {
   }
 
   if (segments[0] === "settings" && segments.length === 1) {
-    return (
-      <PlaceholderPage
-        title="Settings"
-        description="Workspace settings arrive in a later slice."
-      />
-    );
+    return <SettingsPage />;
   }
 
   if (segments[0] === "help" && segments.length === 1) return <HelpCenterPage />;

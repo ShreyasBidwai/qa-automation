@@ -24,8 +24,21 @@ function NotifyButton({
   );
 }
 
+function NotificationsToggle() {
+  const { notificationsEnabled, setNotificationsEnabled } = useToast();
+  return (
+    <button
+      type="button"
+      onClick={() => setNotificationsEnabled(!notificationsEnabled)}
+    >
+      notifications: {notificationsEnabled ? "on" : "off"}
+    </button>
+  );
+}
+
 describe("ToastProvider / useToast", () => {
   beforeEach(() => {
+    localStorage.clear();
     vi.useFakeTimers();
   });
   afterEach(() => {
@@ -123,5 +136,59 @@ describe("ToastProvider / useToast", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Dismiss" })[0]);
     expect(screen.getAllByRole("status")).toHaveLength(1);
     expect(screen.getByText("Second")).toBeInTheDocument();
+  });
+
+  describe("notificationsEnabled preference (Settings)", () => {
+    it("defaults to enabled", () => {
+      render(
+        <ToastProvider>
+          <NotifyButton label="fire" title="Hello" />
+        </ToastProvider>,
+      );
+      fireEvent.click(screen.getByText("fire"));
+      expect(screen.getByRole("status")).toBeInTheDocument();
+    });
+
+    it("suppresses notify() once turned off, and persists the choice", () => {
+      render(
+        <ToastProvider>
+          <NotificationsToggle />
+          <NotifyButton label="fire" title="Hello" />
+        </ToastProvider>,
+      );
+      fireEvent.click(screen.getByText("notifications: on"));
+      expect(screen.getByText("notifications: off")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText("fire"));
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(localStorage.getItem("polaris:notifications-enabled")).toBe("false");
+    });
+
+    it("initializes from a persisted 'off' choice", () => {
+      localStorage.setItem("polaris:notifications-enabled", "false");
+      render(
+        <ToastProvider>
+          <NotificationsToggle />
+          <NotifyButton label="fire" title="Hello" />
+        </ToastProvider>,
+      );
+      expect(screen.getByText("notifications: off")).toBeInTheDocument();
+      fireEvent.click(screen.getByText("fire"));
+      expect(screen.queryByRole("status")).toBeNull();
+    });
+
+    it("resumes showing toasts once re-enabled", () => {
+      render(
+        <ToastProvider>
+          <NotificationsToggle />
+          <NotifyButton label="fire" title="Hello" />
+        </ToastProvider>,
+      );
+      fireEvent.click(screen.getByText("notifications: on")); // off
+      fireEvent.click(screen.getByText("notifications: off")); // on again
+
+      fireEvent.click(screen.getByText("fire"));
+      expect(screen.getByRole("status")).toBeInTheDocument();
+    });
   });
 });

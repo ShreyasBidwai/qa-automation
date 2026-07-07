@@ -10,6 +10,13 @@ interface Toast extends ToastInput {
   id: string;
 }
 
+export const NOTIFICATIONS_STORAGE_KEY = "polaris:notifications-enabled";
+
+function storedNotificationsEnabled(): boolean {
+  // Absent (never set) defaults to enabled — only an explicit "false" opts out.
+  return localStorage.getItem(NOTIFICATIONS_STORAGE_KEY) !== "false";
+}
+
 function defaultDuration(tone: ToastTone): number {
   return tone === "error" ? 8000 : 5000;
 }
@@ -88,6 +95,9 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
  */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [notificationsEnabled, setNotificationsEnabledState] = useState<boolean>(
+    storedNotificationsEnabled,
+  );
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const nextId = useRef(0);
 
@@ -102,6 +112,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const notify = useCallback(
     (input: ToastInput) => {
+      if (!notificationsEnabled) return;
       const id = `toast-${(nextId.current += 1)}`;
       const tone = input.tone ?? "info";
       const toast: Toast = { ...input, id, tone };
@@ -112,10 +123,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         setTimeout(() => dismiss(id), duration),
       );
     },
-    [dismiss],
+    [dismiss, notificationsEnabled],
   );
 
-  const value = useMemo(() => ({ notify }), [notify]);
+  const setNotificationsEnabled = useCallback((enabled: boolean) => {
+    localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, String(enabled));
+    setNotificationsEnabledState(enabled);
+  }, []);
+
+  const value = useMemo(
+    () => ({ notify, notificationsEnabled, setNotificationsEnabled }),
+    [notify, notificationsEnabled, setNotificationsEnabled],
+  );
 
   return (
     <ToastContext.Provider value={value}>
