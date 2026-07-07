@@ -122,6 +122,7 @@ export function CommandPalette({
           <input
             ref={inputRef}
             role="combobox"
+            aria-label="Search projects, findings, and runs"
             aria-expanded={results.length > 0}
             aria-controls={LIST_ID}
             aria-autocomplete="list"

@@ -142,7 +142,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {createPortal(
         <div
           aria-label="Notifications"
-          className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-full max-w-sm flex-col gap-2"
+          // `w-[calc(100vw-2rem)]` (not `w-full`) so the stack stays inset by 16px on
+          // BOTH sides on a narrow phone — `right-4` alone with `w-full` would anchor
+          // the right edge and let the box overflow off the left edge of the screen.
+          className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-[calc(100vw-2rem)] max-w-sm flex-col gap-2"
         >
           {toasts.map((toast) => (
             <ToastCard
