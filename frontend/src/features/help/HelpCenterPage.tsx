@@ -50,6 +50,7 @@ export function HelpCenterPage() {
 
   return (
     <PageShell
+      scroll={false}
       maxWidth="max-w-5xl"
       header={
         <div>
@@ -62,40 +63,48 @@ export function HelpCenterPage() {
         </div>
       }
     >
-      <div className="flex flex-col gap-8 lg:flex-row">
+      {/* The two-column area fills the viewport (ADR-0066): each column scrolls
+          INTERNALLY instead of a sticky nav + a tall page-body scrollbar. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-8 lg:flex-row">
         {/* Left: search + filtered section list (the navigator). */}
         <nav
           aria-label="Help sections"
-          className="lg:sticky lg:top-20 lg:w-72 lg:shrink-0 lg:self-start"
+          className="flex min-h-0 flex-col lg:w-72 lg:shrink-0"
         >
-          <label htmlFor="help-search" className="sr-only">
-            Search help
-          </label>
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <Input
-              id="help-search"
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={onSearchKeyDown}
-              placeholder="Search help…"
-              className="pl-9"
-              autoComplete="off"
-              aria-controls="help-section-list"
-            />
+          <div className="shrink-0">
+            <label htmlFor="help-search" className="sr-only">
+              Search help
+            </label>
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <Input
+                id="help-search"
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={onSearchKeyDown}
+                placeholder="Search help…"
+                className="pl-9"
+                autoComplete="off"
+                aria-controls="help-section-list"
+              />
+            </div>
+
+            {query.trim() ? (
+              <p className="mt-2 px-1 text-xs text-muted-foreground" role="status">
+                {matches.length} of {HELP_SECTIONS.length} sections
+              </p>
+            ) : null}
           </div>
 
-          {query.trim() ? (
-            <p className="mt-2 px-1 text-xs text-muted-foreground" role="status">
-              {matches.length} of {HELP_SECTIONS.length} sections
-            </p>
-          ) : null}
-
-          <ul id="help-section-list" className="mt-2 space-y-0.5">
+          {/* The section list is the overflow — it scrolls inside the nav. */}
+          <ul
+            id="help-section-list"
+            className="mt-2 min-h-0 flex-1 space-y-0.5 overflow-y-auto"
+          >
             {matches.length === 0 ? (
               <li className="px-3 py-2 text-sm text-muted-foreground">
                 No sections match “{query.trim()}”. Try a word like trust, severity, or
@@ -120,8 +129,9 @@ export function HelpCenterPage() {
           </ul>
         </nav>
 
-        {/* Right: the full reference. Every section is anchored so jumps always land. */}
-        <div className="min-w-0 flex-1 space-y-10">
+        {/* Right: the full reference. Every section is anchored so jumps always land;
+            it's the other overflow region and scrolls on its own. */}
+        <div className="min-h-0 min-w-0 flex-1 space-y-10 overflow-y-auto">
           {HELP_SECTIONS.map((section) => {
             const headingId = `help-${section.id}`;
             return (

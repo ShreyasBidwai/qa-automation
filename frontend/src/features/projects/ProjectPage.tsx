@@ -37,6 +37,7 @@ export function ProjectPage({ projectId }: { projectId: string }) {
 
   return (
     <PageShell
+      scroll={false}
       header={
         <>
           <Link
@@ -111,20 +112,24 @@ export function ProjectPage({ projectId }: { projectId: string }) {
           />
         </div>
       ) : (
-        <>
-          <HealthSummary
-            runs={runs}
-            openFindings={openFindings}
-            openTotal={openTotal}
-          />
+        // Fits the viewport (ADR-0066): the health summary + model/connectors cards are
+        // fixed; only the recent-runs table scrolls, inside its own card.
+        <div className="flex h-full min-h-0 flex-col gap-3.5">
+          <div className="shrink-0">
+            <HealthSummary
+              runs={runs}
+              openFindings={openFindings}
+              openTotal={openTotal}
+            />
+          </div>
 
           <RecentRuns runs={runs} />
 
-          <div className="grid gap-3.5 lg:grid-cols-2">
+          <div className="grid shrink-0 gap-3.5 lg:grid-cols-2">
             <ModelCard projectId={projectId} />
             <ConnectorsCard />
           </div>
-        </>
+        </div>
       )}
     </PageShell>
   );
@@ -149,7 +154,7 @@ function HealthSummary({
   const tone = pct === null ? null : passTone(pct);
 
   return (
-    <section className="mb-7 grid grid-cols-1 gap-3.5 sm:grid-cols-3">
+    <section className="grid grid-cols-1 gap-3.5 sm:grid-cols-3">
       <HealthCard label="Pass rate">
         {pct !== null ? (
           <>
@@ -274,8 +279,8 @@ const RUN_COLS = "grid-cols-[1.6fr_0.8fr_0.6fr_1.2fr_0.9fr_auto]";
 
 function RecentRuns({ runs }: { runs: RunListItem[] }) {
   return (
-    <section className="mb-7">
-      <div className="mb-3 flex items-center justify-between">
+    <section className="flex min-h-0 flex-1 flex-col">
+      <div className="mb-3 flex shrink-0 items-center justify-between">
         <h2 className="text-sm font-semibold text-foreground">Recent runs</h2>
         <Link
           to="/runs"
@@ -284,7 +289,7 @@ function RecentRuns({ runs }: { runs: RunListItem[] }) {
           View all
         </Link>
       </div>
-      <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-card">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-card">
         {runs.length === 0 ? (
           <p className="px-5 py-8 text-sm text-muted-foreground">
             No runs yet — build the model, then start a run to see results here.
@@ -292,7 +297,7 @@ function RecentRuns({ runs }: { runs: RunListItem[] }) {
         ) : (
           <>
             <div
-              className={`grid ${RUN_COLS} border-b border-border-subtle bg-background px-5 py-2.5`}
+              className={`grid shrink-0 ${RUN_COLS} border-b border-border-subtle bg-background px-5 py-2.5`}
             >
               <ColHead>Run</ColHead>
               <ColHead>Mode</ColHead>
@@ -301,9 +306,12 @@ function RecentRuns({ runs }: { runs: RunListItem[] }) {
               <ColHead>When</ColHead>
               <span aria-hidden="true" />
             </div>
-            {runs.map((run) => (
-              <RunRow key={run.id} run={run} />
-            ))}
+            {/* The rows are the overflow — they scroll inside the card (ADR-0066). */}
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {runs.map((run) => (
+                <RunRow key={run.id} run={run} />
+              ))}
+            </div>
           </>
         )}
       </div>

@@ -56,6 +56,7 @@ export function AccountPage() {
 
   return (
     <PageShell
+      scroll={false}
       maxWidth="max-w-[960px]"
       header={
         <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-foreground">
@@ -63,7 +64,8 @@ export function AccountPage() {
         </h1>
       }
     >
-      <div role="tablist" className="mb-7 flex gap-1 border-b border-border">
+      {/* Header + tab bar stay put (ADR-0066); only the active panel scrolls. */}
+      <div role="tablist" className="mb-7 flex shrink-0 gap-1 border-b border-border">
         <TabButton
           id="profile"
           active={tab === "profile"}
@@ -76,15 +78,17 @@ export function AccountPage() {
         </TabButton>
       </div>
 
-      {tab === "profile" ? (
-        <div role="tabpanel" aria-labelledby="tab-profile">
-          <ProfileTab />
-        </div>
-      ) : (
-        <div role="tabpanel" aria-labelledby="tab-team">
-          <TeamTab />
-        </div>
-      )}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {tab === "profile" ? (
+          <div role="tabpanel" aria-labelledby="tab-profile">
+            <ProfileTab />
+          </div>
+        ) : (
+          <div role="tabpanel" aria-labelledby="tab-team">
+            <TeamTab />
+          </div>
+        )}
+      </div>
     </PageShell>
   );
 }
