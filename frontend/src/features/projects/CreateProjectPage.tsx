@@ -1,11 +1,12 @@
 import { Link } from "@/components/Link";
+import { PageShell } from "@/components/PageShell";
 
 import { CreateProjectForm } from "./CreateProjectForm";
 
 /** New project (#3): connect a codebase and a running environment. */
 export function CreateProjectPage() {
   return (
-    <div className="mx-auto max-w-[760px] px-6 py-10">
+    <PageShell maxWidth="max-w-[760px]">
       <Link
         to="/projects"
         className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
@@ -22,6 +23,6 @@ export function CreateProjectPage() {
         </p>
       </div>
       <CreateProjectForm />
-    </div>
+    </PageShell>
   );
 }

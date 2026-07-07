@@ -121,6 +121,27 @@
     outline-offset: 2px;
   }
 
+  /*
+   * Desktop-app frame (ADR-0066): the WINDOW never scrolls. html/body/#root form a
+   * fixed 100dvh height chain and the root clips — so every view mounts into a bounded
+   * viewport and scroll lives INSIDE the region that needs it (a page body, a table, a
+   * list), never on the whole page. dvh (not vh) tracks the real viewport so mobile
+   * browser chrome can't create a phantom page scrollbar.
+   */
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  html {
+    height: 100dvh;
+    overflow: hidden;
+  }
+  #root {
+    height: 100dvh;
+    overflow: hidden;
+  }
+
   body {
     @apply font-sans;
     background-color: var(--color-background);
@@ -129,6 +150,7 @@
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    overflow: hidden;
   }
 
   /* Motion is functional only — honour the OS reduced-motion preference. */

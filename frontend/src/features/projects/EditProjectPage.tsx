@@ -2,6 +2,7 @@ import { AlertTriangle } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { Link } from "@/components/Link";
+import { PageShell } from "@/components/PageShell";
 import { Skeleton } from "@/components/Skeleton";
 import { StatePanel } from "@/components/StatePanel";
 import { Button } from "@/components/ui/button";
@@ -23,7 +24,7 @@ export function EditProjectPage({ projectId }: { projectId: string }) {
   const { project, loading, error } = useProject(projectId);
 
   return (
-    <div className="mx-auto max-w-[760px] px-6 py-10">
+    <PageShell maxWidth="max-w-[760px]">
       <Link
         to={`/projects/${projectId}`}
         className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
@@ -63,7 +64,7 @@ export function EditProjectPage({ projectId }: { projectId: string }) {
           <DangerZone projectId={projectId} name={project.name} />
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }
 

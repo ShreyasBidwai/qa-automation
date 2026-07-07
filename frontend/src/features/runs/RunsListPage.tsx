@@ -2,6 +2,7 @@ import { Activity, AlertTriangle, ListChecks, RotateCcw } from "lucide-react";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 
 import { Link } from "@/components/Link";
+import { PageShell } from "@/components/PageShell";
 import { Pagination } from "@/components/Pagination";
 import { SkeletonRows } from "@/components/Skeleton";
 import { StatePanel } from "@/components/StatePanel";
@@ -64,31 +65,33 @@ export function RunsListPage() {
   );
 
   return (
-    <div className="mx-auto max-w-[1760px] px-6 py-8 lg:px-8">
-      <div className="mb-6 flex items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <span className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg border-[1.5px] border-marker">
-            <ListChecks
-              className="h-4 w-4 text-status-neutral-solid"
-              aria-hidden="true"
-            />
-          </span>
-          <div>
-            <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-foreground">
-              Runs
-            </h1>
-            <p className="mt-0.5 text-[13px] text-status-neutral-solid">
-              Test runs for this project
-            </p>
+    <PageShell
+      header={
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg border-[1.5px] border-marker">
+              <ListChecks
+                className="h-4 w-4 text-status-neutral-solid"
+                aria-hidden="true"
+              />
+            </span>
+            <div>
+              <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-foreground">
+                Runs
+              </h1>
+              <p className="mt-0.5 text-[13px] text-status-neutral-solid">
+                Test runs for this project
+              </p>
+            </div>
           </div>
+          {activeId ? (
+            <Button asChild>
+              <Link to={`/projects/${activeId}/run`}>Start run</Link>
+            </Button>
+          ) : null}
         </div>
-        {activeId ? (
-          <Button asChild>
-            <Link to={`/projects/${activeId}/run`}>Start run</Link>
-          </Button>
-        ) : null}
-      </div>
-
+      }
+    >
       {projects.loading ? (
         <SkeletonRows label="Loading…" />
       ) : projects.error ? (
@@ -125,7 +128,7 @@ export function RunsListPage() {
           <RunsTable activeId={activeId} runs={runs} visible={visible} />
         </>
       )}
-    </div>
+    </PageShell>
   );
 }
 

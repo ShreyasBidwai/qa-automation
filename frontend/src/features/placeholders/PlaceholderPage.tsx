@@ -16,10 +16,11 @@ export function PlaceholderPage({
   description: string;
   action?: ReactNode;
 }) {
+  // Full-height (ADR-0066): header fixed, body scrolls — the window never does.
   return (
-    <>
+    <div className="flex h-full min-h-0 flex-col">
       <PageHeader title={title} />
-      <main className="flex-1 px-6 py-8">
+      <main className="min-h-0 flex-1 overflow-y-auto px-6 py-8">
         <div className="mx-auto max-w-md rounded-xl border border-dashed border-border bg-surface px-6 py-14 text-center">
           <p className="text-sm font-medium text-foreground">Coming in a later slice</p>
           <p className="mx-auto mt-1.5 max-w-sm text-sm text-muted-foreground">
@@ -28,6 +29,6 @@ export function PlaceholderPage({
           {action ? <div className="mt-5 flex justify-center">{action}</div> : null}
         </div>
       </main>
-    </>
+    </div>
   );
 }

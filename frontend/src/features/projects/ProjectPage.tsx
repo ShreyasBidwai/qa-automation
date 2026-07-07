@@ -10,6 +10,7 @@ import {
 import { useState, type ReactNode } from "react";
 
 import { Link } from "@/components/Link";
+import { PageShell } from "@/components/PageShell";
 import { Skeleton } from "@/components/Skeleton";
 import { StatePanel } from "@/components/StatePanel";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -35,14 +36,63 @@ export function ProjectPage({ projectId }: { projectId: string }) {
     useProjectOverview(projectId);
 
   return (
-    <div className="mx-auto max-w-[1760px] px-6 py-8 lg:px-8">
-      <Link
-        to="/projects"
-        className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
-      >
-        ← Projects
-      </Link>
-
+    <PageShell
+      header={
+        <>
+          <Link
+            to="/projects"
+            className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
+          >
+            ← Projects
+          </Link>
+          {!loading && !error && project ? (
+            <header className="mt-3 flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h1 className="text-[22px] font-semibold tracking-[-0.015em] text-foreground">
+                    {project.name}
+                  </h1>
+                  {project.stack ? (
+                    <span className="rounded-[5px] border border-border bg-status-neutral-bg px-2 py-0.5 font-mono text-[11px] font-medium text-status-neutral-fg">
+                      {project.stack}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-x-3.5 gap-y-1 font-mono text-xs text-muted-foreground">
+                  <span className="break-all">{project.repo_url}</span>
+                  {project.app_url ? (
+                    <>
+                      <span className="text-marker" aria-hidden="true">
+                        ·
+                      </span>
+                      <a
+                        href={project.app_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="break-all text-accent hover:underline"
+                      >
+                        {project.app_url}
+                      </a>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+              <div className="flex flex-none gap-2">
+                <Button variant="outline" asChild>
+                  <Link to={`/projects/${projectId}/edit`}>Edit</Link>
+                </Button>
+                <Button variant="outline" asChild>
+                  <Link to={`/projects/${projectId}/tests`}>View all tests</Link>
+                </Button>
+                <Button asChild>
+                  <Link to={`/projects/${projectId}/run`}>Start run</Link>
+                </Button>
+              </div>
+            </header>
+          ) : null}
+        </>
+      }
+    >
       {loading ? (
         <OverviewSkeleton />
       ) : error || !project ? (
@@ -62,50 +112,6 @@ export function ProjectPage({ projectId }: { projectId: string }) {
         </div>
       ) : (
         <>
-          <header className="mb-7 mt-3 flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-3">
-                <h1 className="text-[22px] font-semibold tracking-[-0.015em] text-foreground">
-                  {project.name}
-                </h1>
-                {project.stack ? (
-                  <span className="rounded-[5px] border border-border bg-status-neutral-bg px-2 py-0.5 font-mono text-[11px] font-medium text-status-neutral-fg">
-                    {project.stack}
-                  </span>
-                ) : null}
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-x-3.5 gap-y-1 font-mono text-xs text-muted-foreground">
-                <span className="break-all">{project.repo_url}</span>
-                {project.app_url ? (
-                  <>
-                    <span className="text-marker" aria-hidden="true">
-                      ·
-                    </span>
-                    <a
-                      href={project.app_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="break-all text-accent hover:underline"
-                    >
-                      {project.app_url}
-                    </a>
-                  </>
-                ) : null}
-              </div>
-            </div>
-            <div className="flex flex-none gap-2">
-              <Button variant="outline" asChild>
-                <Link to={`/projects/${projectId}/edit`}>Edit</Link>
-              </Button>
-              <Button variant="outline" asChild>
-                <Link to={`/projects/${projectId}/tests`}>View all tests</Link>
-              </Button>
-              <Button asChild>
-                <Link to={`/projects/${projectId}/run`}>Start run</Link>
-              </Button>
-            </div>
-          </header>
-
           <HealthSummary
             runs={runs}
             openFindings={openFindings}
@@ -120,7 +126,7 @@ export function ProjectPage({ projectId }: { projectId: string }) {
           </div>
         </>
       )}
-    </div>
+    </PageShell>
   );
 }
 

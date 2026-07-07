@@ -2,6 +2,7 @@ import { AlertTriangle, LayoutDashboard } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Link } from "@/components/Link";
+import { PageShell } from "@/components/PageShell";
 import { Skeleton } from "@/components/Skeleton";
 import { StatePanel } from "@/components/StatePanel";
 import { Button } from "@/components/ui/button";
@@ -54,27 +55,29 @@ export function DashboardPage() {
   }, [loading, error, data]);
 
   return (
-    <div className="mx-auto max-w-[1760px] px-6 py-8 lg:px-8">
-      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <span className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg border-[1.5px] border-marker">
-            <LayoutDashboard
-              className="h-4 w-4 text-status-neutral-solid"
-              aria-hidden="true"
-            />
-          </span>
-          <div>
-            <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-foreground">
-              Dashboard
-            </h1>
-            <p className="mt-0.5 text-[13px] text-status-neutral-solid">
-              Health across every project in your account
-            </p>
+    <PageShell
+      header={
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg border-[1.5px] border-marker">
+              <LayoutDashboard
+                className="h-4 w-4 text-status-neutral-solid"
+                aria-hidden="true"
+              />
+            </span>
+            <div>
+              <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-foreground">
+                Dashboard
+              </h1>
+              <p className="mt-0.5 text-[13px] text-status-neutral-solid">
+                Health across every project in your account
+              </p>
+            </div>
           </div>
+          <RangeFilter rangeDays={rangeDays} onChange={setRangeDays} />
         </div>
-        <RangeFilter rangeDays={rangeDays} onChange={setRangeDays} />
-      </header>
-
+      }
+    >
       {loading ? (
         <DashboardSkeleton />
       ) : error ? (
@@ -89,7 +92,7 @@ export function DashboardPage() {
       ) : data && data.projects_total > 0 ? (
         <DashboardBody data={data} />
       ) : null}
-    </div>
+    </PageShell>
   );
 }
 

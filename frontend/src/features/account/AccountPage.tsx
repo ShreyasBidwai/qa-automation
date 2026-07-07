@@ -1,6 +1,7 @@
 import { AlertTriangle, MoreHorizontal, Users } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
+import { PageShell } from "@/components/PageShell";
 import { Skeleton } from "@/components/Skeleton";
 import { StatePanel } from "@/components/StatePanel";
 import { Badge } from "@/components/ui/badge";
@@ -54,11 +55,14 @@ export function AccountPage() {
   const [tab, setTab] = useState<Tab>("profile");
 
   return (
-    <div className="mx-auto max-w-[960px] px-6 py-8">
-      <h1 className="mb-5 text-[20px] font-semibold tracking-[-0.01em] text-foreground">
-        Account
-      </h1>
-
+    <PageShell
+      maxWidth="max-w-[960px]"
+      header={
+        <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-foreground">
+          Account
+        </h1>
+      }
+    >
       <div role="tablist" className="mb-7 flex gap-1 border-b border-border">
         <TabButton
           id="profile"
@@ -81,7 +85,7 @@ export function AccountPage() {
           <TeamTab />
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }
 

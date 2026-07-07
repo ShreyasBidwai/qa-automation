@@ -112,11 +112,13 @@ function renderRoute(pathname: string): ReactElement {
   if (segments[0] === "help" && segments.length === 1) return <HelpCenterPage />;
 
   if (segments[0] === "status") {
-    // In-shell the status page carried no page gutters (it rendered flush to the
-    // top bar and sidebar); give it the same balanced container the other screens use.
+    // Full-height + own scroll (ADR-0066): the window never scrolls; the status page
+    // scrolls its own body inside the app content region.
     return (
-      <main className="mx-auto max-w-[860px] px-6 py-8">
-        <SystemStatusPage />
+      <main className="h-full overflow-y-auto px-6 py-8">
+        <div className="mx-auto max-w-[860px]">
+          <SystemStatusPage />
+        </div>
       </main>
     );
   }
@@ -149,9 +151,13 @@ export function App() {
   // preserved through login).
   if (status === "anonymous") {
     if (clean === "/status") {
+      // Public (signed-out) status view renders straight into #root — give it its own
+      // full-height scroll so the window never scrolls (ADR-0066).
       return (
-        <main className="mx-auto max-w-3xl px-6 py-8">
-          <SystemStatusPage />
+        <main className="h-full overflow-y-auto px-6 py-8">
+          <div className="mx-auto max-w-3xl">
+            <SystemStatusPage />
+          </div>
         </main>
       );
     }

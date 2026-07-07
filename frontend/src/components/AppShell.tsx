@@ -175,7 +175,11 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
-        <div className="flex-1 overflow-y-auto">{children}</div>
+        {/* The content region is a bounded frame, not a page that scrolls (ADR-0066):
+            each view is full-height and scrolls its own body/sections. `overflow-y-auto`
+            is a safety net (a view that isn't height-managed degrades to a contained
+            scroll here rather than clipping) — it should not show in practice. */}
+        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
       </div>
     </div>
   );

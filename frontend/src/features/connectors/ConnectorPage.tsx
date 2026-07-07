@@ -1,6 +1,7 @@
 import { ClipboardList, GitBranch, type LucideIcon } from "lucide-react";
 
 import { Link } from "@/components/Link";
+import { PageShell } from "@/components/PageShell";
 import { Button } from "@/components/ui/button";
 
 /** Kinds of connector the sidebar exposes. */
@@ -48,7 +49,7 @@ const CONNECTORS: Record<ConnectorKind, ConnectorSpec> = {
 export function ConnectorPage({ kind }: { kind: ConnectorKind }) {
   const spec = CONNECTORS[kind];
   return (
-    <div className="mx-auto max-w-[860px] px-6 py-8 lg:px-8">
+    <PageShell maxWidth="max-w-[860px]">
       <header className="flex items-start gap-3.5">
         <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl border-[1.5px] border-marker">
           <spec.icon
@@ -98,6 +99,6 @@ export function ConnectorPage({ kind }: { kind: ConnectorKind }) {
           <Link to="/projects">Back to projects</Link>
         </Button>
       </div>
-    </div>
+    </PageShell>
   );
 }

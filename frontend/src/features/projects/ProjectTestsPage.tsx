@@ -8,6 +8,7 @@ import {
 import { useMemo, useState } from "react";
 
 import { Link } from "@/components/Link";
+import { PageShell } from "@/components/PageShell";
 import { Skeleton } from "@/components/Skeleton";
 import { StatePanel } from "@/components/StatePanel";
 import { Button } from "@/components/ui/button";
@@ -45,45 +46,49 @@ export function ProjectTestsPage({ projectId }: { projectId: string }) {
   const shown = type === "all" ? tests : tests.filter((t) => t.type === type);
 
   return (
-    <div className="mx-auto max-w-[1760px] px-6 py-8 lg:px-8">
-      <Link
-        to={`/projects/${projectId}`}
-        className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-        Project
-      </Link>
+    <PageShell
+      header={
+        <>
+          <Link
+            to={`/projects/${projectId}`}
+            className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+            Project
+          </Link>
 
-      <AuthoringBanner state={authoring} />
+          <AuthoringBanner state={authoring} />
 
-      <header className="mb-6 mt-3 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-[22px] font-semibold tracking-[-0.015em] text-foreground">
-            {runId ? "Tests from this run" : "Generated tests"}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {runId ? (
-              <>
-                Only the cases this run exercised.{" "}
-                <Link
-                  to={`/projects/${projectId}/tests`}
-                  className="text-accent hover:underline"
-                >
-                  View all tests
-                </Link>
-              </>
-            ) : (
-              "The runnable tests Polaris authored from the model — target, kind, and the actual code."
-            )}
-          </p>
-        </div>
-        {!loading && !error ? (
-          <span className="text-[13px] text-muted-foreground">
-            {total} {total === 1 ? "test" : "tests"}
-          </span>
-        ) : null}
-      </header>
-
+          <header className="mt-3 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h1 className="text-[22px] font-semibold tracking-[-0.015em] text-foreground">
+                {runId ? "Tests from this run" : "Generated tests"}
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {runId ? (
+                  <>
+                    Only the cases this run exercised.{" "}
+                    <Link
+                      to={`/projects/${projectId}/tests`}
+                      className="text-accent hover:underline"
+                    >
+                      View all tests
+                    </Link>
+                  </>
+                ) : (
+                  "The runnable tests Polaris authored from the model — target, kind, and the actual code."
+                )}
+              </p>
+            </div>
+            {!loading && !error ? (
+              <span className="text-[13px] text-muted-foreground">
+                {total} {total === 1 ? "test" : "tests"}
+              </span>
+            ) : null}
+          </header>
+        </>
+      }
+    >
       {loading ? (
         <div className="space-y-2.5">
           {[0, 1, 2, 3].map((i) => (
@@ -147,7 +152,7 @@ export function ProjectTestsPage({ projectId }: { projectId: string }) {
           </ul>
         </>
       )}
-    </div>
+    </PageShell>
   );
 }
 

@@ -1,7 +1,7 @@
 import { Search } from "lucide-react";
 import { type KeyboardEvent, useMemo, useRef, useState } from "react";
 
-import { PageHeader } from "@/components/PageHeader";
+import { PageShell } from "@/components/PageShell";
 import { Input } from "@/components/ui/input";
 
 import { HelpBlocks } from "./HelpBlocks";
@@ -49,99 +49,103 @@ export function HelpCenterPage() {
   }
 
   return (
-    <>
-      <PageHeader
-        title="Help"
-        description="What Polaris is, how it works, and what every symbol means."
-      />
-      <main className="flex-1 px-6 py-8">
-        <div className="mx-auto flex max-w-5xl flex-col gap-8 lg:flex-row">
-          {/* Left: search + filtered section list (the navigator). */}
-          <nav
-            aria-label="Help sections"
-            className="lg:sticky lg:top-20 lg:w-72 lg:shrink-0 lg:self-start"
-          >
-            <label htmlFor="help-search" className="sr-only">
-              Search help
-            </label>
-            <div className="relative">
-              <Search
-                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                aria-hidden="true"
-              />
-              <Input
-                id="help-search"
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={onSearchKeyDown}
-                placeholder="Search help…"
-                className="pl-9"
-                autoComplete="off"
-                aria-controls="help-section-list"
-              />
-            </div>
-
-            {query.trim() ? (
-              <p className="mt-2 px-1 text-xs text-muted-foreground" role="status">
-                {matches.length} of {HELP_SECTIONS.length} sections
-              </p>
-            ) : null}
-
-            <ul id="help-section-list" className="mt-2 space-y-0.5">
-              {matches.length === 0 ? (
-                <li className="px-3 py-2 text-sm text-muted-foreground">
-                  No sections match “{query.trim()}”. Try a word like trust, severity,
-                  or scope.
-                </li>
-              ) : (
-                matches.map((section) => (
-                  <li key={section.id}>
-                    <button
-                      type="button"
-                      onClick={() => jumpTo(section.id)}
-                      className="w-full rounded-md px-3 py-2 text-left text-sm text-foreground hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                    >
-                      <span className="block font-medium">{section.title}</span>
-                      <span className="mt-0.5 block text-xs text-muted-foreground">
-                        {section.summary}
-                      </span>
-                    </button>
-                  </li>
-                ))
-              )}
-            </ul>
-          </nav>
-
-          {/* Right: the full reference. Every section is anchored so jumps always land. */}
-          <div className="min-w-0 flex-1 space-y-10">
-            {HELP_SECTIONS.map((section) => {
-              const headingId = `help-${section.id}`;
-              return (
-                <section key={section.id} aria-labelledby={headingId}>
-                  <h2
-                    id={headingId}
-                    tabIndex={-1}
-                    ref={(el) => {
-                      if (el) headings.current.set(section.id, el);
-                      else headings.current.delete(section.id);
-                    }}
-                    className="scroll-mt-24 text-lg font-medium tracking-tight text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-4 focus-visible:ring-offset-background"
-                  >
-                    {section.title}
-                  </h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {section.summary}
-                  </p>
-                  <div className="mt-4">
-                    <HelpBlocks blocks={section.body} />
-                  </div>
-                </section>
-              );
-            })}
-          </div>
+    <PageShell
+      maxWidth="max-w-5xl"
+      header={
+        <div>
+          <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-foreground">
+            Help
+          </h1>
+          <p className="mt-0.5 text-[13px] text-status-neutral-solid">
+            What Polaris is, how it works, and what every symbol means.
+          </p>
         </div>
-      </main>
-    </>
+      }
+    >
+      <div className="flex flex-col gap-8 lg:flex-row">
+        {/* Left: search + filtered section list (the navigator). */}
+        <nav
+          aria-label="Help sections"
+          className="lg:sticky lg:top-20 lg:w-72 lg:shrink-0 lg:self-start"
+        >
+          <label htmlFor="help-search" className="sr-only">
+            Search help
+          </label>
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              id="help-search"
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={onSearchKeyDown}
+              placeholder="Search help…"
+              className="pl-9"
+              autoComplete="off"
+              aria-controls="help-section-list"
+            />
+          </div>
+
+          {query.trim() ? (
+            <p className="mt-2 px-1 text-xs text-muted-foreground" role="status">
+              {matches.length} of {HELP_SECTIONS.length} sections
+            </p>
+          ) : null}
+
+          <ul id="help-section-list" className="mt-2 space-y-0.5">
+            {matches.length === 0 ? (
+              <li className="px-3 py-2 text-sm text-muted-foreground">
+                No sections match “{query.trim()}”. Try a word like trust, severity, or
+                scope.
+              </li>
+            ) : (
+              matches.map((section) => (
+                <li key={section.id}>
+                  <button
+                    type="button"
+                    onClick={() => jumpTo(section.id)}
+                    className="w-full rounded-md px-3 py-2 text-left text-sm text-foreground hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  >
+                    <span className="block font-medium">{section.title}</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {section.summary}
+                    </span>
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </nav>
+
+        {/* Right: the full reference. Every section is anchored so jumps always land. */}
+        <div className="min-w-0 flex-1 space-y-10">
+          {HELP_SECTIONS.map((section) => {
+            const headingId = `help-${section.id}`;
+            return (
+              <section key={section.id} aria-labelledby={headingId}>
+                <h2
+                  id={headingId}
+                  tabIndex={-1}
+                  ref={(el) => {
+                    if (el) headings.current.set(section.id, el);
+                    else headings.current.delete(section.id);
+                  }}
+                  className="scroll-mt-24 text-lg font-medium tracking-tight text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-4 focus-visible:ring-offset-background"
+                >
+                  {section.title}
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">{section.summary}</p>
+                <div className="mt-4">
+                  <HelpBlocks blocks={section.body} />
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      </div>
+    </PageShell>
   );
 }

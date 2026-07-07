@@ -1,6 +1,7 @@
 import { Radio } from "lucide-react";
 
 import { Link } from "@/components/Link";
+import { PageShell } from "@/components/PageShell";
 import { SkeletonRows } from "@/components/Skeleton";
 import { StatePanel } from "@/components/StatePanel";
 import { Button } from "@/components/ui/button";
@@ -21,16 +22,18 @@ export function OngoingRunPage() {
   const { runId, loading, error } = useActiveRun();
 
   return (
-    <div className="mx-auto max-w-[1760px] px-4 py-8 lg:px-6">
-      <header className="mb-5">
-        <h1 className="text-[22px] font-semibold tracking-[-0.015em] text-foreground">
-          Ongoing run
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          The run currently in progress — watched live, one phase at a time.
-        </p>
-      </header>
-
+    <PageShell
+      header={
+        <div>
+          <h1 className="text-[22px] font-semibold tracking-[-0.015em] text-foreground">
+            Ongoing run
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            The run currently in progress — watched live, one phase at a time.
+          </p>
+        </div>
+      }
+    >
       {loading ? (
         <SkeletonRows label="Looking for a run in progress…" />
       ) : error ? (
@@ -60,6 +63,6 @@ export function OngoingRunPage() {
           }
         />
       )}
-    </div>
+    </PageShell>
   );
 }
