@@ -1,6 +1,7 @@
 import { AlertTriangle, LayoutDashboard } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { DeltaBadge } from "@/components/DeltaBadge";
 import { Link } from "@/components/Link";
 import { PageShell } from "@/components/PageShell";
 import { Skeleton } from "@/components/Skeleton";
@@ -16,7 +17,7 @@ import { relativeTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 import { modeLabel } from "../runs/modeLabel";
-import { formatPercent } from "../runs/runMetrics";
+import { formatPercent, passRateDelta } from "../runs/runMetrics";
 import { passTone } from "../runs/runMetrics";
 import { DonutChart, LegendDot, TrendArea } from "./charts";
 import { useAccountDashboard } from "./useAccountDashboard";
@@ -263,16 +264,32 @@ function Card({ label, children }: { label: string; children: React.ReactNode })
 
 function TrendCard({ data }: { data: AccountDashboard }) {
   const points = data.trend.map((p) => ({ label: p.date, value: p.pass_rate }));
-  const hasData = points.some((p) => p.value !== null);
+  const nonNullPoints = points.filter(
+    (p): p is { label: string; value: number } => p.value !== null,
+  );
+  // A single point is a dot, not a trend — the sparkline only earns its keep with
+  // at least two, and the delta needs a first and a last to compare.
+  const hasTrend = nonNullPoints.length >= 2;
+  const delta = hasTrend
+    ? passRateDelta(
+        nonNullPoints[nonNullPoints.length - 1].value,
+        nonNullPoints[0].value,
+      )
+    : null;
   return (
     <section className="rounded-xl border border-border bg-surface p-5 shadow-card">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-foreground">Pass-rate trend</h2>
-        <span className="text-xs text-status-neutral-solid">
-          last {data.range_days} days
-        </span>
+        <div className="flex items-center gap-2.5">
+          {delta ? (
+            <DeltaBadge delta={delta} label={`vs ${nonNullPoints[0].label}`} />
+          ) : null}
+          <span className="text-xs text-status-neutral-solid">
+            last {data.range_days} days
+          </span>
+        </div>
       </div>
-      {hasData ? (
+      {hasTrend ? (
         <div className="mt-4">
           <TrendArea points={points} />
           <div className="mt-1 flex justify-between font-mono text-[10.5px] text-marker">
@@ -280,6 +297,8 @@ function TrendCard({ data }: { data: AccountDashboard }) {
             <span>{points[points.length - 1]?.label}</span>
           </div>
         </div>
+      ) : nonNullPoints.length === 1 ? (
+        <EmptyChart message="Not enough history yet — one more run with data will start the trend." />
       ) : (
         <EmptyChart message="No runs in this window yet." />
       )}
