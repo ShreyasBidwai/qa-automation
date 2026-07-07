@@ -47,6 +47,7 @@ export function ProjectTestsPage({ projectId }: { projectId: string }) {
 
   return (
     <PageShell
+      scroll={false}
       header={
         <>
           <Link
@@ -140,7 +141,8 @@ export function ProjectTestsPage({ projectId }: { projectId: string }) {
             ))}
           </div>
 
-          <ul className="space-y-2.5">
+          {/* The test list is the overflow — it scrolls internally (ADR-0066). */}
+          <ul className="min-h-0 flex-1 space-y-2.5 overflow-y-auto pb-1 pr-0.5">
             {shown.map((test) => (
               <TestRow
                 key={test.id}

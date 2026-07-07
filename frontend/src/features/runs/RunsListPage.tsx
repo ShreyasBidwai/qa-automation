@@ -66,6 +66,7 @@ export function RunsListPage() {
 
   return (
     <PageShell
+      scroll={false}
       header={
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -274,9 +275,9 @@ function RunsTable({
     );
   }
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-surface">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-surface">
       <div
-        className={`grid ${RUN_COLS} border-b border-border-subtle bg-background px-5 py-2.5`}
+        className={`grid shrink-0 ${RUN_COLS} border-b border-border-subtle bg-background px-5 py-2.5`}
       >
         <ColHead>Run</ColHead>
         <ColHead>Mode</ColHead>
@@ -287,11 +288,14 @@ function RunsTable({
         <span aria-hidden="true" />
       </div>
 
-      {visible.map((run) => (
-        <RunRow key={run.id} run={run} />
-      ))}
+      {/* The rows are the overflow — they scroll inside the card (ADR-0066). */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {visible.map((run) => (
+          <RunRow key={run.id} run={run} />
+        ))}
+      </div>
 
-      <div className="px-5 pb-3">
+      <div className="shrink-0 border-t border-border-subtle px-5 py-3">
         <Pagination
           offset={runs.offset}
           pageSize={runs.pageSize}

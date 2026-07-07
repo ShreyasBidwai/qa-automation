@@ -56,6 +56,7 @@ export function DashboardPage() {
 
   return (
     <PageShell
+      scroll={false}
       header={
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -131,14 +132,18 @@ function RangeFilter({
 }
 
 function DashboardBody({ data }: { data: AccountDashboard }) {
+  // Fits the viewport (ADR-0066): the cards + charts are fixed; only the bottom row's
+  // two panels (project health, recent runs) scroll INTERNALLY — no page-body scroll.
   return (
-    <div className="space-y-3.5">
-      <HeadlineCards data={data} />
-      <div className="grid gap-3.5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+    <div className="flex h-full min-h-0 flex-col gap-3.5">
+      <div className="shrink-0">
+        <HeadlineCards data={data} />
+      </div>
+      <div className="grid shrink-0 gap-3.5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <TrendCard data={data} />
         <OutcomesCard data={data} />
       </div>
-      <div className="grid gap-3.5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+      <div className="grid min-h-0 flex-1 gap-3.5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <ProjectHealthCard rows={data.project_health} />
         <RecentRunsCard runs={data.recent_runs} />
       </div>
@@ -375,8 +380,8 @@ const STATUS_PILL: Record<string, { label: string; cls: string }> = {
 
 function ProjectHealthCard({ rows }: { rows: ProjectHealthItem[] }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-card">
-      <div className="flex items-center justify-between px-5 py-3.5">
+    <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-card">
+      <div className="flex shrink-0 items-center justify-between px-5 py-3.5">
         <h2 className="text-sm font-semibold text-foreground">Project health</h2>
         <Link
           to="/projects"
@@ -385,7 +390,7 @@ function ProjectHealthCard({ rows }: { rows: ProjectHealthItem[] }) {
           All projects →
         </Link>
       </div>
-      <div className="grid grid-cols-[minmax(0,2fr)_1fr_1.2fr_0.8fr_0.9fr] border-b border-border-subtle bg-background px-5 py-2">
+      <div className="grid shrink-0 grid-cols-[minmax(0,2fr)_1fr_1.2fr_0.8fr_0.9fr] border-b border-border-subtle bg-background px-5 py-2">
         {["Project", "Status", "Pass rate", "Findings", "Last run"].map((h) => (
           <span
             key={h}
@@ -395,11 +400,14 @@ function ProjectHealthCard({ rows }: { rows: ProjectHealthItem[] }) {
           </span>
         ))}
       </div>
-      {rows.length === 0 ? (
-        <p className="px-5 py-6 text-sm text-muted-foreground">No projects yet.</p>
-      ) : (
-        rows.map((row) => <ProjectHealthRow key={row.project_id} row={row} />)
-      )}
+      {/* The rows are the overflow: they scroll INSIDE the card (ADR-0066). */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {rows.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-muted-foreground">No projects yet.</p>
+        ) : (
+          rows.map((row) => <ProjectHealthRow key={row.project_id} row={row} />)
+        )}
+      </div>
     </section>
   );
 }
@@ -455,39 +463,42 @@ function ProjectHealthRow({ row }: { row: ProjectHealthItem }) {
 
 function RecentRunsCard({ runs }: { runs: RecentRunItem[] }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-card">
-      <div className="px-5 py-3.5">
+    <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-card">
+      <div className="shrink-0 px-5 py-3.5">
         <h2 className="text-sm font-semibold text-foreground">Recent runs</h2>
       </div>
-      {runs.length === 0 ? (
-        <p className="px-5 pb-5 text-sm text-muted-foreground">
-          No runs yet — start one from a project.
-        </p>
-      ) : (
-        <ul>
-          {runs.map((run) => (
-            <li key={run.run_id}>
-              <Link
-                to={`/runs/${run.run_id}/findings`}
-                className="flex items-center gap-3 border-t border-border-subtle px-5 py-2.5 transition-colors hover:bg-background"
-              >
-                <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
-                  {run.project_name}
-                </span>
-                <span className="rounded-[5px] bg-status-neutral-bg px-[7px] py-0.5 font-mono text-[10px] text-status-neutral-fg">
-                  {modeLabel(run.mode)}
-                </span>
-                <span className="w-10 text-right text-xs tabular-nums text-status-neutral-fg">
-                  {formatPercent(run.pass_rate)}
-                </span>
-                <span className="w-16 text-right text-[11px] text-status-neutral-solid">
-                  {relativeTime(run.created_at)}
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
+      {/* The run list is the overflow: it scrolls INSIDE the card (ADR-0066). */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {runs.length === 0 ? (
+          <p className="px-5 pb-5 text-sm text-muted-foreground">
+            No runs yet — start one from a project.
+          </p>
+        ) : (
+          <ul>
+            {runs.map((run) => (
+              <li key={run.run_id}>
+                <Link
+                  to={`/runs/${run.run_id}/findings`}
+                  className="flex items-center gap-3 border-t border-border-subtle px-5 py-2.5 transition-colors hover:bg-background"
+                >
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
+                    {run.project_name}
+                  </span>
+                  <span className="rounded-[5px] bg-status-neutral-bg px-[7px] py-0.5 font-mono text-[10px] text-status-neutral-fg">
+                    {modeLabel(run.mode)}
+                  </span>
+                  <span className="w-10 text-right text-xs tabular-nums text-status-neutral-fg">
+                    {formatPercent(run.pass_rate)}
+                  </span>
+                  <span className="w-16 text-right text-[11px] text-status-neutral-solid">
+                    {relativeTime(run.created_at)}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   );
 }

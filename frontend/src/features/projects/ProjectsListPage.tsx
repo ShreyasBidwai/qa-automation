@@ -33,6 +33,7 @@ export function ProjectsListPage() {
 
   return (
     <PageShell
+      scroll={false}
       header={
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -82,9 +83,9 @@ export function ProjectsListPage() {
           }
         />
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border bg-surface">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-surface">
           <div
-            className={`grid ${COLS} border-b border-border-subtle bg-background px-5 py-2.5`}
+            className={`grid shrink-0 ${COLS} border-b border-border-subtle bg-background px-5 py-2.5`}
           >
             <ColHead>Project</ColHead>
             <ColHead>Stack</ColHead>
@@ -93,11 +94,14 @@ export function ProjectsListPage() {
             <ColHead>Status</ColHead>
           </div>
 
-          {list.items.map((project) => (
-            <ProjectRow key={project.id} project={project} />
-          ))}
+          {/* The rows are the overflow — they scroll inside the card (ADR-0066). */}
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {list.items.map((project) => (
+              <ProjectRow key={project.id} project={project} />
+            ))}
+          </div>
 
-          <div className="px-5 pb-3">
+          <div className="shrink-0 border-t border-border-subtle px-5 py-3">
             <Pagination
               offset={list.offset}
               pageSize={list.pageSize}
