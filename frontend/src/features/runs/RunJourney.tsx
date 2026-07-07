@@ -84,9 +84,15 @@ export function RunJourney({ runId }: { runId: string }) {
   }
 
   return (
-    <div className="space-y-5">
-      {projectId ? <RunProjectHeading projectId={projectId} /> : null}
-      <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-card">
+    // Full-height (ADR-0066): the heading + summary + phase tabs stay put; the selected
+    // phase's steps scroll INSIDE their own section and auto-follow the latest step.
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      {projectId ? (
+        <div className="shrink-0">
+          <RunProjectHeading projectId={projectId} />
+        </div>
+      ) : null}
+      <section className="shrink-0 overflow-hidden rounded-xl border border-border bg-surface shadow-card">
         <RunSummaryRow
           runId={runId}
           connection={connection}
@@ -356,9 +362,30 @@ function PhaseBody({
   const pending = group.events.length === 0;
   const isGenerate = group.spec.key === "generate";
 
+  // Auto-follow the latest step, like a live log: stick the step list to the bottom as
+  // new steps stream in — but ONLY while the operator is already at the bottom, so
+  // scrolling up to read an earlier step is never hijacked. Re-sticks on phase switch.
+  const listRef = useRef<HTMLUListElement>(null);
+  const stick = useRef(true);
+  const onScroll = () => {
+    const el = listRef.current;
+    if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 28;
+  };
+  useEffect(() => {
+    stick.current = true; // a fresh phase starts pinned to its latest step
+  }, [group.spec.key]);
+  useEffect(() => {
+    const el = listRef.current;
+    if (el && stick.current) el.scrollTop = el.scrollHeight;
+  }, [group.spec.key, group.events.length, currentSeq]);
+
   return (
-    <section role="tabpanel" aria-label={group.spec.label} className="space-y-4">
-      <div className="flex items-baseline gap-2">
+    <section
+      role="tabpanel"
+      aria-label={group.spec.label}
+      className="flex min-h-0 flex-1 flex-col gap-4"
+    >
+      <div className="flex shrink-0 items-baseline gap-2">
         <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-foreground">
           {group.spec.label}
         </h2>
@@ -376,12 +403,16 @@ function PhaseBody({
 
       {/* Generate: one link through to the full generated-tests page. */}
       {isGenerate && projectId ? (
-        <GeneratedTestsCTA projectId={projectId} runId={runId} />
+        <div className="shrink-0">
+          <GeneratedTestsCTA projectId={projectId} runId={runId} />
+        </div>
       ) : null}
 
       {/* Explore/Execute: the live browser window as Polaris drives the app. */}
       {liveFrame ? (
-        <LiveBrowserFrame runId={runId} event={liveFrame} live={live} />
+        <div className="shrink-0">
+          <LiveBrowserFrame runId={runId} event={liveFrame} live={live} />
+        </div>
       ) : null}
 
       {pending ? (
@@ -391,15 +422,19 @@ function PhaseBody({
             : "Waiting for the earlier phases to finish."}
         </p>
       ) : (
-        <div className="rounded-xl border border-border bg-surface shadow-card">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-card">
           {isGenerate ? (
-            <p className="border-b border-border-subtle px-4 py-2 text-[12px] font-medium uppercase tracking-[0.05em] text-status-neutral-solid">
+            <p className="shrink-0 border-b border-border-subtle px-4 py-2 text-[12px] font-medium uppercase tracking-[0.05em] text-status-neutral-solid">
               Generation steps
             </p>
           ) : null}
-          {/* Only ONE phase's steps show — the page's single scroll handles length,
-              so there's no nested scroller and no cross-phase scrolling. */}
-          <ul className="space-y-1.5 p-3">
+          {/* The steps are the overflow: they scroll INSIDE this section and auto-follow
+              the latest step (ADR-0066), so the run reads like a live log. */}
+          <ul
+            ref={listRef}
+            onScroll={onScroll}
+            className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-3"
+          >
             {group.events.map((event) => (
               <StepRow
                 key={event.seq}

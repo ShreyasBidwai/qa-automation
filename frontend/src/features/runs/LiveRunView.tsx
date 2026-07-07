@@ -15,16 +15,16 @@ import { RunJourney } from "./RunJourney";
  */
 export function LiveRunView({ runId }: { runId: string }) {
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-[1760px] px-4 py-8 lg:px-6">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-[1760px] flex-col px-4 py-6 lg:px-6">
         <Link
           to={`/runs/${runId}`}
-          className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
+          className="inline-flex shrink-0 items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
           Run overview
         </Link>
-        <div className="mt-4">
+        <div className="mt-4 min-h-0 flex-1">
           <RunJourney runId={runId} />
         </div>
       </div>

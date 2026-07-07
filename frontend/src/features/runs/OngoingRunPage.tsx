@@ -23,6 +23,7 @@ export function OngoingRunPage() {
 
   return (
     <PageShell
+      scroll={false}
       header={
         <div>
           <h1 className="text-[22px] font-semibold tracking-[-0.015em] text-foreground">
