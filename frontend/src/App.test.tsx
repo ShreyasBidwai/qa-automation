@@ -36,16 +36,19 @@ import { accountApi, authApi, healthApi, projectApi, runApi } from "@/lib/api/cl
 import { ToastProvider } from "@/components/ToastProvider";
 import { AuthProvider } from "@/lib/auth/AuthContext";
 import { clearToken, setToken } from "@/lib/auth/session";
+import { ThemeProvider } from "@/lib/theme/ThemeProvider";
 
 import { App } from "./App";
 
 function renderApp() {
   return render(
-    <ToastProvider>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
-    </ToastProvider>,
+    <ThemeProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </ToastProvider>
+    </ThemeProvider>,
   );
 }
 
@@ -54,6 +57,8 @@ describe("App auth gating", () => {
     clearToken();
     vi.clearAllMocks();
     window.history.pushState({}, "", "/");
+    localStorage.clear();
+    document.documentElement.removeAttribute("data-theme");
     // useRunLifecycleToasts (mounted inside AppShell) polls this on mount.
     vi.mocked(runApi.active).mockResolvedValue({
       ok: true,

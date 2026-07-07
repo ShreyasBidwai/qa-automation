@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ToastProvider } from "./components/ToastProvider";
 import { AuthProvider } from "./lib/auth/AuthContext";
+import { ThemeProvider } from "./lib/theme/ThemeProvider";
 import { App } from "./App";
 import "./index.css";
 
@@ -15,11 +16,13 @@ if (!container) {
 createRoot(container).render(
   <StrictMode>
     <ErrorBoundary>
-      <ToastProvider>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
-      </ToastProvider>
+      <ThemeProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </ToastProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   </StrictMode>,
 );

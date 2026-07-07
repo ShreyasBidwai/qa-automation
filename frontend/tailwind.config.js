@@ -3,7 +3,9 @@
  * centralized, not inlined per component). Every colour resolves to a CSS
  * variable defined in src/index.css, so components reference semantic class
  * names (bg-surface, text-foreground, bg-status-pass-bg, …) and never raw hex.
- * Light mode only.
+ * Light AND dark: each variable has a light value on `:root` and a dark value on
+ * `:root[data-theme="dark"]` in index.css (ADR-0069) — this file never changes
+ * between themes, only the variables it points at do.
  *
  * @type {import('tailwindcss').Config}
  */

@@ -3,11 +3,13 @@
 @tailwind utilities;
 
 /*
- * Design tokens — the single source of truth for the light design system
- * (PRD §9: light, professional, content-first). Tinted-neutral (zinc) base, one
- * restrained indigo accent reserved for primary actions / active state, and
+ * Design tokens — the single source of truth for the design system (PRD §9: light,
+ * professional, content-first — now themed, ADR-0069). Tinted-neutral (zinc) base,
+ * one restrained indigo accent reserved for primary actions / active state, and
  * semantic status colours each with a light badge variant. Components consume
  * these only through the Tailwind theme (see tailwind.config.js) — never raw hex.
+ * The `:root[data-theme="dark"]` block below redefines every one of these for dark
+ * mode; nothing else in the app needs to know a theme exists.
  */
 @layer base {
   :root {
@@ -105,6 +107,94 @@
     --color-history-flaky-bg: #f5f3ff; /* violet-50 */
 
     --radius: 0.5rem;
+  }
+
+  /*
+   * Dark theme (ADR-0069) — the same tokens, flipped. Every component already
+   * reads colour only through these CSS variables (never raw hex), so this block
+   * is the ENTIRE dark-mode implementation: no `dark:` utility is sprinkled
+   * anywhere else. Applied via `data-theme="dark"` on `<html>` (ThemeProvider);
+   * an inline script in index.html sets it before first paint to avoid a flash.
+   * Each family keeps the light version's relative contrast (bg ≪ fg ≈ solid ≪
+   * border, in visual weight) but shifted to the dark end of the same hue scale.
+   */
+  :root[data-theme="dark"] {
+    /* Surfaces & text (zinc family) */
+    --color-background: #09090b; /* zinc-950 */
+    --color-surface: #18181b; /* zinc-900 */
+    --color-surface-selected: #1e1b4b; /* indigo-950 — selected row keeps an accent tint */
+    --color-border: #3f3f46; /* zinc-700 */
+    --color-border-subtle: #27272a; /* zinc-800 — a smaller step off the surface */
+    --color-marker: #52525b; /* zinc-600 */
+    --color-foreground: #fafafa; /* zinc-50 */
+    --color-foreground-secondary: #d4d4d8; /* zinc-300 */
+    --color-muted-foreground: #a1a1aa; /* zinc-400 */
+
+    /* Accent — a touch lighter than the light-mode indigo for contrast on dark */
+    --color-accent: #6366f1; /* indigo-500 */
+    --color-accent-hover: #818cf8; /* indigo-400 — hover lightens, not darkens */
+    --color-accent-foreground: #ffffff;
+    --color-accent-subtle: #1e1b4b; /* indigo-950 — active nav / soft accent fill */
+    /* --color-accent-on-dark is unchanged: it's already tuned for a dark surface
+       (the reversed wordmark chip), independent of the app-wide theme. */
+
+    --color-status-pass-bg: #022c22; /* emerald-950 */
+    --color-status-pass-fg: #34d399; /* emerald-400 */
+    --color-status-pass-solid: #10b981; /* emerald-500 */
+    --color-status-pass-border: #065f46; /* emerald-800 */
+
+    --color-status-fail-bg: #450a0a; /* red-950 */
+    --color-status-fail-fg: #f87171; /* red-400 */
+    --color-status-fail-solid: #ef4444; /* red-500 */
+    --color-status-fail-border: #991b1b; /* red-800 */
+
+    --color-status-flaky-bg: #451a03; /* amber-950 */
+    --color-status-flaky-fg: #fbbf24; /* amber-400 */
+    --color-status-flaky-solid: #f59e0b; /* amber-500 */
+
+    --color-status-error-bg: #431407; /* orange-950 */
+    --color-status-error-fg: #fb923c; /* orange-400 */
+    --color-status-error-solid: #f97316; /* orange-500 */
+
+    --color-status-info-bg: #172554; /* blue-950 */
+    --color-status-info-fg: #60a5fa; /* blue-400 */
+    --color-status-info-solid: #3b82f6; /* blue-500 */
+
+    --color-status-neutral-bg: #27272a; /* zinc-800 */
+    --color-status-neutral-fg: #a1a1aa; /* zinc-400 */
+    --color-status-neutral-solid: #a1a1aa; /* zinc-400 — already a mid-gray, reads on both */
+
+    --color-trust-rule-solid: #10b981; /* emerald-500 */
+    --color-trust-rule-bg: #022c22; /* emerald-950 */
+    --color-trust-rule-fg: #34d399; /* emerald-400 */
+    --color-trust-rule-border: #065f46; /* emerald-800 */
+    --color-trust-char-solid: #f59e0b; /* amber-500 */
+    --color-trust-char-bg: #451a03; /* amber-950 */
+    --color-trust-char-fg: #fbbf24; /* amber-400 */
+    --color-trust-char-border: #92400e; /* amber-800 */
+    --color-trust-spec-solid: #3b82f6; /* blue-500 */
+    --color-trust-spec-bg: #172554; /* blue-950 */
+    --color-trust-spec-fg: #60a5fa; /* blue-400 */
+    --color-trust-spec-border: #1e40af; /* blue-800 */
+
+    --color-severity-critical-fg: #f87171; /* red-400 */
+    --color-severity-critical-bg: #450a0a; /* red-950 */
+    --color-severity-critical-dot: #ef4444; /* red-500 */
+    --color-severity-major-fg: #fbbf24; /* amber-400 */
+    --color-severity-major-bg: #451a03; /* amber-950 */
+    --color-severity-major-dot: #f59e0b; /* amber-500 */
+    --color-severity-minor-fg: #94a3b8; /* slate-400 */
+    --color-severity-minor-bg: #0f172a; /* slate-900 */
+    --color-severity-minor-dot: #64748b; /* slate-500 */
+
+    --color-history-new-fg: #60a5fa; /* blue-400 */
+    --color-history-new-bg: #172554; /* blue-950 */
+    --color-history-regression-fg: #fbbf24; /* amber-400 */
+    --color-history-regression-bg: #451a03; /* amber-950 */
+    --color-history-known-fg: #a1a1aa; /* zinc-400 */
+    --color-history-known-bg: #27272a; /* zinc-800 */
+    --color-history-flaky-fg: #a78bfa; /* violet-400 */
+    --color-history-flaky-bg: #2e1065; /* violet-950 */
   }
 
   * {
@@ -206,5 +296,15 @@
 
   .animate-fade-in {
     animation: fade-in 600ms ease-out;
+  }
+
+  /* A black drop-shadow reads as invisible against a near-black surface — swap the
+   * card elevation for a faint light ring + a deeper shadow so cards still read as
+   * lifted in dark mode (ADR-0069). */
+  [data-theme="dark"] .shadow-card {
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.4),
+      0 4px 12px rgba(0, 0, 0, 0.25),
+      0 0 0 1px rgba(255, 255, 255, 0.05);
   }
 }

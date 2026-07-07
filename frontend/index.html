@@ -4,6 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Polaris — QA automation platform</title>
+    <!-- Sets the theme before first paint (same storage key as ThemeProvider, ADR-0069)
+         so a dark-mode user never sees a light flash while React boots. -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("polaris:theme");
+          var theme =
+            stored === "light" || stored === "dark"
+              ? stored
+              : window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
+          document.documentElement.setAttribute("data-theme", theme);
+        } catch (e) {
+          // localStorage/matchMedia unavailable (e.g. privacy mode) — default light.
+        }
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!-- Inter (UI, weights 400/500/600) + JetBrains Mono (code/paths/IDs). -->

@@ -8,9 +8,11 @@ import {
   ListChecks,
   LogOut,
   Menu,
+  Moon,
   Radio,
   Search,
   Settings as SettingsIcon,
+  Sun,
   User,
   Users,
   X,
@@ -26,6 +28,7 @@ import { useRunLifecycleToasts } from "@/features/runs/useRunLifecycleToasts";
 import type { AuthUser } from "@/lib/api/types";
 import { useAuth } from "@/lib/auth/useAuth";
 import { useLocation } from "@/lib/router";
+import { useTheme } from "@/lib/theme/useTheme";
 import { cn } from "@/lib/utils";
 
 interface NavEntry {
@@ -327,6 +330,7 @@ function TopBar({
             ⌘K
           </kbd>
         </button>
+        <ThemeToggle />
         <Link
           to="/account"
           aria-label="Your account"
@@ -336,6 +340,27 @@ function TopBar({
         </Link>
       </div>
     </header>
+  );
+}
+
+/** Quick-access light/dark toggle (ADR-0069) — also lives in Settings as the fuller,
+ *  labeled control; this is the always-in-reach one. */
+function ThemeToggle() {
+  const { theme, toggleTheme } = useTheme();
+  const isDark = theme === "dark";
+  return (
+    <button
+      type="button"
+      onClick={toggleTheme}
+      aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
+      className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"
+    >
+      {isDark ? (
+        <Sun className="h-4 w-4" aria-hidden="true" />
+      ) : (
+        <Moon className="h-4 w-4" aria-hidden="true" />
+      )}
+    </button>
   );
 }
 

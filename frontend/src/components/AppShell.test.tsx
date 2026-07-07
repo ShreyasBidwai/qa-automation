@@ -17,17 +17,20 @@ vi.mock("@/lib/api/client", () => ({
 import { runApi, searchApi } from "@/lib/api/client";
 import { AuthProvider } from "@/lib/auth/AuthContext";
 import { clearToken } from "@/lib/auth/session";
+import { ThemeProvider } from "@/lib/theme/ThemeProvider";
 import { ToastProvider } from "@/components/ToastProvider";
 
 import { AppShell } from "./AppShell";
 
 function renderShell(content: ReactNode) {
   return render(
-    <ToastProvider>
-      <AuthProvider>
-        <AppShell>{content}</AppShell>
-      </AuthProvider>
-    </ToastProvider>,
+    <ThemeProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <AppShell>{content}</AppShell>
+        </AuthProvider>
+      </ToastProvider>
+    </ThemeProvider>,
   );
 }
 
@@ -35,6 +38,8 @@ describe("AppShell", () => {
   beforeEach(() => {
     clearToken();
     window.history.pushState({}, "", "/");
+    localStorage.clear();
+    document.documentElement.removeAttribute("data-theme");
     // useRunLifecycleToasts polls this on mount — default to "nothing running" so
     // tests that don't care about it never see an unmocked-call crash.
     vi.mocked(runApi.active).mockResolvedValue({
@@ -184,6 +189,19 @@ describe("AppShell", () => {
 
       expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull();
       expect(window.location.pathname).toBe("/projects");
+    });
+  });
+
+  describe("theme toggle (ADR-0069)", () => {
+    it("defaults to light and switches the whole document to dark on click", () => {
+      renderShell(<div>content</div>);
+      expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+
+      fireEvent.click(screen.getByRole("button", { name: "Switch to dark theme" }));
+      expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+      expect(
+        screen.getByRole("button", { name: "Switch to light theme" }),
+      ).toBeInTheDocument();
     });
   });
 });
