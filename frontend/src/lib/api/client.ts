@@ -44,6 +44,8 @@ import type {
   RunListResponse,
   RunResponse,
   RunStatus,
+  SearchResponse,
+  SearchResultType,
   SignInBody,
   SignUpBody,
   TestCaseListResponse,
@@ -262,6 +264,18 @@ export const accountApi = {
   /** GET /account/dashboard — account-wide health + a `rangeDays` trend (ADR-0065). */
   dashboard: (rangeDays: number) =>
     getJson<AccountDashboard>(`${API_BASE}/account/dashboard?range_days=${rangeDays}`),
+};
+
+/** Global name search (ADR-0068) — the ⌘K command palette. Org-scoped server-side;
+ *  never a client-side filter over an already-fetched page (see the ADR). */
+export const searchApi = {
+  /** GET /search?q=…&types=…&limit=… — omit `types` for every kind, newest first. */
+  search: (q: string, types?: SearchResultType[], limit?: number) => {
+    const params = new URLSearchParams({ q });
+    if (types && types.length > 0) params.set("types", types.join(","));
+    if (limit != null) params.set("limit", String(limit));
+    return getJson<SearchResponse>(`${API_BASE}/search?${params.toString()}`);
+  },
 };
 
 function pageQuery({ limit, offset }: PageParams): string {

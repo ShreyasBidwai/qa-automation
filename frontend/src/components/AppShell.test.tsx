@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api/client", () => ({
@@ -9,8 +9,10 @@ vi.mock("@/lib/api/client", () => ({
     signOut: vi.fn(),
     updateProfile: vi.fn(),
   },
+  searchApi: { search: vi.fn() },
 }));
 
+import { searchApi } from "@/lib/api/client";
 import { AuthProvider } from "@/lib/auth/AuthContext";
 import { clearToken } from "@/lib/auth/session";
 
@@ -118,5 +120,41 @@ describe("AppShell", () => {
     expect(primary.getByRole("link", { name: "Ongoing run" })).not.toHaveAttribute(
       "aria-current",
     );
+  });
+
+  describe("command palette (ADR-0068)", () => {
+    beforeEach(() => {
+      vi.mocked(searchApi.search).mockReset();
+    });
+
+    it("opens on clicking the search button", () => {
+      render(
+        <AuthProvider>
+          <AppShell>
+            <div>content</div>
+          </AppShell>
+        </AuthProvider>,
+      );
+      expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
+
+      fireEvent.click(screen.getByText("Search findings…"));
+      expect(
+        screen.getByRole("dialog", { name: "Command palette" }),
+      ).toBeInTheDocument();
+    });
+
+    it("opens on Ctrl+K from anywhere in the shell", () => {
+      render(
+        <AuthProvider>
+          <AppShell>
+            <div>content</div>
+          </AppShell>
+        </AuthProvider>,
+      );
+      fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+      expect(
+        screen.getByRole("dialog", { name: "Command palette" }),
+      ).toBeInTheDocument();
+    });
   });
 });

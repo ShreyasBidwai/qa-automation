@@ -22,6 +22,7 @@ from .api.ops import router as ops_router
 from .api.orgs import router as orgs_router
 from .api.projects import router as projects_router
 from .api.runs import router as runs_router
+from .api.search import router as search_router
 from .core.config import get_settings
 from .core.errors import register_exception_handlers
 from .core.lifespan import lifespan
@@ -72,5 +73,6 @@ def create_app() -> FastAPI:
     app.include_router(incidents_router)
     app.include_router(heals_router)
     app.include_router(tests_router)
+    app.include_router(search_router)
 
     return app

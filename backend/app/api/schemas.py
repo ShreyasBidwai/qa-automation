@@ -1021,3 +1021,23 @@ class AccountDashboardResponse(BaseModel):
     pass_rate: float | None
     trend: list[TrendPointItem]
     recent_runs: list[RecentRunItem]
+
+
+# --- global search (ADR-0068) ------------------------------------------------
+
+
+class SearchResultItem(BaseModel):
+    """One name-search hit — a minimal row the command palette can render + jump
+    to. Deliberately thin (no secrets, no full entity payload): type + id + a label
+    and optional subtitle to render, and the in-app ``url`` to navigate to."""
+
+    type: Literal["project", "finding", "run"]
+    id: uuid.UUID
+    label: str
+    subtitle: str | None
+    url: str
+
+
+class SearchResponse(BaseModel):
+    query: str
+    items: list[SearchResultItem]

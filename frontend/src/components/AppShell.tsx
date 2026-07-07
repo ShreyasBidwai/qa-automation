@@ -14,8 +14,9 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
+import { CommandPalette } from "@/components/CommandPalette";
 import { Link } from "@/components/Link";
 import { Wordmark } from "@/components/Wordmark";
 import type { AuthUser } from "@/lib/api/types";
@@ -127,6 +128,21 @@ function SignOutButton() {
   );
 }
 
+/** ⌘K (macOS) / Ctrl+K (elsewhere) opens the command palette from anywhere in the
+ *  shell — not just while the search box has focus (ADR-0068). */
+function useCommandPaletteShortcut(onTrigger: () => void): void {
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        onTrigger();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onTrigger]);
+}
+
 /**
  * The persistent app shell (Polaris Account.dc.html / Run Dashboard.dc.html): a
  * 232px white sidebar — wordmark · Projects/Findings/Runs · a bottom
@@ -135,6 +151,8 @@ function SignOutButton() {
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useLocation();
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  useCommandPaletteShortcut(() => setPaletteOpen(true));
   // Resolve the active entry ONCE across every nav target, so only the longest match
   // lights up (no double-highlight of "Runs" + "Ongoing run" on /runs/ongoing).
   const activeTarget = activeNavTarget(pathname, [
@@ -188,18 +206,20 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar />
+        <TopBar onOpenSearch={() => setPaletteOpen(true)} />
         {/* The content region is a bounded frame, not a page that scrolls (ADR-0066):
             each view is full-height and scrolls its own body/sections. `overflow-y-auto`
             is a safety net (a view that isn't height-managed degrades to a contained
             scroll here rather than clipping) — it should not show in practice. */}
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
       </div>
+
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 }
 
-function TopBar() {
+function TopBar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const pathname = useLocation();
   const { user } = useAuth();
   return (
@@ -213,15 +233,16 @@ function TopBar() {
       </span>
 
       <div className="flex items-center gap-3.5">
-        {/* Search affordance per the design — global search isn't wired yet. */}
         <button
           type="button"
-          disabled
-          title="Search is coming in a later slice"
-          className="hidden h-8 w-[240px] cursor-default items-center gap-2 rounded-lg border border-border bg-background px-[11px] text-[13px] text-status-neutral-solid md:flex"
+          onClick={onOpenSearch}
+          className="hidden h-8 w-[240px] items-center gap-2 rounded-lg border border-border bg-background px-[11px] text-[13px] text-status-neutral-solid hover:border-marker hover:text-foreground md:flex"
         >
           <Search className="h-3.5 w-3.5" aria-hidden="true" />
-          <span>Search findings…</span>
+          <span className="flex-1 text-left">Search findings…</span>
+          <kbd className="rounded border border-border bg-surface px-1.5 py-0.5 font-mono text-[10.5px] text-marker">
+            ⌘K
+          </kbd>
         </button>
         <Link
           to="/account"

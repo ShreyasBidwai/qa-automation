@@ -624,3 +624,21 @@ export interface AccountDashboard {
   trend: TrendPoint[];
   recent_runs: RecentRunItem[];
 }
+
+// --- global search (ADR-0068, the ⌘K command palette) -----------------------
+
+export type SearchResultType = "project" | "finding" | "run";
+
+/** One name-search hit — enough to render a row and jump straight to it. */
+export interface SearchResultItem {
+  type: SearchResultType;
+  id: string;
+  label: string;
+  subtitle: string | null;
+  url: string;
+}
+
+export interface SearchResponse {
+  query: string;
+  items: SearchResultItem[];
+}
