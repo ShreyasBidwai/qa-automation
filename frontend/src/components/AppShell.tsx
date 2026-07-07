@@ -1,4 +1,19 @@
-import { LogOut, Search, User } from "lucide-react";
+import {
+  ClipboardList,
+  FolderGit2,
+  GitBranch,
+  HelpCircle,
+  Inbox,
+  LayoutDashboard,
+  ListChecks,
+  LogOut,
+  Radio,
+  Search,
+  Settings as SettingsIcon,
+  User,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Link } from "@/components/Link";
@@ -11,31 +26,35 @@ import { cn } from "@/lib/utils";
 interface NavEntry {
   to: string;
   label: string;
+  // The same icon each destination already shows next to its own page title (or,
+  // for pages with no title icon yet, the closest thematic match already in use
+  // there) — the sidebar mirrors the page instead of inventing a second icon set.
+  icon: LucideIcon;
 }
 
 // Order lifted from the sidebar in Polaris Account.dc.html / Run Dashboard.dc.html.
 // Dashboard is the account landing (ADR-0065) and leads the nav.
 const PRIMARY: NavEntry[] = [
-  { to: "/", label: "Dashboard" },
-  { to: "/projects", label: "Projects" },
-  { to: "/findings", label: "Findings" },
-  { to: "/runs/ongoing", label: "Ongoing run" },
-  { to: "/runs", label: "Runs" },
+  { to: "/", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/projects", label: "Projects", icon: FolderGit2 },
+  { to: "/findings", label: "Findings", icon: Inbox },
+  { to: "/runs/ongoing", label: "Ongoing run", icon: Radio },
+  { to: "/runs", label: "Runs", icon: ListChecks },
 ];
 
 // Connectors get their own sidebar tabs (Gitea + PM tool) — roadmap integrations,
 // each a real destination that explains itself. Kept apart from the workflow nav.
 const CONNECTORS: NavEntry[] = [
-  { to: "/connectors/gitea", label: "Gitea" },
-  { to: "/connectors/pm", label: "PM tool" },
+  { to: "/connectors/gitea", label: "Gitea", icon: GitBranch },
+  { to: "/connectors/pm", label: "PM tool", icon: ClipboardList },
 ];
 
 // The quiet bottom cluster (Settings is pinned bottom in the file; we keep our
 // account/settings/help set).
 const SECONDARY: NavEntry[] = [
-  { to: "/account", label: "Account" },
-  { to: "/settings", label: "Settings" },
-  { to: "/help", label: "Help" },
+  { to: "/account", label: "Account", icon: Users },
+  { to: "/settings", label: "Settings", icon: SettingsIcon },
+  { to: "/help", label: "Help", icon: HelpCircle },
 ];
 
 /** Does `to` match `pathname` (exact, or a parent segment prefix)? */
@@ -84,14 +103,9 @@ function NavItem({
             ),
       )}
     >
-      {/* 7px square dot marker — filled indigo when active, idle grey otherwise. */}
-      <span
-        aria-hidden="true"
-        className={cn(
-          "h-[7px] w-[7px] shrink-0 rounded-[2px]",
-          active ? "bg-accent" : "bg-marker",
-        )}
-      />
+      {/* The tab's own title icon — colour rides the link's text colour
+          (currentColor), so active/idle/muted stay a single source of truth. */}
+      <entry.icon className="h-[15px] w-[15px] shrink-0" aria-hidden="true" />
       {entry.label}
     </Link>
   );
