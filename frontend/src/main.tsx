@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ToastProvider } from "./components/ToastProvider";
 import { AuthProvider } from "./lib/auth/AuthContext";
 import { App } from "./App";
 import "./index.css";
@@ -14,9 +15,11 @@ if (!container) {
 createRoot(container).render(
   <StrictMode>
     <ErrorBoundary>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </ToastProvider>
     </ErrorBoundary>
   </StrictMode>,
 );

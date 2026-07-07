@@ -24,13 +24,16 @@ vi.mock("@/lib/api/client", () => ({
     findings: vi.fn(),
     create: vi.fn(),
     triage: vi.fn(),
+    active: vi.fn(),
   },
   jobApi: { get: vi.fn() },
   healthApi: { liveness: vi.fn(), readiness: vi.fn() },
   accountApi: { dashboard: vi.fn() },
+  searchApi: { search: vi.fn() },
 }));
 
-import { accountApi, authApi, healthApi, projectApi } from "@/lib/api/client";
+import { accountApi, authApi, healthApi, projectApi, runApi } from "@/lib/api/client";
+import { ToastProvider } from "@/components/ToastProvider";
 import { AuthProvider } from "@/lib/auth/AuthContext";
 import { clearToken, setToken } from "@/lib/auth/session";
 
@@ -38,9 +41,11 @@ import { App } from "./App";
 
 function renderApp() {
   return render(
-    <AuthProvider>
-      <App />
-    </AuthProvider>,
+    <ToastProvider>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </ToastProvider>,
   );
 }
 
@@ -49,6 +54,12 @@ describe("App auth gating", () => {
     clearToken();
     vi.clearAllMocks();
     window.history.pushState({}, "", "/");
+    // useRunLifecycleToasts (mounted inside AppShell) polls this on mount.
+    vi.mocked(runApi.active).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { run_id: null, project_id: null, mode: null, status: null },
+    });
   });
 
   it("sends an unauthenticated visitor to sign in (no app data shown)", async () => {

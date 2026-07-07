@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api/client", () => ({
@@ -10,28 +11,41 @@ vi.mock("@/lib/api/client", () => ({
     updateProfile: vi.fn(),
   },
   searchApi: { search: vi.fn() },
+  runApi: { active: vi.fn(), get: vi.fn() },
 }));
 
-import { searchApi } from "@/lib/api/client";
+import { runApi, searchApi } from "@/lib/api/client";
 import { AuthProvider } from "@/lib/auth/AuthContext";
 import { clearToken } from "@/lib/auth/session";
+import { ToastProvider } from "@/components/ToastProvider";
 
 import { AppShell } from "./AppShell";
+
+function renderShell(content: ReactNode) {
+  return render(
+    <ToastProvider>
+      <AuthProvider>
+        <AppShell>{content}</AppShell>
+      </AuthProvider>
+    </ToastProvider>,
+  );
+}
 
 describe("AppShell", () => {
   beforeEach(() => {
     clearToken();
     window.history.pushState({}, "", "/");
+    // useRunLifecycleToasts polls this on mount — default to "nothing running" so
+    // tests that don't care about it never see an unmocked-call crash.
+    vi.mocked(runApi.active).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { run_id: null, project_id: null, mode: null, status: null },
+    });
   });
 
   it("renders the primary nav, the account/support cluster, the wordmark, and content", () => {
-    render(
-      <AuthProvider>
-        <AppShell>
-          <div>page content</div>
-        </AppShell>
-      </AuthProvider>,
-    );
+    renderShell(<div>page content</div>);
 
     const primary = within(screen.getByRole("navigation", { name: "Primary" }));
     for (const label of ["Dashboard", "Projects", "Findings", "Runs"]) {
@@ -57,13 +71,7 @@ describe("AppShell", () => {
 
   it("exposes Gitea + PM-tool connector tabs in their own nav group", () => {
     window.history.pushState({}, "", "/connectors/gitea");
-    render(
-      <AuthProvider>
-        <AppShell>
-          <div>content</div>
-        </AppShell>
-      </AuthProvider>,
-    );
+    renderShell(<div>content</div>);
     const connectors = within(screen.getByRole("navigation", { name: "Connectors" }));
     expect(connectors.getByRole("link", { name: "Gitea" })).toHaveAttribute(
       "href",
@@ -85,13 +93,7 @@ describe("AppShell", () => {
 
   it("highlights only the deepest matching nav entry", () => {
     window.history.pushState({}, "", "/runs/ongoing");
-    render(
-      <AuthProvider>
-        <AppShell>
-          <div>content</div>
-        </AppShell>
-      </AuthProvider>,
-    );
+    renderShell(<div>content</div>);
     const primary = within(screen.getByRole("navigation", { name: "Primary" }));
     // On /runs/ongoing the longest prefix wins: "Ongoing run" is current, "Runs" not.
     expect(primary.getByRole("link", { name: "Ongoing run" })).toHaveAttribute(
@@ -105,13 +107,7 @@ describe("AppShell", () => {
 
   it("keeps 'Runs' highlighted for a specific run's pages", () => {
     window.history.pushState({}, "", "/runs/abc123/live");
-    render(
-      <AuthProvider>
-        <AppShell>
-          <div>content</div>
-        </AppShell>
-      </AuthProvider>,
-    );
+    renderShell(<div>content</div>);
     const primary = within(screen.getByRole("navigation", { name: "Primary" }));
     expect(primary.getByRole("link", { name: "Runs" })).toHaveAttribute(
       "aria-current",
@@ -128,13 +124,7 @@ describe("AppShell", () => {
     });
 
     it("opens on clicking the search button", () => {
-      render(
-        <AuthProvider>
-          <AppShell>
-            <div>content</div>
-          </AppShell>
-        </AuthProvider>,
-      );
+      renderShell(<div>content</div>);
       expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
 
       fireEvent.click(screen.getByText("Search findings…"));
@@ -144,13 +134,7 @@ describe("AppShell", () => {
     });
 
     it("opens on Ctrl+K from anywhere in the shell", () => {
-      render(
-        <AuthProvider>
-          <AppShell>
-            <div>content</div>
-          </AppShell>
-        </AuthProvider>,
-      );
+      renderShell(<div>content</div>);
       fireEvent.keyDown(window, { key: "k", ctrlKey: true });
       expect(
         screen.getByRole("dialog", { name: "Command palette" }),
@@ -160,13 +144,7 @@ describe("AppShell", () => {
 
   describe("mobile navigation drawer", () => {
     it("is closed by default and opens on the hamburger button", () => {
-      render(
-        <AuthProvider>
-          <AppShell>
-            <div>content</div>
-          </AppShell>
-        </AuthProvider>,
-      );
+      renderShell(<div>content</div>);
       expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull();
 
       fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
@@ -183,26 +161,14 @@ describe("AppShell", () => {
     });
 
     it("closes on the drawer's own close button", () => {
-      render(
-        <AuthProvider>
-          <AppShell>
-            <div>content</div>
-          </AppShell>
-        </AuthProvider>,
-      );
+      renderShell(<div>content</div>);
       fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
       fireEvent.click(screen.getByRole("button", { name: "Close" }));
       expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull();
     });
 
     it("closes on Escape", () => {
-      render(
-        <AuthProvider>
-          <AppShell>
-            <div>content</div>
-          </AppShell>
-        </AuthProvider>,
-      );
+      renderShell(<div>content</div>);
       fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
       fireEvent.keyDown(screen.getByRole("dialog", { name: "Navigation" }), {
         key: "Escape",
@@ -211,13 +177,7 @@ describe("AppShell", () => {
     });
 
     it("closes automatically when a nav link is followed (route change)", () => {
-      render(
-        <AuthProvider>
-          <AppShell>
-            <div>content</div>
-          </AppShell>
-        </AuthProvider>,
-      );
+      renderShell(<div>content</div>);
       fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
       const drawer = screen.getByRole("dialog", { name: "Navigation" });
       fireEvent.click(within(drawer).getByRole("link", { name: "Projects" }));

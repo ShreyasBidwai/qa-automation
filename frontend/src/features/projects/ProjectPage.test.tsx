@@ -10,10 +10,21 @@ vi.mock("@/lib/api/client", () => ({
 
 vi.mock("@/lib/router", () => ({ navigate: vi.fn() }));
 
+import { ToastProvider } from "@/components/ToastProvider";
 import { findingApi, projectApi, runApi } from "@/lib/api/client";
 import type { Finding, Project, RunListItem } from "@/lib/api/types";
 
 import { ProjectPage } from "./ProjectPage";
+
+/** ProjectPage's ingest button uses `useIngest`, which fires toasts on completion —
+ *  it needs a ToastProvider ancestor, same as the real app root. */
+function renderProjectPage(projectId: string) {
+  return render(
+    <ToastProvider>
+      <ProjectPage projectId={projectId} />
+    </ToastProvider>,
+  );
+}
 
 const PROJECT: Project = {
   id: "p1",
@@ -103,7 +114,7 @@ describe("ProjectPage (overview)", () => {
       }),
     );
 
-    render(<ProjectPage projectId="p1" />);
+    renderProjectPage("p1");
 
     // Health summary (78% also shows on the latest run's row, so allow >1).
     expect((await screen.findAllByText("78%")).length).toBeGreaterThanOrEqual(1);
@@ -149,7 +160,7 @@ describe("ProjectPage (overview)", () => {
     );
     vi.mocked(runApi.rerun).mockResolvedValue(ok({ run_id: "r2", status: "queued" }));
 
-    render(<ProjectPage projectId="p1" />);
+    renderProjectPage("p1");
 
     // The run's preferences are legible on its row (so it can be recognised + reused).
     expect(
@@ -170,7 +181,7 @@ describe("ProjectPage (overview)", () => {
       ok({ items: [], total: 0, limit: 50, offset: 0 }),
     );
 
-    render(<ProjectPage projectId="p1" />);
+    renderProjectPage("p1");
 
     expect(await screen.findByRole("link", { name: "View all tests" })).toHaveAttribute(
       "href",
@@ -199,7 +210,7 @@ describe("ProjectPage (overview)", () => {
       }),
     );
 
-    render(<ProjectPage projectId="p1" />);
+    renderProjectPage("p1");
 
     expect(await screen.findByText("Model built")).toBeInTheDocument();
     expect(screen.getByText(/3 nodes/)).toBeInTheDocument();
@@ -218,7 +229,7 @@ describe("ProjectPage (overview)", () => {
       ok({ items: [], total: 0, limit: 50, offset: 0 }),
     );
 
-    render(<ProjectPage projectId="p1" />);
+    renderProjectPage("p1");
 
     expect(await screen.findByText("Connectors")).toBeInTheDocument();
     expect(screen.getByText("Gitea")).toBeInTheDocument();
@@ -240,7 +251,7 @@ describe("ProjectPage (overview)", () => {
       ok({ items: [], total: 0, limit: 50, offset: 0 }),
     );
 
-    render(<ProjectPage projectId="p1" />);
+    renderProjectPage("p1");
 
     expect(await screen.findByText("Couldn't load this project")).toBeInTheDocument();
   });

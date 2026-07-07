@@ -22,6 +22,7 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { Drawer } from "@/components/Drawer";
 import { Link } from "@/components/Link";
 import { Wordmark } from "@/components/Wordmark";
+import { useRunLifecycleToasts } from "@/features/runs/useRunLifecycleToasts";
 import type { AuthUser } from "@/lib/api/types";
 import { useAuth } from "@/lib/auth/useAuth";
 import { useLocation } from "@/lib/router";
@@ -235,6 +236,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   useCommandPaletteShortcut(() => setPaletteOpen(true));
+  // App-wide "a run finished" toast (mission item 3) — mounted once here so it
+  // keeps announcing regardless of which page the operator is currently on.
+  useRunLifecycleToasts();
   // A route change is the clearest "the user is done with the drawer" signal — close
   // it automatically rather than leaving it open over the new page.
   useEffect(() => {
