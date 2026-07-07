@@ -27,9 +27,10 @@ vi.mock("@/lib/api/client", () => ({
   },
   jobApi: { get: vi.fn() },
   healthApi: { liveness: vi.fn(), readiness: vi.fn() },
+  accountApi: { dashboard: vi.fn() },
 }));
 
-import { authApi, healthApi, projectApi } from "@/lib/api/client";
+import { accountApi, authApi, healthApi, projectApi } from "@/lib/api/client";
 import { AuthProvider } from "@/lib/auth/AuthContext";
 import { clearToken, setToken } from "@/lib/auth/session";
 
@@ -60,25 +61,49 @@ describe("App auth gating", () => {
     expect(projectApi.list).not.toHaveBeenCalled();
   });
 
-  it("loads the app and its data once authenticated", async () => {
+  it("loads the account dashboard once authenticated", async () => {
     setToken("tok-1");
     vi.mocked(authApi.me).mockResolvedValue({
       ok: true,
       status: 200,
       data: { id: "u1", email: "a@b.com", name: null, created_at: "2026-01-01" },
     });
-    vi.mocked(projectApi.list).mockResolvedValue({
+    // Root is the account Dashboard (ADR-0065); it renders for an account with projects.
+    vi.mocked(accountApi.dashboard).mockResolvedValue({
       ok: true,
       status: 200,
-      data: { items: [], total: 0, limit: 20, offset: 0 },
+      data: {
+        range_days: 30,
+        projects_total: 1,
+        projects_by_status: { passing: 1 },
+        open_findings: { critical: 0, major: 0, minor: 0, total: 0 },
+        project_health: [
+          {
+            project_id: "p1",
+            name: "Acme",
+            status: "passing",
+            pass_rate: 1,
+            open_findings: 0,
+            last_run_at: null,
+          },
+        ],
+        runs_total: 0,
+        tests_total: 0,
+        outcomes: { pass: 0, fail: 0, error: 0, skipped: 0 },
+        pass_rate: null,
+        trend: [],
+        recent_runs: [],
+      },
     });
 
     renderApp();
 
-    // The real projects screen renders (not the sign-in front door).
-    expect(await screen.findByText("No projects yet")).toBeInTheDocument();
+    // The real app renders (not the sign-in front door): the Dashboard heading + data.
+    expect(
+      await screen.findByRole("heading", { name: "Dashboard" }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Sign in to Polaris" })).toBeNull();
-    expect(projectApi.list).toHaveBeenCalled();
+    expect(accountApi.dashboard).toHaveBeenCalled();
   });
 
   it("renders the in-shell 404 for an authenticated unknown path", async () => {

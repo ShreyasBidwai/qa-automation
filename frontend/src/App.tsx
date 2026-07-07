@@ -5,6 +5,7 @@ import { AuthSplash } from "@/components/AuthSplash";
 import { GenericErrorPage } from "@/components/GenericErrorPage";
 import { NotFoundPage } from "@/components/NotFoundPage";
 import { ConnectorPage } from "@/features/connectors/ConnectorPage";
+import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { ForgotPasswordPage } from "@/features/auth/ForgotPasswordPage";
 import { SignInPage } from "@/features/auth/SignInPage";
 import { SignUpPage } from "@/features/auth/SignUpPage";
@@ -47,7 +48,10 @@ function renderStandaloneRoute(pathname: string): ReactElement | null {
 function renderRoute(pathname: string): ReactElement {
   const segments = pathname.replace(/\/+$/, "").split("/").filter(Boolean);
 
-  if (segments.length === 0) return <ProjectsListPage />;
+  // The account dashboard is the landing (ADR-0065); it hands off to Projects when the
+  // account has no projects yet. `/dashboard` is its canonical URL.
+  if (segments.length === 0) return <DashboardPage />;
+  if (segments.length === 1 && segments[0] === "dashboard") return <DashboardPage />;
 
   if (segments[0] === "projects") {
     if (segments.length === 1) return <ProjectsListPage />;

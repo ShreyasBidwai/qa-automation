@@ -1,6 +1,7 @@
 import { clearToken, getToken } from "@/lib/auth/session";
 
 import type {
+  AccountDashboard,
   ActiveRunResponse,
   AuthTokenResponse,
   AuthUser,
@@ -255,6 +256,12 @@ export const healthApi = {
   liveness: () => getJson<HealthzResponse>("/healthz"),
   /** GET /readyz — readiness, including DB reachability. */
   readiness: () => getJson<ReadyzResponse>("/readyz"),
+};
+
+export const accountApi = {
+  /** GET /account/dashboard — account-wide health + a `rangeDays` trend (ADR-0065). */
+  dashboard: (rangeDays: number) =>
+    getJson<AccountDashboard>(`${API_BASE}/account/dashboard?range_days=${rangeDays}`),
 };
 
 function pageQuery({ limit, offset }: PageParams): string {

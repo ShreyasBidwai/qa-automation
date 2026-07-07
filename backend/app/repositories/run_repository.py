@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 
 from sqlalchemy import and_, func, or_, select, update
 
@@ -95,6 +96,28 @@ class RunRepository(ProjectScopedRepository[Run]):
             .distinct(Run.project_id)
         )
         return {run.project_id: run for run in (await self.session.scalars(stmt)).all()}
+
+    async def list_for_projects(
+        self,
+        project_ids: Sequence[uuid.UUID],
+        *,
+        since: datetime | None = None,
+        limit: int,
+    ) -> list[Run]:
+        """Runs ACROSS a set of projects, newest first, optionally only since ``since``.
+
+        The account dashboard's cross-project feed (trend buckets + recent activity).
+        ``project_ids`` are the caller's already-authorized (org-scoped) ids, so no RBAC
+        is needed here; the bound caps a pathological account. One query, no N+1.
+        """
+        ids = list(project_ids)
+        if not ids:
+            return []
+        stmt = select(Run).where(Run.project_id.in_(ids))
+        if since is not None:
+            stmt = stmt.where(Run.created_at >= since)
+        stmt = stmt.order_by(Run.created_at.desc(), Run.id.desc()).limit(limit)
+        return list((await self.session.scalars(stmt)).all())
 
     async def list_for_project(
         self, project_id: uuid.UUID, *, limit: int, offset: int

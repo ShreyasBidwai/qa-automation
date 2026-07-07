@@ -14,7 +14,9 @@ interface NavEntry {
 }
 
 // Order lifted from the sidebar in Polaris Account.dc.html / Run Dashboard.dc.html.
+// Dashboard is the account landing (ADR-0065) and leads the nav.
 const PRIMARY: NavEntry[] = [
+  { to: "/", label: "Dashboard" },
   { to: "/projects", label: "Projects" },
   { to: "/findings", label: "Findings" },
   { to: "/runs/ongoing", label: "Ongoing run" },
@@ -220,6 +222,8 @@ function sectionLabel(pathname: string): string {
   const segment = pathname.replace(/\/+$/, "").split("/").filter(Boolean)[0] ?? "";
   switch (segment) {
     case "":
+    case "dashboard":
+      return "Dashboard";
     case "projects":
       return "Projects";
     case "findings":

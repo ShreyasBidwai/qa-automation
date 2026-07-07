@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from .api.account import router as account_router
 from .api.auth import router as auth_router
 from .api.auth_config import router as auth_config_router
 from .api.credentials import router as credentials_router
@@ -63,6 +64,7 @@ def create_app() -> FastAPI:
     app.include_router(projects_router)
     app.include_router(runs_router)
     app.include_router(findings_router)
+    app.include_router(account_router)
     app.include_router(ops_router)
     app.include_router(documents_router)
     app.include_router(credentials_router)

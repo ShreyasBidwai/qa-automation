@@ -579,3 +579,48 @@ export interface PageParams {
   limit: number;
   offset: number;
 }
+
+// --- account dashboard (ADR-0065) -------------------------------------------
+
+export interface ProjectHealthItem {
+  project_id: string;
+  name: string;
+  status: string; // passing | action_needed | errored | never_run
+  pass_rate: number | null;
+  open_findings: number;
+  last_run_at: string | null;
+}
+
+export interface TrendPoint {
+  date: string; // YYYY-MM-DD
+  runs: number;
+  passed: number;
+  failed: number;
+  errored: number;
+  skipped: number;
+  pass_rate: number | null;
+}
+
+export interface RecentRunItem {
+  run_id: string;
+  project_id: string;
+  project_name: string;
+  mode: string;
+  status: string;
+  pass_rate: number | null;
+  created_at: string;
+}
+
+export interface AccountDashboard {
+  range_days: number;
+  projects_total: number;
+  projects_by_status: Record<string, number>;
+  open_findings: Record<string, number>; // critical / major / minor / total
+  project_health: ProjectHealthItem[];
+  runs_total: number;
+  tests_total: number;
+  outcomes: Record<string, number>; // pass / fail / error / skipped
+  pass_rate: number | null;
+  trend: TrendPoint[];
+  recent_runs: RecentRunItem[];
+}

@@ -961,3 +961,63 @@ class HealScanResponse(BaseModel):
     real_findings: int
     unhealed: int
     items: list[HealResponse]
+
+
+# --- account dashboard (ADR-0065) -------------------------------------------
+
+
+class ProjectHealthItem(BaseModel):
+    """One project's row in the account dashboard's health table."""
+
+    project_id: uuid.UUID
+    name: str
+    status: str  # passing | action_needed | errored | never_run
+    pass_rate: float | None
+    open_findings: int
+    last_run_at: datetime | None
+
+
+class TrendPointItem(BaseModel):
+    """One day's outcome roll-up for the account trend chart."""
+
+    date: str  # YYYY-MM-DD (UTC)
+    runs: int
+    passed: int
+    failed: int
+    errored: int
+    skipped: int
+    pass_rate: float | None
+
+
+class RecentRunItem(BaseModel):
+    """One recent run across the account, for the activity feed."""
+
+    run_id: uuid.UUID
+    project_id: uuid.UUID
+    project_name: str
+    mode: str
+    status: str
+    pass_rate: float | None
+    created_at: datetime
+
+
+class AccountDashboardResponse(BaseModel):
+    """The post-login account overview: current health + a range-scoped trend.
+
+    CURRENT-state fields (projects, statuses, open findings, per-project health) reflect
+    each project's latest run; the RANGE-scoped fields (runs, tests, outcomes,
+    pass_rate, trend, recent_runs) honour ``range_days``. SKIPPED never counts as pass
+    or fail (ADR-0064). Org-scoped to the caller's projects.
+    """
+
+    range_days: int
+    projects_total: int
+    projects_by_status: dict[str, int]
+    open_findings: dict[str, int]  # critical / major / minor / total
+    project_health: list[ProjectHealthItem]
+    runs_total: int
+    tests_total: int
+    outcomes: dict[str, int]  # pass / fail / error / skipped
+    pass_rate: float | None
+    trend: list[TrendPointItem]
+    recent_runs: list[RecentRunItem]

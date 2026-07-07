@@ -32,7 +32,7 @@ describe("AppShell", () => {
     );
 
     const primary = within(screen.getByRole("navigation", { name: "Primary" }));
-    for (const label of ["Projects", "Findings", "Runs"]) {
+    for (const label of ["Dashboard", "Projects", "Findings", "Runs"]) {
       expect(primary.getByRole("link", { name: label })).toBeInTheDocument();
     }
 
@@ -45,9 +45,10 @@ describe("AppShell", () => {
 
     // The wordmark links home (sidebar + mobile top bar).
     expect(screen.getAllByLabelText("Polaris — home").length).toBeGreaterThanOrEqual(1);
-    // The top bar carries the route-derived context + an account link.
+    // The top bar carries the route-derived context + an account link. The root path
+    // is the account Dashboard (ADR-0065).
     const topBar = within(screen.getByRole("banner"));
-    expect(topBar.getByText("Projects")).toBeInTheDocument();
+    expect(topBar.getByText("Dashboard")).toBeInTheDocument();
     expect(topBar.getByRole("link", { name: "Your account" })).toBeInTheDocument();
     expect(screen.getByText("page content")).toBeInTheDocument();
   });
