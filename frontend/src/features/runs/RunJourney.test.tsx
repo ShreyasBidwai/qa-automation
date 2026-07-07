@@ -123,21 +123,20 @@ describe("RunJourney", () => {
       .mockResolvedValue(testsOk([testCase()]));
   });
 
-  it("shows every phase as a tab and defaults to the active phase", async () => {
+  it("shows each phase as a tab and defaults to the active phase", async () => {
     vi.mocked(runApi.events).mockResolvedValue(eventsResponse(JOURNEY));
 
     render(<RunJourney runId="r1" />);
     await screen.findByText("Run failed");
 
-    for (const label of [
-      "Understand",
-      "Generate",
-      "Execute",
-      "Explore live site",
-      "Review",
-    ]) {
+    for (const label of ["Understand", "Generate", "Execute", "Review"]) {
       expect(screen.getByRole("tab", { name: new RegExp(label) })).toBeInTheDocument();
     }
+    // This is an api-only run (no crawl events) → the "Explore live site" phase is not
+    // shown as an empty, misleading step.
+    expect(
+      screen.queryByRole("tab", { name: /Explore live site/ }),
+    ).not.toBeInTheDocument();
     // The project this run belongs to is named at the top.
     expect(await screen.findByText("Acme API")).toBeInTheDocument();
     // A finished run defaults to the last active phase (Review) — only ITS content is

@@ -209,13 +209,45 @@ describe("RunDashboard", () => {
   });
 
   it("renders the clean-run state when there are no findings", async () => {
-    vi.mocked(runApi.get).mockResolvedValue(summaryResult({ pass_rate: 1 }));
+    vi.mocked(runApi.get).mockResolvedValue(
+      summaryResult({ pass_rate: 1, passed: 5, failed: 0, skipped: 0, tests: 5 }),
+    );
     vi.mocked(runApi.findings).mockResolvedValue(findingsResult([]));
 
     render(<RunDashboard runId="r1" />);
 
+    // Success is shown, not just the absence of failures: the passed count is named.
     expect(await screen.findByText("This run came back clean")).toBeInTheDocument();
-    expect(screen.getByText(/No findings across the run/)).toBeInTheDocument();
+    expect(screen.getByText(/5 tests passed/)).toBeInTheDocument();
+  });
+
+  it("shows the always-on test-results breakdown of every outcome", async () => {
+    vi.mocked(runApi.get).mockResolvedValue(
+      summaryResult({ passed: 6, failed: 2, errors: 1, skipped: 3, tests: 12 }),
+    );
+    vi.mocked(runApi.findings).mockResolvedValue(findingsResult([]));
+
+    render(<RunDashboard runId="r1" />);
+
+    const results = await screen.findByRole("region", { name: "Test results" });
+    expect(within(results).getByText("12 tests")).toBeInTheDocument();
+    expect(within(results).getByText("passed")).toBeInTheDocument();
+    expect(within(results).getByText("unverified")).toBeInTheDocument();
+  });
+
+  it("is honest when a clean run verified nothing (all unverified)", async () => {
+    // No findings, but every endpoint only returned a precondition — do NOT claim
+    // every assertion held (nothing was asserted).
+    vi.mocked(runApi.get).mockResolvedValue(
+      summaryResult({ passed: 0, failed: 0, errors: 0, skipped: 11, tests: 11 }),
+    );
+    vi.mocked(runApi.findings).mockResolvedValue(findingsResult([]));
+
+    render(<RunDashboard runId="r1" />);
+
+    expect(
+      await screen.findByText("No findings — but nothing was verified"),
+    ).toBeInTheDocument();
   });
 
   it("renders the error state when the run cannot be loaded", async () => {

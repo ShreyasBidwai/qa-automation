@@ -3,6 +3,7 @@ import {
   ArrowDown,
   ArrowUp,
   CheckCircle2,
+  Info,
   MousePointerClick,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -80,14 +81,11 @@ export function RunDashboard({
         <div className="flex flex-col px-6 pt-5 min-[1024px]:min-h-0 min-[1024px]:flex-1">
           <StatCards metrics={metrics} delta={delta} findings={findings} />
 
+          <TestOutcomeBar metrics={metrics} />
+
           {findings.length === 0 ? (
             <div className="flex items-center justify-center min-[1024px]:min-h-0 min-[1024px]:flex-1">
-              <StatePanel
-                icon={CheckCircle2}
-                tone="success"
-                title="This run came back clean"
-                description="No findings across the run — every assertion held. Polaris keeps watching as the code changes."
-              />
+              <CleanRunPanel metrics={metrics} />
             </div>
           ) : (
             <div className="flex flex-col gap-4 pb-6 min-[1024px]:min-h-0 min-[1024px]:flex-1 min-[1024px]:flex-row">
@@ -195,6 +193,104 @@ function RunHeaderBand({
 
 function BandDot() {
   return <span className="h-[3px] w-[3px] rounded-full bg-marker" aria-hidden="true" />;
+}
+
+// ---- test-outcome breakdown -------------------------------------------------
+
+// The four outcomes a run produces (ADR-0064), in severity order. A run's SUCCESS is
+// as worth showing as its failures — so this is rendered on every run, green or not.
+const OUTCOME_SEGMENTS = [
+  { key: "passed", label: "passed", bar: "bg-status-pass-solid" },
+  { key: "failed", label: "failed", bar: "bg-status-fail-solid" },
+  { key: "errored", label: "errored", bar: "bg-status-flaky-solid" },
+  { key: "unverified", label: "unverified", bar: "bg-status-neutral-solid" },
+] as const;
+
+function outcomeCounts(m: RunMetrics): Record<string, number> {
+  return {
+    passed: m.passed ?? 0,
+    failed: m.failed ?? 0,
+    errored: m.errors ?? 0,
+    unverified: m.skipped ?? 0,
+  };
+}
+
+/** A segmented bar + legend of passed / failed / errored / unverified — so a run's
+ *  passes are as visible as its failures, and an all-green run still shows its work. */
+function TestOutcomeBar({ metrics }: { metrics: RunMetrics }) {
+  const counts = outcomeCounts(metrics);
+  const total =
+    metrics.tests ?? OUTCOME_SEGMENTS.reduce((n, s) => n + counts[s.key], 0);
+  if (total === 0) return null;
+  return (
+    <section
+      aria-label="Test results"
+      className="mb-[18px] flex-none rounded-xl border border-border bg-surface px-[18px] py-4 shadow-card"
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-muted-foreground">Test results</span>
+        <span className="text-xs tabular-nums text-status-neutral-solid">
+          {total} {total === 1 ? "test" : "tests"}
+        </span>
+      </div>
+      <div className="mt-2.5 flex h-2.5 overflow-hidden rounded-full bg-border-subtle">
+        {OUTCOME_SEGMENTS.filter((s) => counts[s.key] > 0).map((s) => (
+          <div
+            key={s.key}
+            className={cn("h-full", s.bar)}
+            style={{ width: `${(counts[s.key] / total) * 100}%` }}
+            title={`${counts[s.key]} ${s.label}`}
+          />
+        ))}
+      </div>
+      <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5">
+        {OUTCOME_SEGMENTS.map((s) => (
+          <span
+            key={s.key}
+            className="inline-flex items-center gap-1.5 text-xs font-medium"
+          >
+            <span className={cn("h-[7px] w-[7px] rounded-full", s.bar)} />
+            <span className="tabular-nums text-foreground">{counts[s.key]}</span>
+            <span className="text-muted-foreground">{s.label}</span>
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** The no-findings state — but HONEST about what "clean" means: it celebrates verified
+ *  passes, and when a run only reached un-verifiable endpoints it says so rather than
+ *  claiming every assertion held (ADR-0064). */
+function CleanRunPanel({ metrics }: { metrics: RunMetrics }) {
+  const passed = metrics.passed ?? 0;
+  const failed = metrics.failed ?? 0;
+  const errored = metrics.errors ?? 0;
+  const unverified = metrics.skipped ?? 0;
+  const verified = passed + failed + errored;
+  if (verified === 0 && unverified > 0) {
+    return (
+      <StatePanel
+        icon={Info}
+        tone="neutral"
+        title="No findings — but nothing was verified"
+        description={`${unverified} ${unverified === 1 ? "endpoint was" : "endpoints were"} reachable but returned a precondition (auth, missing data, required params, or not served here), so success couldn't be asserted. Provide the auth/data or ingest a spec to verify them.`}
+      />
+    );
+  }
+  const passNote =
+    passed > 0
+      ? `${passed} ${passed === 1 ? "test" : "tests"} passed`
+      : "No failing tests";
+  const skipNote = unverified > 0 ? ` · ${unverified} unverified` : "";
+  return (
+    <StatePanel
+      icon={CheckCircle2}
+      tone="success"
+      title="This run came back clean"
+      description={`${passNote}${skipNote} — no findings across the run. Polaris keeps watching as the code changes.`}
+    />
+  );
 }
 
 // ---- stat cards -------------------------------------------------------------

@@ -39,25 +39,29 @@ describe("runEvents helpers", () => {
     );
   });
 
-  it("groups into the spine (all known phases, run excluded, unknown appended)", () => {
+  it("groups into the spine (run excluded, unknown appended, no crawl when api-only)", () => {
     const groups = groupByPhase([
       event({ seq: 0, phase: "run", step: "run", status: "started" }),
       event({ seq: 1, phase: "generate", step: "gen" }),
       event({ seq: 2, phase: "deploy", step: "ship" }), // unknown phase
     ]);
     const keys = groups.map((g) => g.spec.key);
-    // The spine phases always appear in journey order, then the unknown one; `run`
-    // is never a group. The frontend crawl gets its own "Explore live site" phase.
-    expect(keys).toEqual([
-      "select",
-      "generate",
-      "execute",
-      "crawl",
-      "review",
-      "deploy",
-    ]);
+    // An api-only run never explored the live site, so the "Explore live site" (crawl)
+    // phase must NOT appear as an empty step; `run` is never a group; the unknown phase
+    // is appended (forward-compat).
+    expect(keys).toEqual(["select", "generate", "execute", "review", "deploy"]);
     expect(groups.find((g) => g.spec.key === "generate")?.events).toHaveLength(1);
     expect(groups.find((g) => g.spec.key === "select")?.events).toHaveLength(0);
+  });
+
+  it("includes the Explore-live (crawl) phase only when the run crawled", () => {
+    const groups = groupByPhase([
+      event({ seq: 0, phase: "generate", step: "gen" }),
+      event({ seq: 1, phase: "crawl", step: "GET /home" }),
+    ]);
+    const keys = groups.map((g) => g.spec.key);
+    // A UI run produced crawl events → the phase appears, in spine order.
+    expect(keys).toEqual(["select", "generate", "execute", "crawl", "review"]);
   });
 
   it("finds the latest event that has a screenshot (the live frame)", () => {
