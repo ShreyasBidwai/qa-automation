@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import JobKind, JobStatus
@@ -78,18 +78,34 @@ class JobQueue:
         stmt = select(Job).where(Job.id.in_(wanted))
         return {job.id: job for job in (await self.session.scalars(stmt)).all()}
 
-    async def latest_active_run_for_user(self, user_id: uuid.UUID) -> Job | None:
-        """The caller's most-recent still-active RUN job (queued/running) across every
-        project in their orgs, or None. Powers the "Ongoing run" view — scoped by org
-        membership so it never surfaces another tenant's run."""
+    async def latest_active_run_for_user(
+        self, user_id: uuid.UUID, *, running_ttl_seconds: float
+    ) -> Job | None:
+        """The caller's most-recent GENUINELY-active RUN job across their orgs, or None.
+        Powers the "Ongoing run" view — org-scoped so it never surfaces another tenant's
+        run.
+
+        "Active" is queued OR running-with-a-FRESH-lease: a running job whose lease is
+        older than ``running_ttl_seconds`` (the run watchdog bound — no legitimate run
+        outlives it) is orphaned/wedged and must NOT read as ongoing (ADR-0067), even in
+        the window before the reaper fails it. Without this a crashed run showed forever
+        as a frozen "ongoing run".
+        """
+        fresh_cutoff = datetime.now(UTC) - timedelta(seconds=running_ttl_seconds)
         stmt = (
             select(Job)
             .join(Project, Project.id == Job.project_id)
             .join(OrganizationMember, OrganizationMember.org_id == Project.org_id)
             .where(
                 Job.kind == JobKind.RUN,
-                Job.status.in_(_ACTIVE),
                 OrganizationMember.user_id == user_id,
+                or_(
+                    Job.status == JobStatus.QUEUED,
+                    and_(
+                        Job.status == JobStatus.RUNNING,
+                        Job.locked_at >= fresh_cutoff,
+                    ),
+                ),
             )
             .order_by(Job.created_at.desc(), Job.id.desc())
             .limit(1)
@@ -232,6 +248,39 @@ class JobQueue:
             .limit(limit)
         )
         return list((await self.session.scalars(stmt)).all())
+
+    async def reclaim_stale_running(
+        self, *, older_than_seconds: float, detail: str = "orphaned"
+    ) -> list[tuple[uuid.UUID, JobKind]]:
+        """Fail every RUNNING job whose lease is older than the threshold, returning
+        the reclaimed ``(id, kind)`` pairs (ADR-0067).
+
+        A job whose worker died — or wedged past its watchdog — is orphaned: nothing
+        will ever release its lease, so it lingers ``running`` forever and (for a run)
+        shows as a perpetual "ongoing run". This is the reaper that reclaims it. The
+        transition is TERMINAL (``failed``), never a silent re-queue: re-running a
+        crashed job behind the operator's back is surprising and, for a wedged run,
+        just wedges again (they re-run explicitly). ``FOR UPDATE SKIP LOCKED`` so it
+        never fights a worker that is actively finalizing a job.
+
+        ``older_than_seconds=0`` reclaims EVERY running job — the startup sweep, where
+        no worker is alive so every ``running`` row is by definition orphaned.
+        """
+        cutoff = datetime.now(UTC) - timedelta(seconds=older_than_seconds)
+        stmt = (
+            select(Job)
+            .where(Job.status == JobStatus.RUNNING, Job.locked_at < cutoff)
+            .order_by(Job.locked_at)
+            .with_for_update(skip_locked=True)
+        )
+        jobs = list((await self.session.scalars(stmt)).all())
+        for job in jobs:
+            job.status = JobStatus.FAILED
+            job.detail = detail
+            job.finished_at = func.now()
+            self._release(job)
+        await self.session.flush()
+        return [(job.id, job.kind) for job in jobs]
 
     async def list_by_status(self, status: JobStatus, *, limit: int = 50) -> list[Job]:
         stmt = (

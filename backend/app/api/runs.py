@@ -17,6 +17,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.config import get_settings
 from app.core.permissions import Permission
 from app.models.ai_usage import AiUsage
 from app.models.enums import JobKind, JobStatus, TriageStatus
@@ -204,7 +205,12 @@ async def active_run(
 
     Declared BEFORE ``/runs/{run_id}`` so "active" isn't parsed as a run id. Scoped by
     org membership (the query only sees runs in the user's projects) — no leak."""
-    job = await JobQueue(session).latest_active_run_for_user(current_user.id)
+    # A running run is only "active" while its lease is fresher than the watchdog bound;
+    # beyond that it's orphaned/wedged, not ongoing (ADR-0067).
+    job = await JobQueue(session).latest_active_run_for_user(
+        current_user.id,
+        running_ttl_seconds=get_settings().job_max_duration_seconds,
+    )
     if job is None:
         return ActiveRunResponse()
     return ActiveRunResponse(
