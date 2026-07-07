@@ -7,16 +7,19 @@ import {
   LayoutDashboard,
   ListChecks,
   LogOut,
+  Menu,
   Radio,
   Search,
   Settings as SettingsIcon,
   User,
   Users,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { CommandPalette } from "@/components/CommandPalette";
+import { Drawer } from "@/components/Drawer";
 import { Link } from "@/components/Link";
 import { Wordmark } from "@/components/Wordmark";
 import type { AuthUser } from "@/lib/api/types";
@@ -128,6 +131,84 @@ function SignOutButton() {
   );
 }
 
+/** The PRIMARY/CONNECTORS/SECONDARY nav groups — the single source both the desktop
+ *  sidebar and the mobile drawer render, so the two surfaces can never drift. */
+function SidebarNav({ activeTarget }: { activeTarget: string | null }) {
+  return (
+    <>
+      <nav className="flex flex-col gap-0.5" aria-label="Primary">
+        {PRIMARY.map((entry) => (
+          <NavItem key={entry.to} entry={entry} active={entry.to === activeTarget} />
+        ))}
+      </nav>
+      <nav
+        className="mt-4 flex flex-col gap-0.5 border-t border-border-subtle pt-3"
+        aria-label="Connectors"
+      >
+        <p className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-marker">
+          Connectors
+        </p>
+        {CONNECTORS.map((entry) => (
+          <NavItem
+            key={entry.to}
+            entry={entry}
+            active={entry.to === activeTarget}
+            muted
+          />
+        ))}
+      </nav>
+      <nav
+        className="mt-auto flex flex-col gap-0.5 border-t border-border-subtle pt-3"
+        aria-label="Account and support"
+      >
+        {SECONDARY.map((entry) => (
+          <NavItem
+            key={entry.to}
+            entry={entry}
+            active={entry.to === activeTarget}
+            muted
+          />
+        ))}
+        <SignOutButton />
+      </nav>
+    </>
+  );
+}
+
+/** The sidebar nav in an overlay drawer for narrow viewports (< sm), where there is
+ *  no room for the persistent sidebar. Reuses `SidebarNav` verbatim — same entries,
+ *  same active-state logic — so mobile can never show a different nav than desktop.
+ *  Closes on Esc / a backdrop click (Drawer) and on route change (AppShell effect). */
+function MobileNavDrawer({
+  open,
+  onClose,
+  activeTarget,
+}: {
+  open: boolean;
+  onClose: () => void;
+  activeTarget: string | null;
+}) {
+  return (
+    <Drawer open={open} onClose={onClose} label="Navigation">
+      <div className="flex h-full flex-col px-3.5 py-5">
+        <div className="flex items-center justify-between px-2.5 pb-[22px] pt-1.5">
+          <Wordmark className="text-[18px]" />
+          <button
+            type="button"
+            data-autofocus
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-md p-1 text-muted-foreground hover:bg-background"
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+        <SidebarNav activeTarget={activeTarget} />
+      </div>
+    </Drawer>
+  );
+}
+
 /** ⌘K (macOS) / Ctrl+K (elsewhere) opens the command palette from anywhere in the
  *  shell — not just while the search box has focus (ADR-0068). */
 function useCommandPaletteShortcut(onTrigger: () => void): void {
@@ -152,7 +233,13 @@ function useCommandPaletteShortcut(onTrigger: () => void): void {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useLocation();
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   useCommandPaletteShortcut(() => setPaletteOpen(true));
+  // A route change is the clearest "the user is done with the drawer" signal — close
+  // it automatically rather than leaving it open over the new page.
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [pathname]);
   // Resolve the active entry ONCE across every nav target, so only the longest match
   // lights up (no double-highlight of "Runs" + "Ongoing run" on /runs/ongoing).
   const activeTarget = activeNavTarget(pathname, [
@@ -168,45 +255,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Wordmark className="text-[18px]" />
           </Link>
         </div>
-        <nav className="flex flex-col gap-0.5" aria-label="Primary">
-          {PRIMARY.map((entry) => (
-            <NavItem key={entry.to} entry={entry} active={entry.to === activeTarget} />
-          ))}
-        </nav>
-        <nav
-          className="mt-4 flex flex-col gap-0.5 border-t border-border-subtle pt-3"
-          aria-label="Connectors"
-        >
-          <p className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-marker">
-            Connectors
-          </p>
-          {CONNECTORS.map((entry) => (
-            <NavItem
-              key={entry.to}
-              entry={entry}
-              active={entry.to === activeTarget}
-              muted
-            />
-          ))}
-        </nav>
-        <nav
-          className="mt-auto flex flex-col gap-0.5 border-t border-border-subtle pt-3"
-          aria-label="Account and support"
-        >
-          {SECONDARY.map((entry) => (
-            <NavItem
-              key={entry.to}
-              entry={entry}
-              active={entry.to === activeTarget}
-              muted
-            />
-          ))}
-          <SignOutButton />
-        </nav>
+        <SidebarNav activeTarget={activeTarget} />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar onOpenSearch={() => setPaletteOpen(true)} />
+        <TopBar
+          onOpenSearch={() => setPaletteOpen(true)}
+          onOpenNav={() => setMobileNavOpen(true)}
+        />
         {/* The content region is a bounded frame, not a page that scrolls (ADR-0066):
             each view is full-height and scrolls its own body/sections. `overflow-y-auto`
             is a safety net (a view that isn't height-managed degrades to a contained
@@ -215,19 +271,42 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <MobileNavDrawer
+        open={mobileNavOpen}
+        onClose={() => setMobileNavOpen(false)}
+        activeTarget={activeTarget}
+      />
     </div>
   );
 }
 
-function TopBar({ onOpenSearch }: { onOpenSearch: () => void }) {
+function TopBar({
+  onOpenSearch,
+  onOpenNav,
+}: {
+  onOpenSearch: () => void;
+  onOpenNav: () => void;
+}) {
   const pathname = useLocation();
   const { user } = useAuth();
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-surface px-4 sm:px-6">
-      {/* Mobile: the wordmark (no sidebar). Desktop: the current section context. */}
-      <Link to="/" aria-label="Polaris — home" className="sm:hidden">
-        <Wordmark className="text-[18px]" />
-      </Link>
+      <div className="flex items-center gap-2.5">
+        {/* Below `sm` there is no persistent sidebar (AppShell) — this is the ONLY
+            way to reach navigation, so it's a real gap without it, not polish. */}
+        <button
+          type="button"
+          onClick={onOpenNav}
+          aria-label="Open navigation"
+          className="-ml-1.5 rounded-md p-1.5 text-muted-foreground hover:bg-background hover:text-foreground sm:hidden"
+        >
+          <Menu className="h-5 w-5" aria-hidden="true" />
+        </button>
+        {/* Mobile: the wordmark (no sidebar). Desktop: the current section context. */}
+        <Link to="/" aria-label="Polaris — home" className="sm:hidden">
+          <Wordmark className="text-[18px]" />
+        </Link>
+      </div>
       <span className="hidden text-sm font-semibold text-foreground sm:block">
         {sectionLabel(pathname)}
       </span>

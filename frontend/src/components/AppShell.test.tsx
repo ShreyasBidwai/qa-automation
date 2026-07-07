@@ -157,4 +157,73 @@ describe("AppShell", () => {
       ).toBeInTheDocument();
     });
   });
+
+  describe("mobile navigation drawer", () => {
+    it("is closed by default and opens on the hamburger button", () => {
+      render(
+        <AuthProvider>
+          <AppShell>
+            <div>content</div>
+          </AppShell>
+        </AuthProvider>,
+      );
+      expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull();
+
+      fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+      const drawer = screen.getByRole("dialog", { name: "Navigation" });
+      expect(drawer).toBeInTheDocument();
+
+      // The exact same nav entries as the desktop sidebar, inside the drawer.
+      const drawerNav = within(drawer).getByRole("navigation", { name: "Primary" });
+      for (const label of ["Dashboard", "Projects", "Findings", "Runs"]) {
+        expect(
+          within(drawerNav).getByRole("link", { name: label }),
+        ).toBeInTheDocument();
+      }
+    });
+
+    it("closes on the drawer's own close button", () => {
+      render(
+        <AuthProvider>
+          <AppShell>
+            <div>content</div>
+          </AppShell>
+        </AuthProvider>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull();
+    });
+
+    it("closes on Escape", () => {
+      render(
+        <AuthProvider>
+          <AppShell>
+            <div>content</div>
+          </AppShell>
+        </AuthProvider>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+      fireEvent.keyDown(screen.getByRole("dialog", { name: "Navigation" }), {
+        key: "Escape",
+      });
+      expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull();
+    });
+
+    it("closes automatically when a nav link is followed (route change)", () => {
+      render(
+        <AuthProvider>
+          <AppShell>
+            <div>content</div>
+          </AppShell>
+        </AuthProvider>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+      const drawer = screen.getByRole("dialog", { name: "Navigation" });
+      fireEvent.click(within(drawer).getByRole("link", { name: "Projects" }));
+
+      expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull();
+      expect(window.location.pathname).toBe("/projects");
+    });
+  });
 });
