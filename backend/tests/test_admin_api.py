@@ -169,8 +169,37 @@ async def test_get_org_detail_lists_members(
     body = (await client.get(f"/api/v1/admin/orgs/{org_id}", headers=headers)).json()
     assert body["id"] == str(org_id)
     assert body["member_count"] == 1
+    assert body["plan_key"] == "free"  # every org starts free (ADR-0069)
     assert body["members"][0]["email"] == email
     assert body["members"][0]["role"] == "owner"  # personal-org creator is owner
+
+
+async def test_set_org_plan_requires_manage_billing_and_audits(
+    app_client: tuple[httpx.AsyncClient, FastAPI],
+    db_session: AsyncSession,
+) -> None:
+    client, _ = app_client
+    _, victim_email = await _signup(client)
+    staff_headers, staff_email = await _signup(client)
+    org_id = await _personal_org_id(db_session, victim_email)
+    url = f"/api/v1/admin/orgs/{org_id}/plan"
+
+    # read_only_ops lacks MANAGE_BILLING.
+    await _promote(db_session, staff_email, StaffRole.READ_ONLY_OPS)
+    r = await client.post(url, json={"plan_key": "team"}, headers=staff_headers)
+    assert r.status_code == 403
+
+    # the billing role can; an unknown plan is rejected against the catalog.
+    await _promote(db_session, staff_email, StaffRole.BILLING)
+    bad = await client.post(url, json={"plan_key": "nope"}, headers=staff_headers)
+    assert bad.status_code == 422
+
+    ok = await client.post(url, json={"plan_key": "team"}, headers=staff_headers)
+    assert ok.status_code == 200 and ok.json()["plan_key"] == "team"
+    audit = (
+        await client.get("/api/v1/admin/audit?action=org.plan_set", headers=staff_headers)
+    ).json()
+    assert audit["total"] == 1 and audit["items"][0]["target_id"] == str(org_id)
 
 
 async def _user_id(session: AsyncSession, email: str) -> uuid.UUID:

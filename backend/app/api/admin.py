@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.staff_permissions import StaffPermission, staff_role_can
 from app.models.enums import StaffRole
 from app.models.job import Job
+from app.models.organization import Organization
 from app.models.staff_audit_log import StaffAuditLog
 from app.models.user import User
 from app.reporting.org_usage import OrgUsageReader
@@ -27,6 +28,7 @@ from app.repositories.admin_org_repository import AdminOrgRepository
 from app.repositories.admin_user_repository import AdminUserRepository
 from app.repositories.generation_signal_repository import GenerationSignalRepository
 from app.repositories.organization_repository import OrganizationRepository
+from app.repositories.plan_repository import PlanRepository
 from app.repositories.staff_audit_repository import StaffAuditRepository
 from app.services.job_queue import JobQueue
 
@@ -45,6 +47,7 @@ from .schemas import (
     AdminUserListResponse,
     AdminUserOrgItem,
     JobSummary,
+    SetOrgPlanRequest,
     SetStaffRoleRequest,
     StaffAuditItem,
     StaffAuditListResponse,
@@ -133,6 +136,7 @@ async def _org_detail(
         name=org.name,
         is_personal=org.is_personal,
         suspended=org.is_suspended,
+        plan_key=org.plan_key,
         member_count=member_count,
         project_count=project_count,
         created_at=org.created_at,
@@ -264,6 +268,33 @@ async def org_usage(
             for item in summary.by_model
         ],
     )
+
+
+@router.post("/orgs/{org_id}/plan", response_model=AdminOrgDetailResponse)
+async def set_org_plan(
+    org_id: uuid.UUID,
+    body: SetOrgPlanRequest,
+    staff: Annotated[User, Depends(require_staff(StaffPermission.MANAGE_BILLING))],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AdminOrgDetailResponse:
+    """Assign an org to a plan (MANAGE_BILLING). The plan_key is validated against the
+    catalog (422 otherwise); audited (org.plan_set)."""
+    plan = await PlanRepository(session).get_by_key(body.plan_key)
+    if plan is None:
+        raise HTTPException(status_code=422, detail="unknown plan")
+    org = await session.get(Organization, org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="organization not found")
+    org.plan_key = plan.key
+    await session.flush()
+    await StaffAuditRepository(session).record(
+        actor=staff,
+        action="org.plan_set",
+        target_type="org",
+        target_id=str(org_id),
+        detail={"plan_key": plan.key},
+    )
+    return await _org_detail(session, org_id)
 
 
 # --- Users ------------------------------------------------------------------

@@ -1089,10 +1089,36 @@ class AdminOrgDetailResponse(BaseModel):
     name: str
     is_personal: bool
     suspended: bool
+    plan_key: str
     member_count: int
     project_count: int
     created_at: datetime
     members: list[AdminOrgMemberItem]
+
+
+class PlanItem(BaseModel):
+    """One tier in the public plan catalog (ADR-0069). NULL quota = unlimited; NULL
+    price = custom / contact us."""
+
+    key: str
+    name: str
+    price_per_seat_monthly_usd: float | None
+    included_run_credits_monthly: int | None
+    max_projects: int | None
+    max_seats: int | None
+    max_parallelism: int
+    retention_days: int
+    features: dict[str, Any]
+
+
+class PlanListResponse(BaseModel):
+    items: list[PlanItem]
+
+
+class SetOrgPlanRequest(BaseModel):
+    """Assign an org to a plan (validated against the catalog in the endpoint)."""
+
+    plan_key: str
 
 
 class AdminUserListItem(BaseModel):

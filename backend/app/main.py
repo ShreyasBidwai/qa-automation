@@ -12,6 +12,7 @@ from .api.account import router as account_router
 from .api.admin import router as admin_router
 from .api.auth import router as auth_router
 from .api.auth_config import router as auth_config_router
+from .api.billing import router as billing_router
 from .api.credentials import router as credentials_router
 from .api.documents import router as documents_router
 from .api.findings import router as findings_router
@@ -73,6 +74,8 @@ def create_app() -> FastAPI:
     app.include_router(incidents_router)
     # Cross-tenant operator/admin console — staff-only (ADR-0068).
     app.include_router(admin_router)
+    # Customer-facing plan catalog (ADR-0069).
+    app.include_router(billing_router)
     app.include_router(heals_router)
     app.include_router(tests_router)
 
