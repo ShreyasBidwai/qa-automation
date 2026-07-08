@@ -182,6 +182,15 @@ class Settings(BaseSettings):
     # RetryInfo). Keeps a hostile/garbled retryDelay from stalling the run.
     gemini_minute_retry_cap_seconds: float = 60.0
 
+    # --- Billing / Stripe (B6, ADR-0069) ---------------------------------------
+    # SECRETS, env-ONLY (never in the DB, a payload, a URL, or logs; sent to Stripe via
+    # the Authorization header). Unset ⇒ billing stays in stub mode: plans are still
+    # seeded and staff-assignable (ADR-0069), only LIVE payment collection is inert. Set
+    # these + BILLING_MODE=stripe to activate the Stripe integration.
+    billing_mode: str = "stub"  # stub | stripe
+    stripe_api_key: str | None = None
+    stripe_webhook_secret: str | None = None
+
     # --- Anthropic API provider (AI_PROVIDER_MODE=anthropic_api) ---------------
     # The PRODUCTION Claude backend — the Messages API directly (no `claude` CLI).
     # The API key is a SECRET, env-ONLY: never hardcoded, logged, stored in the DB,
