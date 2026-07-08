@@ -40,6 +40,7 @@ from app.services.job_queue import JobQueue
 from .authz import authorize_org, authorize_project
 from .deps import CurrentUser, get_session
 from .jobs import dispatch_job
+from .quota import enforce_org_not_suspended
 from .schemas import (
     DbStateTierResponse,
     DbStateTierUpdate,
@@ -339,7 +340,9 @@ async def ingest(
     background_tasks: BackgroundTasks,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> IngestResponse:
-    await authorize_project(session, project_id, current_user, Permission.RUN)
+    project = await authorize_project(session, project_id, current_user, Permission.RUN)
+    # A suspended org starts no new work (ADR-0068).
+    await enforce_org_not_suspended(session, project.org_id)
     # Single attempt — ingest rebuilds the Brain (non-idempotent); the queue still
     # supports retry-with-backoff (ADR-0034) for jobs that opt in.
     job = await JobQueue(session).enqueue(

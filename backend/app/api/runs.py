@@ -48,6 +48,7 @@ from .deps import CurrentUser, get_session
 from .finding_view import build_finding_response
 from .jobs import dispatch_job
 from .ports import run_request_to_payload, to_run_request
+from .quota import enforce_org_can_run
 from .schemas import (
     ActiveRunResponse,
     AiUsageBucket,
@@ -109,7 +110,9 @@ async def create_run(
     background_tasks: BackgroundTasks,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> RunResponse:
-    await authorize_project(session, project_id, current_user, Permission.RUN)
+    project = await authorize_project(session, project_id, current_user, Permission.RUN)
+    # Enqueue gate (ADR-0068 suspension + ADR-0069 run quota): may this org run?
+    await enforce_org_can_run(session, project.org_id)
     run_request = to_run_request(body)
     # A run is non-idempotent (it persists a run + findings), so it gets a single
     # attempt — no auto-replay of partial side effects. The queue itself supports
