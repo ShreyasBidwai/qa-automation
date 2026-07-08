@@ -1,0 +1,97 @@
+"""Admin console API (ADR-0068): /admin/me identity + /admin/audit trail, both
+gated by staff RBAC. A normal (non-staff) user is 403 everywhere here."""
+
+from __future__ import annotations
+
+import uuid
+
+import httpx
+from fastapi import FastAPI
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.enums import StaffRole
+from app.models.user import User
+from app.repositories.staff_audit_repository import StaffAuditRepository
+
+
+async def _signup(client: httpx.AsyncClient) -> tuple[dict[str, str], str]:
+    email = f"admin-{uuid.uuid4().hex[:10]}@e.test"
+    token = (
+        await client.post(
+            "/api/v1/auth/signup", json={"email": email, "password": "adminpass1"}
+        )
+    ).json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}, email
+
+
+async def _promote(session: AsyncSession, email: str, role: StaffRole) -> User:
+    user = (await session.scalars(select(User).where(User.email == email))).one()
+    user.staff_role = role
+    await session.flush()
+    return user
+
+
+async def test_admin_me_requires_staff(
+    app_client: tuple[httpx.AsyncClient, FastAPI],
+) -> None:
+    client, _ = app_client
+    headers, _ = await _signup(client)
+    resp = await client.get("/api/v1/admin/me", headers=headers)
+    assert resp.status_code == 403  # a normal user is not staff
+
+
+async def test_admin_me_returns_role_and_permissions(
+    app_client: tuple[httpx.AsyncClient, FastAPI],
+    db_session: AsyncSession,
+) -> None:
+    client, _ = app_client
+    headers, email = await _signup(client)
+    await _promote(db_session, email, StaffRole.SUPPORT)
+
+    body = (await client.get("/api/v1/admin/me", headers=headers)).json()
+    assert body["staff_role"] == "support"
+    # support acts on jobs + impersonates, but never touches billing (SoD, ADR-0068).
+    assert "manage_jobs" in body["permissions"]
+    assert "impersonate" in body["permissions"]
+    assert "manage_billing" not in body["permissions"]
+
+
+async def test_admin_audit_requires_view_audit(
+    app_client: tuple[httpx.AsyncClient, FastAPI],
+    db_session: AsyncSession,
+) -> None:
+    client, _ = app_client
+    headers, email = await _signup(client)
+    # A non-staff user cannot read the trail.
+    assert (await client.get("/api/v1/admin/audit", headers=headers)).status_code == 403
+    # read_only_ops carries VIEW_AUDIT — the empty trail lists cleanly.
+    await _promote(db_session, email, StaffRole.READ_ONLY_OPS)
+    resp = await client.get("/api/v1/admin/audit", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json() == {"items": [], "total": 0, "limit": 50, "offset": 0}
+
+
+async def test_audit_repository_records_and_lists(
+    app_client: tuple[httpx.AsyncClient, FastAPI],
+    db_session: AsyncSession,
+) -> None:
+    client, _ = app_client
+    _, email = await _signup(client)
+    actor = await _promote(db_session, email, StaffRole.SUPERADMIN)
+
+    repo = StaffAuditRepository(db_session)
+    await repo.record(
+        actor=actor,
+        action="job.retry",
+        target_type="job",
+        target_id="abc-123",
+        detail={"reason": "manual"},
+    )
+    entries = await repo.list(limit=50, offset=0)
+    assert len(entries) == 1
+    assert entries[0].action == "job.retry"
+    assert entries[0].actor_email == email
+    assert entries[0].detail == {"reason": "manual"}
+    assert await repo.count(action="job.retry") == 1
+    assert await repo.count(action="org.suspend") == 0

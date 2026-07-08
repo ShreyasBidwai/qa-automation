@@ -1021,3 +1021,36 @@ class AccountDashboardResponse(BaseModel):
     pass_rate: float | None
     trend: list[TrendPointItem]
     recent_runs: list[RecentRunItem]
+
+
+# --- Operator / admin console (ADR-0068) ------------------------------------
+
+
+class AdminMeResponse(BaseModel):
+    """The signed-in staff member's console identity: their role + the actions it
+    grants. The UI reads ``permissions`` to decide which admin surfaces to show."""
+
+    user_id: uuid.UUID
+    email: str
+    staff_role: str
+    permissions: list[str]
+
+
+class StaffAuditItem(BaseModel):
+    """One immutable staff-action entry from the cross-tenant audit trail."""
+
+    id: uuid.UUID
+    created_at: datetime
+    actor_id: uuid.UUID | None
+    actor_email: str
+    action: str
+    target_type: str | None
+    target_id: str | None
+    detail: dict[str, Any]
+
+
+class StaffAuditListResponse(BaseModel):
+    items: list[StaffAuditItem]
+    total: int
+    limit: int
+    offset: int
