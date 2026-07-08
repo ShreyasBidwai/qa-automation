@@ -30,6 +30,12 @@ class Organization(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     suspended_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # The org's pricing plan (ADR-0069) — references plans.key; defaults to 'free'. A
+    # string (not an FK) so the entitlements resolver falls back to 'free' for an
+    # absent/unknown key without a join constraint.
+    plan_key: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'free'")
+    )
 
     @property
     def is_suspended(self) -> bool:
