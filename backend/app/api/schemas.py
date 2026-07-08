@@ -1093,3 +1093,47 @@ class AdminOrgDetailResponse(BaseModel):
     project_count: int
     created_at: datetime
     members: list[AdminOrgMemberItem]
+
+
+class AdminUserListItem(BaseModel):
+    """One user in the cross-tenant admin list."""
+
+    id: uuid.UUID
+    email: str
+    name: str | None
+    is_active: bool
+    staff_role: str | None
+    org_count: int
+    created_at: datetime
+
+
+class AdminUserListResponse(BaseModel):
+    items: list[AdminUserListItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminUserOrgItem(BaseModel):
+    org_id: uuid.UUID
+    org_name: str
+    role: str
+
+
+class AdminUserDetailResponse(BaseModel):
+    """One user with their org memberships + roles (staff drill-in)."""
+
+    id: uuid.UUID
+    email: str
+    name: str | None
+    is_active: bool
+    staff_role: str | None
+    created_at: datetime
+    orgs: list[AdminUserOrgItem]
+
+
+class SetStaffRoleRequest(BaseModel):
+    """Grant (a role name) or revoke (null) a user's staff role. The name is validated
+    against the StaffRole allow-list in the endpoint — never trusted raw."""
+
+    staff_role: str | None

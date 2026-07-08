@@ -166,3 +166,107 @@ async def test_get_org_detail_lists_members(
     assert body["member_count"] == 1
     assert body["members"][0]["email"] == email
     assert body["members"][0]["role"] == "owner"  # personal-org creator is owner
+
+
+async def _user_id(session: AsyncSession, email: str) -> uuid.UUID:
+    return (await session.scalars(select(User).where(User.email == email))).one().id
+
+
+async def test_list_users_requires_view_users(
+    app_client: tuple[httpx.AsyncClient, FastAPI],
+    db_session: AsyncSession,
+) -> None:
+    client, _ = app_client
+    headers, email = await _signup(client)
+    assert (await client.get("/api/v1/admin/users", headers=headers)).status_code == 403
+    await _promote(db_session, email, StaffRole.READ_ONLY_OPS)
+
+    body = (await client.get("/api/v1/admin/users", headers=headers)).json()
+    assert body["total"] >= 1
+    assert any(u["email"] == email and u["org_count"] >= 1 for u in body["items"])
+
+
+async def test_deactivate_user_requires_manage_users_and_guards_self(
+    app_client: tuple[httpx.AsyncClient, FastAPI],
+    db_session: AsyncSession,
+) -> None:
+    client, _ = app_client
+    _, victim_email = await _signup(client)
+    staff_headers, staff_email = await _signup(client)
+    victim_id = await _user_id(db_session, victim_email)
+
+    # read_only_ops lacks MANAGE_USERS.
+    await _promote(db_session, staff_email, StaffRole.READ_ONLY_OPS)
+    r = await client.post(
+        f"/api/v1/admin/users/{victim_id}/deactivate", headers=staff_headers
+    )
+    assert r.status_code == 403
+
+    await _promote(db_session, staff_email, StaffRole.SUPERADMIN)
+    # cannot deactivate self.
+    staff_id = await _user_id(db_session, staff_email)
+    r = await client.post(
+        f"/api/v1/admin/users/{staff_id}/deactivate", headers=staff_headers
+    )
+    assert r.status_code == 400
+    # can deactivate another user — and it audits.
+    r = await client.post(
+        f"/api/v1/admin/users/{victim_id}/deactivate", headers=staff_headers
+    )
+    assert r.status_code == 200 and r.json()["is_active"] is False
+    audit = (
+        await client.get(
+            "/api/v1/admin/audit?action=user.deactivate", headers=staff_headers
+        )
+    ).json()
+    assert audit["total"] == 1 and audit["items"][0]["target_id"] == str(victim_id)
+
+
+async def test_set_staff_role_grants_revokes_and_validates(
+    app_client: tuple[httpx.AsyncClient, FastAPI],
+    db_session: AsyncSession,
+) -> None:
+    client, _ = app_client
+    _, target_email = await _signup(client)
+    staff_headers, staff_email = await _signup(client)
+    await _promote(db_session, staff_email, StaffRole.SUPERADMIN)
+    target_id = await _user_id(db_session, target_email)
+    url = f"/api/v1/admin/users/{target_id}/staff-role"
+
+    # invalid role name is rejected against the allow-list.
+    bad = await client.post(url, json={"staff_role": "root"}, headers=staff_headers)
+    assert bad.status_code == 422
+
+    # grant support, then revoke.
+    granted = await client.post(
+        url, json={"staff_role": "support"}, headers=staff_headers
+    )
+    assert granted.status_code == 200 and granted.json()["staff_role"] == "support"
+    revoked = await client.post(
+        url, json={"staff_role": None}, headers=staff_headers
+    )
+    assert revoked.status_code == 200 and revoked.json()["staff_role"] is None
+
+    # cannot change your own staff role.
+    staff_id = await _user_id(db_session, staff_email)
+    own = await client.post(
+        f"/api/v1/admin/users/{staff_id}/staff-role",
+        json={"staff_role": "read_only_ops"},
+        headers=staff_headers,
+    )
+    assert own.status_code == 400
+
+
+async def test_get_user_detail_lists_orgs(
+    app_client: tuple[httpx.AsyncClient, FastAPI],
+    db_session: AsyncSession,
+) -> None:
+    client, _ = app_client
+    headers, email = await _signup(client)
+    await _promote(db_session, email, StaffRole.SUPERADMIN)
+    user_id = await _user_id(db_session, email)
+
+    body = (await client.get(f"/api/v1/admin/users/{user_id}", headers=headers)).json()
+    assert body["email"] == email
+    assert body["staff_role"] == "superadmin"
+    assert body["orgs"][0]["role"] == "owner"  # owner of their personal org
