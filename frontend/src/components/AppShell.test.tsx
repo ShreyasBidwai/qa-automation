@@ -9,16 +9,32 @@ vi.mock("@/lib/api/client", () => ({
     signOut: vi.fn(),
     updateProfile: vi.fn(),
   },
+  // The shell asks /admin/me (via useStaff) to decide whether to show the Admin group.
+  adminApi: { me: vi.fn() },
 }));
 
+import { adminApi, authApi } from "@/lib/api/client";
+import type { AdminMe } from "@/lib/api/types";
 import { AuthProvider } from "@/lib/auth/AuthContext";
-import { clearToken } from "@/lib/auth/session";
+import { clearToken, setToken } from "@/lib/auth/session";
+import { resetStaffCache } from "@/lib/auth/useStaff";
 
 import { AppShell } from "./AppShell";
+
+function staff(permissions: string[]): AdminMe {
+  return {
+    user_id: "s1",
+    email: "ops@polaris.dev",
+    staff_role: "superadmin",
+    permissions,
+  };
+}
 
 describe("AppShell", () => {
   beforeEach(() => {
     clearToken();
+    resetStaffCache();
+    vi.mocked(adminApi.me).mockReset();
     window.history.pushState({}, "", "/");
   });
 
@@ -118,5 +134,56 @@ describe("AppShell", () => {
     expect(primary.getByRole("link", { name: "Ongoing run" })).not.toHaveAttribute(
       "aria-current",
     );
+  });
+
+  it("hides the Admin nav group from a non-staff caller", () => {
+    // No token → /admin/me is never asked; the caller is treated as not staff.
+    render(
+      <AuthProvider>
+        <AppShell>
+          <div>content</div>
+        </AppShell>
+      </AuthProvider>,
+    );
+    expect(screen.queryByRole("navigation", { name: "Admin" })).toBeNull();
+    expect(adminApi.me).not.toHaveBeenCalled();
+  });
+
+  it("shows the Admin nav group to a staff caller, gated per permission", async () => {
+    setToken("staff-token");
+    // A signed-in session (the shell mounts inside AuthProvider, which validates it).
+    vi.mocked(authApi.me).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: {
+        id: "s1",
+        email: "ops@polaris.dev",
+        name: null,
+        created_at: "2026-01-01",
+      },
+    });
+    // A staffer who can see ops + tenants but NOT users/audit: only those tabs appear.
+    vi.mocked(adminApi.me).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: staff(["view_ops", "view_tenants"]),
+    });
+
+    render(
+      <AuthProvider>
+        <AppShell>
+          <div>content</div>
+        </AppShell>
+      </AuthProvider>,
+    );
+
+    const admin = within(await screen.findByRole("navigation", { name: "Admin" }));
+    expect(admin.getByRole("link", { name: "Overview" })).toBeInTheDocument();
+    expect(admin.getByRole("link", { name: "Tenants" })).toBeInTheDocument();
+    expect(admin.getByRole("link", { name: "Queue" })).toBeInTheDocument();
+    expect(admin.getByRole("link", { name: "Incidents" })).toBeInTheDocument();
+    // Permissions the caller lacks hide their tabs entirely.
+    expect(admin.queryByRole("link", { name: "Users" })).toBeNull();
+    expect(admin.queryByRole("link", { name: "Audit" })).toBeNull();
   });
 });

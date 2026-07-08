@@ -4,6 +4,12 @@ import { AppShell } from "@/components/AppShell";
 import { AuthSplash } from "@/components/AuthSplash";
 import { GenericErrorPage } from "@/components/GenericErrorPage";
 import { NotFoundPage } from "@/components/NotFoundPage";
+import { AdminAuditPage } from "@/features/admin/AdminAuditPage";
+import { AdminIncidentsPage } from "@/features/admin/AdminIncidentsPage";
+import { AdminJobsPage } from "@/features/admin/AdminJobsPage";
+import { AdminOverviewPage } from "@/features/admin/AdminOverviewPage";
+import { AdminTenantsPage } from "@/features/admin/AdminTenantsPage";
+import { AdminUsersPage } from "@/features/admin/AdminUsersPage";
 import { ConnectorPage } from "@/features/connectors/ConnectorPage";
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { ForgotPasswordPage } from "@/features/auth/ForgotPasswordPage";
@@ -98,6 +104,27 @@ function renderRoute(pathname: string): ReactElement {
 
   if (segments[0] === "account" && segments.length === 1) {
     return <AccountPage />;
+  }
+
+  // The operator/admin console (staff-only). Each page self-gates on the caller's
+  // staff permission and renders a clean "not authorized" state for a non-staff user
+  // (the server 403s regardless) — so a deep link here never crashes.
+  if (segments[0] === "admin") {
+    if (segments.length === 1) return <AdminOverviewPage />;
+    if (segments.length === 2) {
+      switch (segments[1]) {
+        case "tenants":
+          return <AdminTenantsPage />;
+        case "users":
+          return <AdminUsersPage />;
+        case "jobs":
+          return <AdminJobsPage />;
+        case "incidents":
+          return <AdminIncidentsPage />;
+        case "audit":
+          return <AdminAuditPage />;
+      }
+    }
   }
 
   if (segments[0] === "settings" && segments.length === 1) {

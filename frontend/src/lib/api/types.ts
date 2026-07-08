@@ -624,3 +624,194 @@ export interface AccountDashboard {
   trend: TrendPoint[];
   recent_runs: RecentRunItem[];
 }
+
+// --- operator / admin console (staff-only, cross-tenant) ---------------------
+// Mirrors backend/app/api/admin.py + ops.py + incidents.py. Every surface here is
+// staff-gated server-side (403 for a non-staff caller); the UI only hides what it
+// knows will be refused — the server is the real authority.
+
+/** The staff roles the backend recognises (the allow-list). */
+export type StaffRole = "superadmin" | "support" | "billing" | "read_only_ops";
+
+/** The fine-grained actions a staff role grants. `permissions` is widened to
+ *  `string[]` on the wire for forward-compat; this names the values we gate on. */
+export type StaffPermission =
+  | "view_ops"
+  | "manage_jobs"
+  | "view_tenants"
+  | "manage_tenants"
+  | "view_users"
+  | "manage_users"
+  | "view_billing"
+  | "manage_billing"
+  | "view_audit"
+  | "impersonate";
+
+/** GET /admin/me — the signed-in staff member's console identity (403 if not staff). */
+export interface AdminMe {
+  user_id: string;
+  email: string;
+  staff_role: string;
+  permissions: string[];
+}
+
+// Tenants (organizations) ----------------------------------------------------
+
+export interface AdminOrgListItem {
+  id: string;
+  name: string;
+  is_personal: boolean;
+  suspended: boolean;
+  member_count: number;
+  project_count: number;
+  created_at: string;
+}
+
+export interface AdminOrgList {
+  items: AdminOrgListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AdminOrgMember {
+  user_id: string;
+  email: string;
+  name: string | null;
+  role: string;
+}
+
+export interface AdminOrgDetail {
+  id: string;
+  name: string;
+  is_personal: boolean;
+  suspended: boolean;
+  member_count: number;
+  project_count: number;
+  created_at: string;
+  members: AdminOrgMember[];
+}
+
+// Users ----------------------------------------------------------------------
+
+export interface AdminUserListItem {
+  id: string;
+  email: string;
+  name: string | null;
+  is_active: boolean;
+  staff_role: string | null;
+  org_count: number;
+  created_at: string;
+}
+
+export interface AdminUserList {
+  items: AdminUserListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AdminUserOrg {
+  org_id: string;
+  org_name: string;
+  role: string;
+}
+
+export interface AdminUserDetail {
+  id: string;
+  email: string;
+  name: string | null;
+  is_active: boolean;
+  staff_role: string | null;
+  created_at: string;
+  orgs: AdminUserOrg[];
+}
+
+/** POST /admin/users/{id}/staff-role — grant a role name, or null to revoke. */
+export interface SetStaffRoleBody {
+  staff_role: string | null;
+}
+
+// Jobs / queue ---------------------------------------------------------------
+
+/** One job in the durable queue (GET /ops/jobs, POST /admin/jobs/{id}/…). `status`
+ *  is a JobStatusValue but stays a string for forward-compat with new statuses. */
+export interface JobSummary {
+  id: string;
+  kind: string;
+  status: JobStatusValue;
+  project_id: string;
+  mode: string | null;
+  attempts: number;
+  max_attempts: number;
+  detail: string | null;
+  created_at: string;
+  locked_at: string | null;
+  finished_at: string | null;
+}
+
+export interface JobList {
+  items: JobSummary[];
+  total: number;
+}
+
+/** GET /ops/queue — the cross-tenant queue snapshot. `stuck` = running past the
+ *  threshold; `runner_healthy` is the at-a-glance signal (no stuck jobs). */
+export interface QueueStats {
+  queued: number;
+  running: number;
+  succeeded: number;
+  failed: number;
+  cancelled: number;
+  stuck: number;
+  total: number;
+  runner_healthy: boolean;
+}
+
+// Staff audit trail ----------------------------------------------------------
+
+export interface StaffAuditItem {
+  id: string;
+  created_at: string;
+  actor_id: string | null;
+  actor_email: string;
+  action: string;
+  target_type: string | null;
+  target_id: string | null;
+  detail: Record<string, unknown>;
+}
+
+export interface StaffAuditList {
+  items: StaffAuditItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+// Internal incidents (ADR-0047) ----------------------------------------------
+
+/** One captured internal failure (operator diagnostic). Same failure groups under
+ *  one `fingerprint`; the traceback is only on the detail view. */
+export interface IncidentListItem {
+  id: string;
+  created_at: string;
+  phase: string;
+  component: string | null;
+  project_id: string | null;
+  run_id: string | null;
+  exception_type: string;
+  message: string;
+  fingerprint: string;
+}
+
+export interface IncidentList {
+  items: IncidentListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/** GET /incidents/{id} — the full incident, including the captured traceback. */
+export interface IncidentDetail extends IncidentListItem {
+  traceback: string | null;
+}

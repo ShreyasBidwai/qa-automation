@@ -1,4 +1,6 @@
 import {
+  AlertTriangle,
+  Building2,
   ClipboardList,
   FolderGit2,
   GitBranch,
@@ -8,8 +10,10 @@ import {
   ListChecks,
   LogOut,
   Radio,
+  ScrollText,
   Search,
   Settings as SettingsIcon,
+  ShieldCheck,
   User,
   Users,
   type LucideIcon,
@@ -18,8 +22,9 @@ import type { ReactNode } from "react";
 
 import { Link } from "@/components/Link";
 import { Wordmark } from "@/components/Wordmark";
-import type { AuthUser } from "@/lib/api/types";
+import type { AuthUser, StaffPermission } from "@/lib/api/types";
 import { useAuth } from "@/lib/auth/useAuth";
+import { useStaff } from "@/lib/auth/useStaff";
 import { useLocation } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +35,12 @@ interface NavEntry {
   // for pages with no title icon yet, the closest thematic match already in use
   // there) — the sidebar mirrors the page instead of inventing a second icon set.
   icon: LucideIcon;
+}
+
+/** An admin nav entry, plus the staff permission that reveals it. The server is the
+ *  real authority; hiding the tab just avoids offering an action it would refuse. */
+interface AdminNavEntry extends NavEntry {
+  perm: StaffPermission;
 }
 
 // Order lifted from the sidebar in Polaris Account.dc.html / Run Dashboard.dc.html.
@@ -47,6 +58,18 @@ const PRIMARY: NavEntry[] = [
 const CONNECTORS: NavEntry[] = [
   { to: "/connectors/gitea", label: "Gitea", icon: GitBranch },
   { to: "/connectors/pm", label: "PM tool", icon: ClipboardList },
+];
+
+// The operator/admin console — its own section, shown ONLY to staff (each entry
+// further gated by the permission it needs). Ordered overview → tenants/users →
+// operational (queue/incidents) → audit, so the console reads top-down.
+const ADMIN: AdminNavEntry[] = [
+  { to: "/admin", label: "Overview", icon: ShieldCheck, perm: "view_ops" },
+  { to: "/admin/tenants", label: "Tenants", icon: Building2, perm: "view_tenants" },
+  { to: "/admin/users", label: "Users", icon: Users, perm: "view_users" },
+  { to: "/admin/jobs", label: "Queue", icon: ListChecks, perm: "view_ops" },
+  { to: "/admin/incidents", label: "Incidents", icon: AlertTriangle, perm: "view_ops" },
+  { to: "/admin/audit", label: "Audit", icon: ScrollText, perm: "view_audit" },
 ];
 
 // The quiet bottom cluster (Settings is pinned bottom in the file; we keep our
@@ -135,11 +158,16 @@ function SignOutButton() {
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useLocation();
+  const { staff, hasPerm } = useStaff();
+  // The admin console is staff-only; each tab is further gated by its permission, so a
+  // billing-only staffer never sees the Tenants tab. Hidden entirely for non-staff.
+  const adminEntries = staff ? ADMIN.filter((entry) => hasPerm(entry.perm)) : [];
   // Resolve the active entry ONCE across every nav target, so only the longest match
   // lights up (no double-highlight of "Runs" + "Ongoing run" on /runs/ongoing).
   const activeTarget = activeNavTarget(pathname, [
     ...PRIMARY,
     ...CONNECTORS,
+    ...adminEntries,
     ...SECONDARY,
   ]);
   return (
@@ -171,6 +199,24 @@ export function AppShell({ children }: { children: ReactNode }) {
             />
           ))}
         </nav>
+        {adminEntries.length > 0 ? (
+          <nav
+            className="mt-4 flex flex-col gap-0.5 border-t border-border-subtle pt-3"
+            aria-label="Admin"
+          >
+            <p className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-marker">
+              Admin
+            </p>
+            {adminEntries.map((entry) => (
+              <NavItem
+                key={entry.to}
+                entry={entry}
+                active={entry.to === activeTarget}
+                muted
+              />
+            ))}
+          </nav>
+        ) : null}
         <nav
           className="mt-auto flex flex-col gap-0.5 border-t border-border-subtle pt-3"
           aria-label="Account and support"
@@ -250,6 +296,8 @@ function sectionLabel(pathname: string): string {
       return "Runs";
     case "connectors":
       return "Connectors";
+    case "admin":
+      return "Admin";
     case "account":
       return "Account";
     case "settings":

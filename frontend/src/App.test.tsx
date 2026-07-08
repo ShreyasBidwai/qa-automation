@@ -28,11 +28,17 @@ vi.mock("@/lib/api/client", () => ({
   jobApi: { get: vi.fn() },
   healthApi: { liveness: vi.fn(), readiness: vi.fn() },
   accountApi: { dashboard: vi.fn() },
+  // The app shell asks /admin/me (via useStaff); default to "not staff" so the
+  // authenticated routes render without the Admin nav (and without a crash).
+  adminApi: {
+    me: vi.fn(() => Promise.resolve({ ok: false, status: 403, data: null })),
+  },
 }));
 
-import { accountApi, authApi, healthApi, projectApi } from "@/lib/api/client";
+import { accountApi, adminApi, authApi, healthApi, projectApi } from "@/lib/api/client";
 import { AuthProvider } from "@/lib/auth/AuthContext";
 import { clearToken, setToken } from "@/lib/auth/session";
+import { resetStaffCache } from "@/lib/auth/useStaff";
 
 import { App } from "./App";
 
@@ -47,7 +53,10 @@ function renderApp() {
 describe("App auth gating", () => {
   beforeEach(() => {
     clearToken();
+    resetStaffCache();
     vi.clearAllMocks();
+    // Re-arm the default "not staff" reply after clearAllMocks wiped call state.
+    vi.mocked(adminApi.me).mockResolvedValue({ ok: false, status: 403, data: null });
     window.history.pushState({}, "", "/");
   });
 

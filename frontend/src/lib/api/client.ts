@@ -3,6 +3,11 @@ import { clearToken, getToken } from "@/lib/auth/session";
 import type {
   AccountDashboard,
   ActiveRunResponse,
+  AdminMe,
+  AdminOrgDetail,
+  AdminOrgList,
+  AdminUserDetail,
+  AdminUserList,
   AuthTokenResponse,
   AuthUser,
   ChangePasswordBody,
@@ -19,11 +24,15 @@ import type {
   Finding,
   FindingsResponse,
   HealthzResponse,
+  IncidentDetail,
+  IncidentList,
   IngestResponse,
   InviteCreateBody,
   InviteListResponse,
   InviteResponse,
+  JobList,
   JobStatus,
+  JobSummary,
   MemberListResponse,
   MemberResponse,
   ModelStats,
@@ -37,6 +46,7 @@ import type {
   ProjectListResponse,
   ProfileUpdateBody,
   ProjectUpdateBody,
+  QueueStats,
   ReadyzResponse,
   RoleUpdateBody,
   RunCreateBody,
@@ -44,8 +54,10 @@ import type {
   RunListResponse,
   RunResponse,
   RunStatus,
+  SetStaffRoleBody,
   SignInBody,
   SignUpBody,
+  StaffAuditList,
   TestCaseListResponse,
   TriagePatchBody,
 } from "./types";
@@ -268,6 +280,19 @@ function pageQuery({ limit, offset }: PageParams): string {
   return `limit=${limit}&offset=${offset}`;
 }
 
+/** Build a `?a=b&c=d` query string, dropping undefined/null/empty values so an
+ *  omitted filter never leaks a bare `param=` onto the URL. */
+function qs(params: Record<string, string | number | undefined | null>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") {
+      search.set(key, String(value));
+    }
+  }
+  const encoded = search.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
 export const projectApi = {
   /** POST /projects — register a project. */
   create: (body: ProjectCreateBody) => postJson<Project>(`${API_BASE}/projects`, body),
@@ -412,6 +437,110 @@ export const credentialApi = {
     putJson<CredentialStatus>(`${API_BASE}/projects/${projectId}/credentials`, body),
   /** DELETE /projects/{id}/credentials — clear stored credentials. */
   remove: (projectId: string) => del(`${API_BASE}/projects/${projectId}/credentials`),
+};
+
+/**
+ * The operator/admin console (staff-only, cross-tenant). Every call is gated
+ * server-side by the caller's staff permissions — a non-staff caller gets 403 on
+ * `me` and on every management action. The console only hides actions it knows the
+ * server will refuse (the caller's `permissions`); the server stays authoritative.
+ */
+export const adminApi = {
+  /** GET /admin/me — the caller's staff identity + permissions (403 if not staff). */
+  me: () => getJson<AdminMe>(`${API_BASE}/admin/me`),
+  /** GET /admin/audit — the staff audit trail, newest-first (VIEW_AUDIT). */
+  listAudit: (params: {
+    action?: string;
+    actorId?: string;
+    limit: number;
+    offset: number;
+  }) =>
+    getJson<StaffAuditList>(
+      `${API_BASE}/admin/audit${qs({
+        action: params.action,
+        actor_id: params.actorId,
+        limit: params.limit,
+        offset: params.offset,
+      })}`,
+    ),
+  /** GET /admin/orgs — all organizations with rollup counts (VIEW_TENANTS). */
+  listOrgs: (params: { search?: string; limit: number; offset: number }) =>
+    getJson<AdminOrgList>(
+      `${API_BASE}/admin/orgs${qs({
+        search: params.search,
+        limit: params.limit,
+        offset: params.offset,
+      })}`,
+    ),
+  /** GET /admin/orgs/{id} — one org with members + counts. */
+  getOrg: (id: string) => getJson<AdminOrgDetail>(`${API_BASE}/admin/orgs/${id}`),
+  /** POST /admin/orgs/{id}/suspend — suspend an org (MANAGE_TENANTS). */
+  suspendOrg: (id: string) =>
+    postJson<AdminOrgDetail>(`${API_BASE}/admin/orgs/${id}/suspend`, {}),
+  /** POST /admin/orgs/{id}/reactivate — lift a suspension (MANAGE_TENANTS). */
+  reactivateOrg: (id: string) =>
+    postJson<AdminOrgDetail>(`${API_BASE}/admin/orgs/${id}/reactivate`, {}),
+  /** GET /admin/users — all users, newest-first (VIEW_USERS). */
+  listUsers: (params: { search?: string; limit: number; offset: number }) =>
+    getJson<AdminUserList>(
+      `${API_BASE}/admin/users${qs({
+        search: params.search,
+        limit: params.limit,
+        offset: params.offset,
+      })}`,
+    ),
+  /** GET /admin/users/{id} — one user with their org memberships. */
+  getUser: (id: string) => getJson<AdminUserDetail>(`${API_BASE}/admin/users/${id}`),
+  /** POST /admin/users/{id}/deactivate — disable an account (MANAGE_USERS). */
+  deactivateUser: (id: string) =>
+    postJson<AdminUserDetail>(`${API_BASE}/admin/users/${id}/deactivate`, {}),
+  /** POST /admin/users/{id}/reactivate — re-enable an account (MANAGE_USERS). */
+  reactivateUser: (id: string) =>
+    postJson<AdminUserDetail>(`${API_BASE}/admin/users/${id}/reactivate`, {}),
+  /** POST /admin/users/{id}/staff-role — grant/revoke a staff role (MANAGE_USERS).
+   *  422 for an invalid role name; 400 when targeting your own account. */
+  setStaffRole: (id: string, body: SetStaffRoleBody) =>
+    postJson<AdminUserDetail>(`${API_BASE}/admin/users/${id}/staff-role`, body),
+  /** POST /admin/jobs/{id}/cancel — cancel a queued/running job (MANAGE_JOBS).
+   *  404 if absent, 409 if the job isn't in a cancellable state. */
+  cancelJob: (id: string) =>
+    postJson<JobSummary>(`${API_BASE}/admin/jobs/${id}/cancel`, {}),
+  /** POST /admin/jobs/{id}/requeue — re-enqueue a failed/cancelled job (MANAGE_JOBS);
+   *  returns a NEW job. 404 if absent, 409 if the job isn't requeueable. */
+  requeueJob: (id: string) =>
+    postJson<JobSummary>(`${API_BASE}/admin/jobs/${id}/requeue`, {}),
+};
+
+/** Operator queue view (B4, ADR-0034/0035) — readable by any staff member. */
+export const opsApi = {
+  /** GET /ops/queue — the cross-tenant queue snapshot + runner health. */
+  queue: () => getJson<QueueStats>(`${API_BASE}/ops/queue`),
+  /** GET /ops/jobs — recent jobs across all tenants, optionally filtered by status. */
+  jobs: (params: { status?: string; limit: number }) =>
+    getJson<JobList>(
+      `${API_BASE}/ops/jobs${qs({ status: params.status, limit: params.limit })}`,
+    ),
+};
+
+/** Internal incidents (ADR-0047) — operator-only READ surface, no mutation. */
+export const incidentApi = {
+  /** GET /incidents — captured internal failures, newest-first. */
+  list: (params: {
+    phase?: string;
+    projectId?: string;
+    limit: number;
+    offset: number;
+  }) =>
+    getJson<IncidentList>(
+      `${API_BASE}/incidents${qs({
+        phase: params.phase,
+        project_id: params.projectId,
+        limit: params.limit,
+        offset: params.offset,
+      })}`,
+    ),
+  /** GET /incidents/{id} — one incident with its captured traceback. */
+  get: (id: string) => getJson<IncidentDetail>(`${API_BASE}/incidents/${id}`),
 };
 
 /** Login config for the authenticated crawl (ADR-0056) — where/how runs sign in.
