@@ -121,6 +121,16 @@ _FACTORY_SKIP_REASON = (
     "precondition seeding (model factories) unavailable on the target — deferred "
     "to B10"
 )
+# Retrieval-augmented generation (Loop 1, ADR-0070): a few of THIS project's own
+# previously-PASSING tests, fed as few-shot so each run sharpens the next. The model
+# mirrors their SHAPE only — request/expected still come from the context alone.
+_EXEMPLAR_INTRO = (
+    "\n\nHere are up to 2 tests previously generated for similar routes in THIS "
+    "project that PASSED first-try — mirror their STRUCTURE, request-helper choice, "
+    "and assertion style. Do NOT copy their routes/payloads; use ONLY the "
+    "request/expected in the context above. Examples:\n\n"
+)
+_EXEMPLAR_MAX_CHARS = 1600  # keep each exemplar within the token budget
 
 
 def build_context(spec: EndpointSpec, case: PlannedCase) -> Subgraph:
@@ -217,6 +227,7 @@ def render_script(
     budget_tokens: int,
     *,
     factories_available: bool = True,
+    exemplars: list[str] | None = None,
 ) -> str:
     """Render a DIRECTLY-RUNNABLE PHPUnit test class from the model.
 
@@ -224,7 +235,8 @@ def render_script(
     snuck through before — B5 smoke), forces a deterministic globally-unique class
     name (so files don't collide in one runner invocation), assembles a valid PHP
     file, and — when the target has no factories — honestly skips a factory-dependent
-    case rather than emitting one that hard-fails (ADR-0037).
+    case rather than emitting one that hard-fails (ADR-0037). ``exemplars`` are this
+    project's own previously-passing tests, injected as few-shot (Loop 1, ADR-0070).
     """
     instruction = _INSTRUCTION + _CODE_ONLY
     if factories_available:
@@ -233,6 +245,10 @@ def render_script(
             instruction += _DEPENDENCY_ORDER
     else:
         instruction += _NO_FACTORIES
+    # Loop 1 (ADR-0070): show the model this project's own proven tests as few-shot.
+    if exemplars:
+        blocks = "\n\n---\n\n".join(ex[:_EXEMPLAR_MAX_CHARS] for ex in exemplars)
+        instruction += _EXEMPLAR_INTRO + blocks
     raw = provider.generate(instruction, build_context(spec, case), budget_tokens)
     code = extract_code(raw)
     if not factories_available:

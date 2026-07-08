@@ -15,6 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.generation_signal import GenerationSignal
+from app.models.test_script import TestScript
 
 
 @dataclass(frozen=True)
@@ -119,3 +120,30 @@ class GenerationSignalRepository:
             triaged=triaged,
             triage_rejected=rejected,
         )
+
+    async def good_exemplars(
+        self, project_id: uuid.UUID, route_class: str, *, limit: int = 2
+    ) -> list[str]:
+        """The code of up to ``limit`` recent tests that PASSED first-try (not repaired)
+        for this project's route class — the RAG-generation corpus (Loop 1, ADR-0070).
+        This is where one run sharpens the next: a proven test becomes a few-shot
+        exemplar for the next similar generation.
+
+        SAME-PROJECT ONLY: never leaks one tenant's generated code into another's prompt
+        (cross-tenant exemplar sharing is a later opt-in, abstraction-gated slice)."""
+        stmt = (
+            select(TestScript.code)
+            .join(
+                GenerationSignal,
+                GenerationSignal.test_case_id == TestScript.test_case_id,
+            )
+            .where(
+                GenerationSignal.project_id == project_id,
+                GenerationSignal.route_class == route_class,
+                GenerationSignal.outcome == "pass",
+                GenerationSignal.repaired.is_(False),
+            )
+            .order_by(GenerationSignal.created_at.desc())
+            .limit(limit)
+        )
+        return list((await self.session.scalars(stmt)).all())
