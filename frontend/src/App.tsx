@@ -35,6 +35,7 @@ import { RunStatusPage } from "@/features/runs/RunStatusPage";
 import { RunsListPage } from "@/features/runs/RunsListPage";
 import { SystemStatusPage } from "@/features/system-status/SystemStatusPage";
 import { useAuth } from "@/lib/auth/useAuth";
+import { useStaff } from "@/lib/auth/useStaff";
 import { navigate, useLocation } from "@/lib/router";
 
 /** Full-screen routes that render outside the app shell (no sidebar). */
@@ -175,6 +176,7 @@ function NavigateTo({ to }: { to: string }) {
 
 export function App() {
   const { status } = useAuth();
+  const { staff } = useStaff();
   const pathname = useLocation();
   const clean = pathname.replace(/\/+$/, "") || "/";
 
@@ -204,5 +206,9 @@ export function App() {
   // Signed in: bounce away from the auth pages, otherwise render the app.
   if (AUTH_PATHS.has(clean)) return <NavigateTo to="/" />;
   if (clean === "/error") return <GenericErrorPage />;
+  // Staff are platform operators: land them on the console, not the customer dashboard.
+  if (staff && (clean === "/" || clean === "/dashboard")) {
+    return <NavigateTo to="/admin" />;
+  }
   return <AppShell>{renderRoute(pathname)}</AppShell>;
 }

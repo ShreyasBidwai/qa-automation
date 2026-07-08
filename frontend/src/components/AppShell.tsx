@@ -161,15 +161,18 @@ function SignOutButton() {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useLocation();
   const { staff, hasPerm } = useStaff();
-  // The admin console is staff-only; each tab is further gated by its permission, so a
-  // billing-only staffer never sees the Tenants tab. Hidden entirely for non-staff.
-  const adminEntries = staff ? ADMIN.filter((entry) => hasPerm(entry.perm)) : [];
-  // Resolve the active entry ONCE across every nav target, so only the longest match
-  // lights up (no double-highlight of "Runs" + "Ongoing run" on /runs/ongoing).
+  const isStaff = staff !== null;
+  // Staff are PLATFORM OPERATORS, not customers: the sidebar IS the operator console —
+  // no create/test workflow (they never build/run projects; to see a customer's view
+  // they impersonate, ADR-0071). Each admin tab is still gated by its permission, so a
+  // billing-only staffer never sees Tenants. Customers get the workflow + connectors and
+  // never see /admin.
+  const primary = isStaff ? ADMIN.filter((entry) => hasPerm(entry.perm)) : PRIMARY;
+  // Resolve the active entry ONCE across every VISIBLE nav target, so only the longest
+  // match lights up (no double-highlight of "Runs" + "Ongoing run" on /runs/ongoing).
   const activeTarget = activeNavTarget(pathname, [
-    ...PRIMARY,
-    ...CONNECTORS,
-    ...adminEntries,
+    ...primary,
+    ...(isStaff ? [] : CONNECTORS),
     ...SECONDARY,
   ]);
   return (
@@ -180,36 +183,23 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Wordmark className="text-[18px]" />
           </Link>
         </div>
-        <nav className="flex flex-col gap-0.5" aria-label="Primary">
-          {PRIMARY.map((entry) => (
+        <nav
+          className="flex flex-col gap-0.5"
+          aria-label={isStaff ? "Operator console" : "Primary"}
+        >
+          {primary.map((entry) => (
             <NavItem key={entry.to} entry={entry} active={entry.to === activeTarget} />
           ))}
         </nav>
-        <nav
-          className="mt-4 flex flex-col gap-0.5 border-t border-border-subtle pt-3"
-          aria-label="Connectors"
-        >
-          <p className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-marker">
-            Connectors
-          </p>
-          {CONNECTORS.map((entry) => (
-            <NavItem
-              key={entry.to}
-              entry={entry}
-              active={entry.to === activeTarget}
-              muted
-            />
-          ))}
-        </nav>
-        {adminEntries.length > 0 ? (
+        {!isStaff && (
           <nav
             className="mt-4 flex flex-col gap-0.5 border-t border-border-subtle pt-3"
-            aria-label="Admin"
+            aria-label="Connectors"
           >
             <p className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-marker">
-              Admin
+              Connectors
             </p>
-            {adminEntries.map((entry) => (
+            {CONNECTORS.map((entry) => (
               <NavItem
                 key={entry.to}
                 entry={entry}
@@ -218,7 +208,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               />
             ))}
           </nav>
-        ) : null}
+        )}
         <nav
           className="mt-auto flex flex-col gap-0.5 border-t border-border-subtle pt-3"
           aria-label="Account and support"
@@ -249,7 +239,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
 function TopBar() {
   const pathname = useLocation();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-surface px-4 sm:px-6">
       {/* Mobile: the wordmark (no sidebar). Desktop: the current section context. */}
@@ -278,6 +268,17 @@ function TopBar() {
         >
           {initialsOf(user) || <User className="h-4 w-4" aria-hidden="true" />}
         </Link>
+        {/* Always-visible sign-out — the sidebar's sits at the bottom and can fall below
+            the fold; logout should never be a hunt. */}
+        <button
+          type="button"
+          onClick={() => void signOut()}
+          aria-label="Sign out"
+          title="Sign out"
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-status-neutral-solid hover:bg-background hover:text-foreground"
+        >
+          <LogOut className="h-4 w-4" aria-hidden="true" />
+        </button>
       </div>
     </header>
   );

@@ -177,7 +177,9 @@ describe("AppShell", () => {
       </AuthProvider>,
     );
 
-    const admin = within(await screen.findByRole("navigation", { name: "Admin" }));
+    const admin = within(
+      await screen.findByRole("navigation", { name: "Operator console" }),
+    );
     expect(admin.getByRole("link", { name: "Overview" })).toBeInTheDocument();
     expect(admin.getByRole("link", { name: "Tenants" })).toBeInTheDocument();
     expect(admin.getByRole("link", { name: "Queue" })).toBeInTheDocument();
@@ -187,5 +189,8 @@ describe("AppShell", () => {
     // Permissions the caller lacks hide their tabs entirely.
     expect(admin.queryByRole("link", { name: "Users" })).toBeNull();
     expect(admin.queryByRole("link", { name: "Audit" })).toBeNull();
+    // Staff are operators, not customers — the create/test workflow nav is gone.
+    expect(screen.queryByRole("link", { name: "Projects" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Runs" })).toBeNull();
   });
 });
