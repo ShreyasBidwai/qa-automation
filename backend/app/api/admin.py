@@ -25,12 +25,14 @@ from app.models.user import User
 from app.reporting.org_usage import OrgUsageReader
 from app.repositories.admin_org_repository import AdminOrgRepository
 from app.repositories.admin_user_repository import AdminUserRepository
+from app.repositories.generation_signal_repository import GenerationSignalRepository
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.staff_audit_repository import StaffAuditRepository
 from app.services.job_queue import JobQueue
 
 from .deps import get_session
 from .schemas import (
+    AdminGenerationQualityResponse,
     AdminMeResponse,
     AdminModelCostItem,
     AdminOrgDetailResponse,
@@ -480,3 +482,32 @@ async def requeue_job(
     # Reload server-default columns (created_at/available_at) before serializing.
     await session.refresh(new_job)
     return _job_summary(new_job)
+
+
+# --- Flywheel (generation quality) ------------------------------------------
+
+
+@router.get("/generation-quality", response_model=AdminGenerationQualityResponse)
+async def generation_quality(
+    staff: Annotated[User, Depends(require_staff(StaffPermission.VIEW_OPS))],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    days: Annotated[int, Query(ge=1, le=365)] = 30,
+    prompt_version: Annotated[str | None, Query()] = None,
+) -> AdminGenerationQualityResponse:
+    """The flywheel's eval aggregate over the last ``days`` — optionally scoped to one
+    prompt/strategy version to A/B a change (VIEW_OPS, ADR-0070)."""
+    since = datetime.now(UTC) - timedelta(days=days)
+    quality = await GenerationSignalRepository(session).quality_summary(
+        since=since, prompt_version=prompt_version
+    )
+    return AdminGenerationQualityResponse(
+        since_days=days,
+        prompt_version=prompt_version,
+        total=quality.total,
+        by_outcome=quality.by_outcome,
+        repaired=quality.repaired,
+        healed=quality.healed,
+        flaky=quality.flaky,
+        triaged=quality.triaged,
+        triage_rejected=quality.triage_rejected,
+    )

@@ -1156,3 +1156,19 @@ class AdminOrgUsageResponse(BaseModel):
     input_tokens: int
     output_tokens: int
     by_model: list[AdminModelCostItem]
+
+
+class AdminGenerationQualityResponse(BaseModel):
+    """The flywheel's eval aggregate over a window (ADR-0070). The dashboard derives a
+    composite quality index from these; pass-rate alone is never the target (it rewards
+    always-pass tests) — false positives + repair/heal are the counterweights."""
+
+    since_days: int
+    prompt_version: str | None
+    total: int
+    by_outcome: dict[str, int]  # pass / fail / error / skipped
+    repaired: int
+    healed: int
+    flaky: int
+    triaged: int
+    triage_rejected: int

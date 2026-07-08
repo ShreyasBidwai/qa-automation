@@ -15,6 +15,7 @@ from decimal import Decimal
 from app.models.ai_usage import AiUsage
 from app.models.enums import JobKind, JobStatus, StaffRole
 from app.models.user import User
+from app.repositories.generation_signal_repository import GenerationSignalRepository
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.staff_audit_repository import StaffAuditRepository
 from app.services.job_queue import JobQueue
@@ -375,3 +376,31 @@ async def test_org_usage_requires_view_billing_and_sums_cost(
     assert body["run_count"] == 1  # distinct run
     assert body["input_tokens"] == 300
     assert body["by_model"][0]["model"] == "claude-opus-4-8"
+
+
+async def test_generation_quality_requires_staff_and_aggregates(
+    app_client: tuple[httpx.AsyncClient, FastAPI],
+    db_session: AsyncSession,
+) -> None:
+    client, _ = app_client
+    headers, email = await _signup(client)
+    repo = GenerationSignalRepository(db_session)
+    for outcome, triage in [("pass", "accepted"), ("error", None), ("fail", "rejected")]:
+        await repo.record(
+            project_id=uuid.uuid4(),
+            prompt_version="v1",
+            strategy="full_sweep",
+            outcome=outcome,
+            triage=triage,
+        )
+    await db_session.flush()
+
+    url = "/api/v1/admin/generation-quality?prompt_version=v1"
+    assert (await client.get(url, headers=headers)).status_code == 403  # not staff
+    await _promote(db_session, email, StaffRole.READ_ONLY_OPS)  # has VIEW_OPS
+
+    body = (await client.get(url, headers=headers)).json()
+    assert body["total"] == 3
+    assert body["by_outcome"] == {"pass": 1, "error": 1, "fail": 1}
+    assert body["triaged"] == 2
+    assert body["triage_rejected"] == 1
