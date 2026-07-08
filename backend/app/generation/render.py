@@ -131,6 +131,14 @@ _EXEMPLAR_INTRO = (
     "request/expected in the context above. Examples:\n\n"
 )
 _EXEMPLAR_MAX_CHARS = 1600  # keep each exemplar within the token budget
+# Loop 0 self-repair (ADR-0070): when the model returns something that isn't a test
+# class, retry ONCE with the defect named. Bounded — a second miss ships as-is (the
+# run's SKIP/ERROR handling is the net). Execution remains the real oracle.
+_REPAIR_NOTE = (
+    "\n\nYOUR PREVIOUS ATTEMPT WAS NOT A VALID TEST CLASS. Emit a COMPLETE PHP file: "
+    "it MUST start with `<?php`, declare a `class ...Test extends Tests\\TestCase`, "
+    "and have a `public function test_...(): void` method. Output ONLY the PHP."
+)
 
 
 def build_context(spec: EndpointSpec, case: PlannedCase) -> Subgraph:
@@ -220,6 +228,19 @@ def _header(case: PlannedCase) -> str:
     return "\n".join(lines)
 
 
+def _looks_like_test_class(code: str) -> bool:
+    """A cheap structural check that the render is a PHP test class, not prose or an
+    empty/malformed file — the trigger for one self-repair retry (Loop 0, ADR-0070).
+    Deterministic; NOT a substitute for execution, which is the real oracle."""
+    lowered = code.lower()
+    return (
+        "<?php" in code
+        and "class " in code
+        and "extends" in code
+        and "function test" in lowered
+    )
+
+
 def render_script(
     provider: AIProvider,
     spec: EndpointSpec,
@@ -251,6 +272,13 @@ def render_script(
         instruction += _EXEMPLAR_INTRO + blocks
     raw = provider.generate(instruction, build_context(spec, case), budget_tokens)
     code = extract_code(raw)
+    # Loop 0 self-repair (ADR-0070): a malformed first attempt gets ONE bounded retry
+    # with the defect named — cheaper than shipping garbage that ERRORs at execution.
+    if not _looks_like_test_class(code):
+        raw = provider.generate(
+            instruction + _REPAIR_NOTE, build_context(spec, case), budget_tokens
+        )
+        code = extract_code(raw)
     if not factories_available:
         code = skip_if_uses_factory(code, _FACTORY_SKIP_REASON)
     seed = f"{spec.method} {spec.uri} {case.name}"
