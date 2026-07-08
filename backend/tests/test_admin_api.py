@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import StaffRole
 from app.models.user import User
+from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.staff_audit_repository import StaffAuditRepository
 
 
@@ -95,3 +96,73 @@ async def test_audit_repository_records_and_lists(
     assert entries[0].detail == {"reason": "manual"}
     assert await repo.count(action="job.retry") == 1
     assert await repo.count(action="org.suspend") == 0
+
+
+async def _personal_org_id(session: AsyncSession, email: str) -> uuid.UUID:
+    user = (await session.scalars(select(User).where(User.email == email))).one()
+    org = await OrganizationRepository(session).get_personal_org(user.id)
+    assert org is not None
+    return org.id
+
+
+async def test_list_orgs_requires_view_tenants(
+    app_client: tuple[httpx.AsyncClient, FastAPI],
+    db_session: AsyncSession,
+) -> None:
+    client, _ = app_client
+    headers, email = await _signup(client)  # signup auto-creates a personal org
+    assert (await client.get("/api/v1/admin/orgs", headers=headers)).status_code == 403
+    await _promote(db_session, email, StaffRole.READ_ONLY_OPS)
+
+    body = (await client.get("/api/v1/admin/orgs", headers=headers)).json()
+    assert body["total"] >= 1
+    # cross-tenant: the caller's own personal org is visible, with a member count.
+    assert any(o["is_personal"] and o["member_count"] >= 1 for o in body["items"])
+
+
+async def test_suspend_org_requires_manage_tenants_and_audits(
+    app_client: tuple[httpx.AsyncClient, FastAPI],
+    db_session: AsyncSession,
+) -> None:
+    client, _ = app_client
+    _, victim_email = await _signup(client)  # the org we will suspend
+    staff_headers, staff_email = await _signup(client)
+    org_id = await _personal_org_id(db_session, victim_email)
+
+    # read_only_ops can view but NOT suspend (no MANAGE_TENANTS).
+    await _promote(db_session, staff_email, StaffRole.READ_ONLY_OPS)
+    r = await client.post(f"/api/v1/admin/orgs/{org_id}/suspend", headers=staff_headers)
+    assert r.status_code == 403
+
+    # superadmin can — and it audits.
+    await _promote(db_session, staff_email, StaffRole.SUPERADMIN)
+    r = await client.post(f"/api/v1/admin/orgs/{org_id}/suspend", headers=staff_headers)
+    assert r.status_code == 200 and r.json()["suspended"] is True
+
+    audit = (
+        await client.get("/api/v1/admin/audit?action=org.suspend", headers=staff_headers)
+    ).json()
+    assert audit["total"] == 1
+    assert audit["items"][0]["target_id"] == str(org_id)
+
+    # reactivate lifts it.
+    r = await client.post(
+        f"/api/v1/admin/orgs/{org_id}/reactivate", headers=staff_headers
+    )
+    assert r.status_code == 200 and r.json()["suspended"] is False
+
+
+async def test_get_org_detail_lists_members(
+    app_client: tuple[httpx.AsyncClient, FastAPI],
+    db_session: AsyncSession,
+) -> None:
+    client, _ = app_client
+    headers, email = await _signup(client)
+    await _promote(db_session, email, StaffRole.SUPERADMIN)
+    org_id = await _personal_org_id(db_session, email)
+
+    body = (await client.get(f"/api/v1/admin/orgs/{org_id}", headers=headers)).json()
+    assert body["id"] == str(org_id)
+    assert body["member_count"] == 1
+    assert body["members"][0]["email"] == email
+    assert body["members"][0]["role"] == "owner"  # personal-org creator is owner

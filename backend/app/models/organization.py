@@ -7,7 +7,9 @@ for each user on signup, so a single user keeps working without making a team.
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, String, text
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -22,3 +24,13 @@ class Organization(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     is_personal: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
     )
+    # Set when platform staff suspend the org (ADR-0068). A suspended org's members
+    # keep read access but cannot start runs/ingests (enforced at the enqueue choke
+    # point, B3). NULL = active. Reversible; removes nothing (unlike deletion).
+    suspended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    @property
+    def is_suspended(self) -> bool:
+        return self.suspended_at is not None

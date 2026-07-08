@@ -1054,3 +1054,42 @@ class StaffAuditListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class AdminOrgListItem(BaseModel):
+    """One organization in the cross-tenant admin list, with rollup counts."""
+
+    id: uuid.UUID
+    name: str
+    is_personal: bool
+    suspended: bool
+    member_count: int
+    project_count: int
+    created_at: datetime
+
+
+class AdminOrgListResponse(BaseModel):
+    items: list[AdminOrgListItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminOrgMemberItem(BaseModel):
+    user_id: uuid.UUID
+    email: str
+    name: str | None
+    role: str
+
+
+class AdminOrgDetailResponse(BaseModel):
+    """One organization with its rollup counts + members (staff drill-in)."""
+
+    id: uuid.UUID
+    name: str
+    is_personal: bool
+    suspended: bool
+    member_count: int
+    project_count: int
+    created_at: datetime
+    members: list[AdminOrgMemberItem]
