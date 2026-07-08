@@ -77,14 +77,16 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 async def get_operator_user(
     user: Annotated[User, Depends(get_current_user)],
 ) -> User:
-    """The current user, required to be an instance operator (B4, ADR-0035).
+    """The current user, required to be platform staff (ADR-0068; ADR-0035).
 
-    Cross-tenant ops surface: unauthenticated → 401 (via get_current_user); an
-    authenticated non-operator → 403 (it's an authorization failure, not a hidden
-    per-tenant resource).
+    Cross-tenant ops surface (queue / incidents): unauthenticated → 401 (via
+    get_current_user); an authenticated non-staff user → 403. Any staff role — down
+    to the least-privileged ``read_only_ops`` — satisfies this read gate; finer
+    admin-console actions gate on ``require_staff(<permission>)`` (app.api.staff_authz)
+    instead. Still honours the deprecated ``is_operator`` flag during the transition.
     """
-    if not user.is_operator:
-        raise HTTPException(status_code=403, detail="operator access required")
+    if user.staff_role is None and not user.is_operator:
+        raise HTTPException(status_code=403, detail="staff access required")
     return user
 
 

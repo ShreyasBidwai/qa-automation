@@ -253,6 +253,22 @@ class OrgRole(str, enum.Enum):
     VIEWER = "viewer"
 
 
+class StaffRole(str, enum.Enum):
+    """A platform-staff member's instance-level role (ADR-0068).
+
+    Instance-wide, NOT an org role: governs the cross-tenant operator/admin
+    console. Ordered most→least privileged. Persisted as the ``staff_role`` pg
+    enum; the permission matrix lives in ``app.core.staff_permissions``. Supersedes
+    the boolean ``users.is_operator`` (ADR-0035) — a null role means the user is not
+    staff. Granted only by a superadmin (admin API) or seed.
+    """
+
+    SUPERADMIN = "superadmin"
+    SUPPORT = "support"
+    BILLING = "billing"
+    READ_ONLY_OPS = "read_only_ops"
+
+
 class JobKind(str, enum.Enum):
     """What a durable job does (B4, ADR-0034). Persisted as the ``job_kind`` enum."""
 

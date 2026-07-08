@@ -53,6 +53,7 @@ EXPECTED_ENUMS = {
     "finding_layer",
     "triage_status",
     "org_role",
+    "staff_role",
     "job_kind",
     "job_status",
 }
@@ -62,7 +63,7 @@ async def test_migration_at_head(db_session: AsyncSession) -> None:
     revision = (
         await db_session.execute(text("SELECT version_num FROM alembic_version"))
     ).scalar_one()
-    assert revision == "0034_outcome_skipped"
+    assert revision == "0035_staff_roles"
 
 
 async def test_projects_has_app_url_and_soft_delete_columns(
