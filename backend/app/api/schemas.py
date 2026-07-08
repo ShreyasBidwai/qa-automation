@@ -1184,6 +1184,17 @@ class AdminOrgUsageResponse(BaseModel):
     by_model: list[AdminModelCostItem]
 
 
+class ImpersonateResponse(BaseModel):
+    """A short-lived session minted by a staff member impersonating a tenant user
+    (ADR-0071). Returned once — use it as the Bearer token to act as the user."""
+
+    access_token: str
+    token_type: str
+    expires_at: datetime
+    user_id: uuid.UUID
+    email: str
+
+
 class AdminGenerationQualityResponse(BaseModel):
     """The flywheel's eval aggregate over a window (ADR-0070). The dashboard derives a
     composite quality index from these; pass-rate alone is never the target (it rewards

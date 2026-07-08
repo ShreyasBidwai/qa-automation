@@ -433,3 +433,49 @@ async def test_generation_quality_requires_staff_and_aggregates(
     assert body["by_outcome"] == {"pass": 1, "error": 1, "fail": 1}
     assert body["triaged"] == 2
     assert body["triage_rejected"] == 1
+
+
+async def test_impersonate_requires_permission_guards_and_audits(
+    app_client: tuple[httpx.AsyncClient, FastAPI],
+    db_session: AsyncSession,
+) -> None:
+    client, _ = app_client
+    _, victim_email = await _signup(client)
+    _, other_staff_email = await _signup(client)
+    staff_headers, staff_email = await _signup(client)
+    victim_id = await _user_id(db_session, victim_email)
+    url = f"/api/v1/admin/users/{victim_id}/impersonate"
+
+    # read_only_ops lacks IMPERSONATE.
+    await _promote(db_session, staff_email, StaffRole.READ_ONLY_OPS)
+    assert (await client.post(url, headers=staff_headers)).status_code == 403
+
+    await _promote(db_session, staff_email, StaffRole.SUPPORT)  # has IMPERSONATE
+    # cannot impersonate yourself.
+    staff_id = await _user_id(db_session, staff_email)
+    self_url = f"/api/v1/admin/users/{staff_id}/impersonate"
+    assert (await client.post(self_url, headers=staff_headers)).status_code == 400
+    # cannot impersonate another staff member (no privilege escalation).
+    await _promote(db_session, other_staff_email, StaffRole.BILLING)
+    other_id = await _user_id(db_session, other_staff_email)
+    other_url = f"/api/v1/admin/users/{other_id}/impersonate"
+    assert (await client.post(other_url, headers=staff_headers)).status_code == 403
+
+    # a normal tenant user → a working, short-lived session that acts AS them.
+    r = await client.post(url, headers=staff_headers)
+    assert r.status_code == 200
+    token = r.json()["access_token"]
+    assert r.json()["user_id"] == str(victim_id)
+    me = (
+        await client.get(
+            "/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"}
+        )
+    ).json()
+    assert me["email"] == victim_email  # the token is the victim's session
+
+    audit = (
+        await client.get(
+            "/api/v1/admin/audit?action=user.impersonate", headers=staff_headers
+        )
+    ).json()
+    assert audit["total"] == 1 and audit["items"][0]["target_id"] == str(victim_id)

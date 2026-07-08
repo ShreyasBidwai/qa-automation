@@ -17,18 +17,22 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
+from app.core.security import generate_token, hash_token
 from app.core.staff_permissions import StaffPermission, staff_role_can
 from app.models.enums import StaffRole
 from app.models.job import Job
 from app.models.organization import Organization
 from app.models.staff_audit_log import StaffAuditLog
 from app.models.user import User
+from app.models.user_session import UserSession
 from app.reporting.org_usage import OrgUsageReader
 from app.repositories.admin_org_repository import AdminOrgRepository
 from app.repositories.admin_user_repository import AdminUserRepository
 from app.repositories.generation_signal_repository import GenerationSignalRepository
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.plan_repository import PlanRepository
+from app.repositories.session_repository import SessionRepository
 from app.repositories.staff_audit_repository import StaffAuditRepository
 from app.services.job_queue import JobQueue
 
@@ -46,6 +50,7 @@ from .schemas import (
     AdminUserListItem,
     AdminUserListResponse,
     AdminUserOrgItem,
+    ImpersonateResponse,
     JobSummary,
     SetOrgPlanRequest,
     SetStaffRoleRequest,
@@ -437,6 +442,53 @@ async def set_user_staff_role(
         detail={"email": user.email, "staff_role": role.value if role else None},
     )
     return await _user_detail(session, user_id)
+
+
+@router.post("/users/{user_id}/impersonate", response_model=ImpersonateResponse)
+async def impersonate_user(
+    user_id: uuid.UUID,
+    staff: Annotated[User, Depends(require_staff(StaffPermission.IMPERSONATE))],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ImpersonateResponse:
+    """Mint a short-lived session AS a tenant user for support (ADR-0071). IMPERSONATE;
+    cannot target yourself or another staff member; audited. The minted session is an
+    ORDINARY tenant session — org-scoped and secret-blind (the credential vault is
+    write-only), so impersonation never widens what can be seen."""
+    if user_id == staff.id:
+        raise HTTPException(status_code=400, detail="cannot impersonate yourself")
+    target = await session.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    if target.staff_role is not None:
+        raise HTTPException(status_code=403, detail="cannot impersonate a staff member")
+    if not target.is_active:
+        raise HTTPException(status_code=400, detail="user is inactive")
+    token = generate_token()
+    expires_at = datetime.now(UTC) + timedelta(
+        seconds=get_settings().impersonation_ttl_seconds
+    )
+    await SessionRepository(session).add(
+        UserSession(
+            user_id=target.id,
+            token_hash=hash_token(token),
+            expires_at=expires_at,
+            impersonated_by=staff.id,
+        )
+    )
+    await StaffAuditRepository(session).record(
+        actor=staff,
+        action="user.impersonate",
+        target_type="user",
+        target_id=str(user_id),
+        detail={"email": target.email},
+    )
+    return ImpersonateResponse(
+        access_token=token,
+        token_type="bearer",
+        expires_at=expires_at,
+        user_id=target.id,
+        email=target.email,
+    )
 
 
 # --- Jobs (queue recovery) --------------------------------------------------

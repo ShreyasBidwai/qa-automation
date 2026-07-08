@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     # Server-side opaque sessions: a bearer token (hashed at rest) valid for this
     # long; password-reset tokens are single-use and short-lived.
     session_ttl_seconds: int = 1_209_600  # 14 days
+    # Staff impersonation sessions are deliberately short — a support action, not a
+    # login (ADR-0071). 30 minutes; a forgotten impersonation self-expires.
+    impersonation_ttl_seconds: int = 1_800
     password_reset_ttl_seconds: int = 3_600  # 1 hour
     org_invite_ttl_seconds: int = 604_800  # 7 days (B3; ADR-0033)
 

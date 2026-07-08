@@ -32,3 +32,12 @@ class UserSession(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
+    # Set when a staff member minted this session by impersonating the user (ADR-0071):
+    # the actor's id. NULL for a normal login. Makes impersonation auditable and the
+    # session identifiable as impersonated — the user's own authority is unchanged (a
+    # normal session against the write-only vault, so it stays secret-blind).
+    impersonated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
