@@ -30,6 +30,7 @@ from app.services.case_merge_service import CaseMergeService, MergeAction
 from .case_key import compute_case_key
 from .plan import PlannedCase, plan_cases
 from .render import render_script
+from .version import PROMPT_VERSION
 
 if TYPE_CHECKING:
     from app.documents.grounding import SpecGroundingService
@@ -78,6 +79,8 @@ def _to_test_case(
         edited_by_human=False,
         origin=CaseOrigin.GENERATED,
         case_key=case_key,
+        gen_prompt_version=PROMPT_VERSION,  # flywheel attribution (ADR-0070)
+        gen_strategy="endpoint",
     )
 
 

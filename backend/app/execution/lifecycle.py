@@ -13,12 +13,15 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import progress
-from app.models.enums import Outcome, RunMode, RunTrigger
+from app.models.enums import Outcome, RunMode, RunTrigger, TestLayer
 from app.models.result import Result
 from app.models.run import Run
+from app.models.test_case import TestCase
+from app.repositories.generation_signal_repository import GenerationSignalRepository
 from app.repositories.result_repository import ResultRepository
 from app.repositories.run_repository import RunRepository
 from app.screenshots import store_screenshot
@@ -58,6 +61,44 @@ def _capture_screenshot(run_id: uuid.UUID, result: ExecutionResult) -> str | Non
             "execution.screenshot_capture_failed", extra={"run_id": str(run_id)}
         )
         return None
+
+
+async def _capture_generation_signals(
+    session: AsyncSession, run: Run, exec_results: list[ExecutionResult]
+) -> None:
+    """Best-effort: append a GenerationSignal per AI-generated case executed — joins the
+    generation version to its outcome (the flywheel's free labels, ADR-0070). Only
+    AI-generated cases carry ``gen_prompt_version``; human/CSV cases are skipped. Never
+    breaks a run (capture failure is swallowed — the flywheel isn't load-bearing)."""
+    try:
+        ids = [er.test_case_id for er in exec_results]
+        if not ids:
+            return
+        cases = {
+            case.id: case
+            for case in (
+                await session.scalars(select(TestCase).where(TestCase.id.in_(ids)))
+            ).all()
+        }
+        repo = GenerationSignalRepository(session)
+        for er in exec_results:
+            case = cases.get(er.test_case_id)
+            if case is None or case.gen_prompt_version is None:
+                continue  # only AI-generated cases carry a version → only they signal
+            await repo.record(
+                project_id=run.project_id,
+                run_id=run.id,
+                test_case_id=case.id,
+                prompt_version=case.gen_prompt_version,
+                strategy=case.gen_strategy or "unknown",
+                route_class="api" if case.layer is TestLayer.API else "web",
+                outcome=er.outcome.value,
+            )
+    except Exception:  # noqa: BLE001 — flywheel capture is best-effort, never fatal
+        logger.warning(
+            "execution.generation_signal_capture_failed",
+            extra={"run_id": str(run.id)},
+        )
 
 
 class RunLifecycle:
@@ -184,6 +225,9 @@ class RunLifecycle:
                     detail={"test": er.name, "outcome": er.outcome.value},
                     screenshot_ref=shot_ref,
                 )
+            # Flywheel capture (ADR-0070): attribute each AI-generated case's outcome to
+            # the generation that produced it. Best-effort — never affects the run.
+            await _capture_generation_signals(session, run, exec_results)
             # A run FAILS only on a real defect or crash (FAIL/ERROR); a SKIPPED result
             # (reachable-but-unverified — a precondition 4xx/redirect, ADR-0064) does
             # NOT fail the run, so a module of un-verifiable endpoints reads PASSED.
