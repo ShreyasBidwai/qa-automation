@@ -10,10 +10,11 @@ from fastapi import FastAPI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.enums import StaffRole
+from app.models.enums import JobKind, JobStatus, StaffRole
 from app.models.user import User
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.staff_audit_repository import StaffAuditRepository
+from app.services.job_queue import JobQueue
 
 
 async def _signup(client: httpx.AsyncClient) -> tuple[dict[str, str], str]:
@@ -270,3 +271,65 @@ async def test_get_user_detail_lists_orgs(
     assert body["email"] == email
     assert body["staff_role"] == "superadmin"
     assert body["orgs"][0]["role"] == "owner"  # owner of their personal org
+
+
+async def _make_project(client: httpx.AsyncClient, headers: dict[str, str]) -> str:
+    resp = await client.post(
+        "/api/v1/projects", json={"name": "P", "repo_url": "/r"}, headers=headers
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+async def test_cancel_job_requires_manage_jobs_and_audits(
+    app_client: tuple[httpx.AsyncClient, FastAPI],
+    db_session: AsyncSession,
+) -> None:
+    client, _ = app_client
+    headers, email = await _signup(client)
+    pid = await _make_project(client, headers)
+    job = await JobQueue(db_session).enqueue(
+        kind=JobKind.RUN, project_id=uuid.UUID(pid), mode="mode_b"
+    )
+    url = f"/api/v1/admin/jobs/{job.id}/cancel"
+
+    # non-staff, then read_only_ops (lacks MANAGE_JOBS) → 403.
+    assert (await client.post(url, headers=headers)).status_code == 403
+    await _promote(db_session, email, StaffRole.READ_ONLY_OPS)
+    assert (await client.post(url, headers=headers)).status_code == 403
+
+    # support carries MANAGE_JOBS → cancels, and it audits.
+    await _promote(db_session, email, StaffRole.SUPPORT)
+    r = await client.post(url, headers=headers)
+    assert r.status_code == 200 and r.json()["status"] == "cancelled"
+    audit = (
+        await client.get("/api/v1/admin/audit?action=job.cancel", headers=headers)
+    ).json()
+    assert audit["total"] == 1 and audit["items"][0]["target_id"] == str(job.id)
+
+
+async def test_requeue_only_terminal_and_clones_to_fresh_job(
+    app_client: tuple[httpx.AsyncClient, FastAPI],
+    db_session: AsyncSession,
+) -> None:
+    client, _ = app_client
+    headers, email = await _signup(client)
+    await _promote(db_session, email, StaffRole.SUPERADMIN)
+    pid = await _make_project(client, headers)
+    job = await JobQueue(db_session).enqueue(
+        kind=JobKind.RUN, project_id=uuid.UUID(pid), mode="mode_b"
+    )
+    url = f"/api/v1/admin/jobs/{job.id}/requeue"
+
+    # a queued (active) job cannot be requeued.
+    assert (await client.post(url, headers=headers)).status_code == 409
+
+    # fail it, then requeue → a NEW queued job (fresh id → fresh run id).
+    job.status = JobStatus.FAILED
+    await db_session.flush()
+    r = await client.post(url, headers=headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "queued"
+    assert body["id"] != str(job.id)  # cloned, not reset in place
+    assert body["mode"] == "mode_b"

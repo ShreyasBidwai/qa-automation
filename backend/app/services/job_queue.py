@@ -214,6 +214,24 @@ class JobQueue:
         await self.session.flush()
         return True
 
+    async def requeue(self, job_id: uuid.UUID) -> Job | None:
+        """Re-run a terminal FAILED/CANCELLED job by minting a FRESH job that clones its
+        (kind, project, mode, payload) — an explicit operator action (ADR-0067: a
+        crashed job never re-runs silently). A fresh id is deliberate: a RUN's run.id
+        equals its job.id (ADR-0036), so reusing the id would collide with the original
+        run row. Returns the new job, or None if the source is missing or not in a
+        requeuable (FAILED/CANCELLED) state."""
+        src = await self.get(job_id)
+        if src is None or src.status not in (JobStatus.FAILED, JobStatus.CANCELLED):
+            return None
+        return await self.enqueue(
+            kind=src.kind,
+            project_id=src.project_id,
+            mode=src.mode,
+            payload=dict(src.payload),
+            max_attempts=src.max_attempts,
+        )
+
     async def _lock(self, job_id: uuid.UUID) -> Job | None:
         stmt = select(Job).where(Job.id == job_id).with_for_update()
         return (await self.session.scalars(stmt)).first()

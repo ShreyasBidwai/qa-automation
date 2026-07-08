@@ -18,12 +18,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.staff_permissions import StaffPermission, staff_role_can
 from app.models.enums import StaffRole
+from app.models.job import Job
 from app.models.staff_audit_log import StaffAuditLog
 from app.models.user import User
 from app.repositories.admin_org_repository import AdminOrgRepository
 from app.repositories.admin_user_repository import AdminUserRepository
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.staff_audit_repository import StaffAuditRepository
+from app.services.job_queue import JobQueue
 
 from .deps import get_session
 from .schemas import (
@@ -36,6 +38,7 @@ from .schemas import (
     AdminUserListItem,
     AdminUserListResponse,
     AdminUserOrgItem,
+    JobSummary,
     SetStaffRoleRequest,
     StaffAuditItem,
     StaffAuditListResponse,
@@ -366,3 +369,79 @@ async def set_user_staff_role(
         detail={"email": user.email, "staff_role": role.value if role else None},
     )
     return await _user_detail(session, user_id)
+
+
+# --- Jobs (queue recovery) --------------------------------------------------
+
+
+def _job_summary(job: Job) -> JobSummary:
+    return JobSummary(
+        id=job.id,
+        kind=job.kind.value,
+        status=job.status.value,
+        project_id=job.project_id,
+        mode=job.mode,
+        attempts=job.attempts,
+        max_attempts=job.max_attempts,
+        detail=job.detail,
+        created_at=job.created_at,
+        locked_at=job.locked_at,
+        finished_at=job.finished_at,
+    )
+
+
+@router.post("/jobs/{job_id}/cancel", response_model=JobSummary)
+async def cancel_job(
+    job_id: uuid.UUID,
+    staff: Annotated[User, Depends(require_staff(StaffPermission.MANAGE_JOBS))],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> JobSummary:
+    """Cancel a queued/running job (cross-tenant). MANAGE_JOBS; audited (job.cancel).
+    404 if the job is absent, 409 if it is already terminal."""
+    queue = JobQueue(session)
+    job = await queue.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    if not await queue.cancel(job_id):
+        raise HTTPException(status_code=409, detail="job is not active")
+    await StaffAuditRepository(session).record(
+        actor=staff,
+        action="job.cancel",
+        target_type="job",
+        target_id=str(job_id),
+        detail={"kind": job.kind.value},
+    )
+    # cancel() set finished_at = func.now() (a SQL expression); reload the
+    # server-evaluated value before serializing, or reading it would lazy-load.
+    await session.refresh(job)
+    return _job_summary(job)
+
+
+@router.post("/jobs/{job_id}/requeue", response_model=JobSummary)
+async def requeue_job(
+    job_id: uuid.UUID,
+    staff: Annotated[User, Depends(require_staff(StaffPermission.MANAGE_JOBS))],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> JobSummary:
+    """Re-run a failed/cancelled job by minting a FRESH job (new id → fresh run id,
+    ADR-0036/0067). MANAGE_JOBS; audited (job.requeue). 404 if absent, 409 if the job
+    is not in a requeuable state. Returns the NEW job."""
+    queue = JobQueue(session)
+    src = await queue.get(job_id)
+    if src is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    new_job = await queue.requeue(job_id)
+    if new_job is None:
+        raise HTTPException(
+            status_code=409, detail="only a failed or cancelled job can be requeued"
+        )
+    await StaffAuditRepository(session).record(
+        actor=staff,
+        action="job.requeue",
+        target_type="job",
+        target_id=str(job_id),
+        detail={"kind": src.kind.value, "new_job_id": str(new_job.id)},
+    )
+    # Reload server-default columns (created_at/available_at) before serializing.
+    await session.refresh(new_job)
+    return _job_summary(new_job)
