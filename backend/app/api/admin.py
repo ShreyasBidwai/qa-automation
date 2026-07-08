@@ -11,6 +11,7 @@ never surface a tenant's target secrets (the vault stays write-only, ADR-0053).
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,6 +22,7 @@ from app.models.enums import StaffRole
 from app.models.job import Job
 from app.models.staff_audit_log import StaffAuditLog
 from app.models.user import User
+from app.reporting.org_usage import OrgUsageReader
 from app.repositories.admin_org_repository import AdminOrgRepository
 from app.repositories.admin_user_repository import AdminUserRepository
 from app.repositories.organization_repository import OrganizationRepository
@@ -30,10 +32,12 @@ from app.services.job_queue import JobQueue
 from .deps import get_session
 from .schemas import (
     AdminMeResponse,
+    AdminModelCostItem,
     AdminOrgDetailResponse,
     AdminOrgListItem,
     AdminOrgListResponse,
     AdminOrgMemberItem,
+    AdminOrgUsageResponse,
     AdminUserDetailResponse,
     AdminUserListItem,
     AdminUserListResponse,
@@ -226,6 +230,37 @@ async def reactivate_org(
     """Lift a suspension. MANAGE_TENANTS; audited (org.reactivate)."""
     return await _set_org_suspended(
         session, staff, org_id, suspended=False, action="org.reactivate"
+    )
+
+
+@router.get("/orgs/{org_id}/usage", response_model=AdminOrgUsageResponse)
+async def org_usage(
+    org_id: uuid.UUID,
+    staff: Annotated[User, Depends(require_staff(StaffPermission.VIEW_BILLING))],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    days: Annotated[int, Query(ge=1, le=365)] = 30,
+) -> AdminOrgUsageResponse:
+    """Per-org AI cost + usage over the last ``days`` — the cost-to-serve basis for
+    billing + margin (ADR-0069). VIEW_BILLING; the cost is the real billed spend we
+    already capture per run (ADR-0049)."""
+    since = datetime.now(UTC) - timedelta(days=days)
+    summary = await OrgUsageReader(session).summary(org_id, since=since)
+    return AdminOrgUsageResponse(
+        org_id=org_id,
+        since_days=days,
+        total_cost_usd=float(summary.total_cost_usd),
+        invocation_count=summary.invocation_count,
+        run_count=summary.run_count,
+        input_tokens=summary.input_tokens,
+        output_tokens=summary.output_tokens,
+        by_model=[
+            AdminModelCostItem(
+                model=item.model,
+                invocation_count=item.invocation_count,
+                total_cost_usd=float(item.total_cost_usd),
+            )
+            for item in summary.by_model
+        ],
     )
 
 

@@ -1137,3 +1137,22 @@ class SetStaffRoleRequest(BaseModel):
     against the StaffRole allow-list in the endpoint — never trusted raw."""
 
     staff_role: str | None
+
+
+class AdminModelCostItem(BaseModel):
+    model: str | None
+    invocation_count: int
+    total_cost_usd: float
+
+
+class AdminOrgUsageResponse(BaseModel):
+    """Per-org AI cost + usage over a window — the cost-to-serve view (ADR-0069)."""
+
+    org_id: uuid.UUID
+    since_days: int
+    total_cost_usd: float
+    invocation_count: int
+    run_count: int
+    input_tokens: int
+    output_tokens: int
+    by_model: list[AdminModelCostItem]

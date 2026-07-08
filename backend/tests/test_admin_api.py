@@ -10,6 +10,9 @@ from fastapi import FastAPI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from decimal import Decimal
+
+from app.models.ai_usage import AiUsage
 from app.models.enums import JobKind, JobStatus, StaffRole
 from app.models.user import User
 from app.repositories.organization_repository import OrganizationRepository
@@ -333,3 +336,42 @@ async def test_requeue_only_terminal_and_clones_to_fresh_job(
     assert body["status"] == "queued"
     assert body["id"] != str(job.id)  # cloned, not reset in place
     assert body["mode"] == "mode_b"
+
+
+async def test_org_usage_requires_view_billing_and_sums_cost(
+    app_client: tuple[httpx.AsyncClient, FastAPI],
+    db_session: AsyncSession,
+) -> None:
+    client, _ = app_client
+    headers, email = await _signup(client)
+    pid = await _make_project(client, headers)
+    org_id = await _personal_org_id(db_session, email)
+
+    # Two AI invocations on one run, in this org's project.
+    run_id = uuid.uuid4()
+    for cost, in_tok, out_tok in [("0.02", 100, 50), ("0.03", 200, 80)]:
+        db_session.add(
+            AiUsage(
+                project_id=uuid.UUID(pid),
+                run_id=run_id,
+                phase="generation",
+                model="claude-opus-4-8",
+                input_tokens=in_tok,
+                output_tokens=out_tok,
+                total_cost_usd=Decimal(cost),
+                usage_available=True,
+                is_error=False,
+            )
+        )
+    await db_session.flush()
+
+    url = f"/api/v1/admin/orgs/{org_id}/usage"
+    assert (await client.get(url, headers=headers)).status_code == 403  # not staff
+    await _promote(db_session, email, StaffRole.READ_ONLY_OPS)  # has VIEW_BILLING
+
+    body = (await client.get(url, headers=headers)).json()
+    assert abs(body["total_cost_usd"] - 0.05) < 1e-6
+    assert body["invocation_count"] == 2
+    assert body["run_count"] == 1  # distinct run
+    assert body["input_tokens"] == 300
+    assert body["by_model"][0]["model"] == "claude-opus-4-8"
