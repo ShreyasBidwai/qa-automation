@@ -625,6 +625,27 @@ export interface AccountDashboard {
   recent_runs: RecentRunItem[];
 }
 
+// --- plans / pricing (B5, ADR-0069) -----------------------------------------
+
+/** One plan tier from the public catalog (GET /plans). A NULL price means the tier
+ *  is custom ("contact us"); a NULL quota (projects/seats/credits) means unlimited.
+ *  `features` is a free-form flag bag (SSO, priority support, …) rendered as bullets. */
+export interface PlanItem {
+  key: string;
+  name: string;
+  price_per_seat_monthly_usd: number | null;
+  included_run_credits_monthly: number | null;
+  max_projects: number | null;
+  max_seats: number | null;
+  max_parallelism: number;
+  retention_days: number;
+  features: Record<string, unknown>;
+}
+
+export interface PlanList {
+  items: PlanItem[];
+}
+
 // --- operator / admin console (staff-only, cross-tenant) ---------------------
 // Mirrors backend/app/api/admin.py + ops.py + incidents.py. Every surface here is
 // staff-gated server-side (403 for a non-staff caller); the UI only hides what it
@@ -689,7 +710,52 @@ export interface AdminOrgDetail {
   member_count: number;
   project_count: number;
   created_at: string;
+  // The org's effective plan tier (ADR-0069). Defaults to `free`; an unknown/absent key
+  // is treated as `free` server-side. Drives the billing panel's plan badge + selector.
+  plan_key: string;
   members: AdminOrgMember[];
+}
+
+// Billing / usage (B4, ADR-0069/0049) ----------------------------------------
+
+/** One model's slice of an org's AI spend (GET /admin/orgs/{id}/usage `by_model`).
+ *  `model` is null when a call didn't record which model served it. */
+export interface AdminModelCost {
+  model: string | null;
+  invocation_count: number;
+  total_cost_usd: number;
+}
+
+/** An org's metered AI cost over a trailing window (VIEW_BILLING). Cost is the REAL
+ *  billed spend already captured per run (ADR-0049), so the margin is known. */
+export interface AdminOrgUsage {
+  org_id: string;
+  since_days: number;
+  total_cost_usd: number;
+  invocation_count: number;
+  run_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  by_model: AdminModelCost[];
+}
+
+// Generation-quality flywheel (C6, ADR-0070) ---------------------------------
+
+/** The eval aggregate over the generation-signal log (GET /admin/generation-quality).
+ *  Free labels from execution + triage: `by_outcome` (pass/fail/error/skipped),
+ *  `repaired` (needed a self-repair pass), `healed` (brittle), `flaky`, and the triage
+ *  split (`triaged` total human-labelled, `triage_rejected` = judged a false positive).
+ *  Segmentable by `prompt_version` so a quality shift is attributable to a change. */
+export interface GenerationQuality {
+  since_days: number;
+  prompt_version: string | null;
+  total: number;
+  by_outcome: Record<string, number>;
+  repaired: number;
+  healed: number;
+  flaky: number;
+  triaged: number;
+  triage_rejected: number;
 }
 
 // Users ----------------------------------------------------------------------

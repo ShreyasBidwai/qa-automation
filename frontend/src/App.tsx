@@ -5,6 +5,7 @@ import { AuthSplash } from "@/components/AuthSplash";
 import { GenericErrorPage } from "@/components/GenericErrorPage";
 import { NotFoundPage } from "@/components/NotFoundPage";
 import { AdminAuditPage } from "@/features/admin/AdminAuditPage";
+import { AdminFlywheelPage } from "@/features/admin/AdminFlywheelPage";
 import { AdminIncidentsPage } from "@/features/admin/AdminIncidentsPage";
 import { AdminJobsPage } from "@/features/admin/AdminJobsPage";
 import { AdminOverviewPage } from "@/features/admin/AdminOverviewPage";
@@ -20,6 +21,7 @@ import { FindingsInboxPage } from "@/features/findings/FindingsInboxPage";
 import { SingleFindingPage } from "@/features/findings/SingleFindingPage";
 import { HelpCenterPage } from "@/features/help/HelpCenterPage";
 import { PlaceholderPage } from "@/features/placeholders/PlaceholderPage";
+import { PricingPage } from "@/features/pricing/PricingPage";
 import { CreateProjectPage } from "@/features/projects/CreateProjectPage";
 import { EditProjectPage } from "@/features/projects/EditProjectPage";
 import { ProjectPage } from "@/features/projects/ProjectPage";
@@ -106,6 +108,12 @@ function renderRoute(pathname: string): ReactElement {
     return <AccountPage />;
   }
 
+  // Customer-facing plans & pricing (B5) — reached discreetly from the account area,
+  // deliberately kept off the main workflow nav.
+  if (segments[0] === "pricing" && segments.length === 1) {
+    return <PricingPage />;
+  }
+
   // The operator/admin console (staff-only). Each page self-gates on the caller's
   // staff permission and renders a clean "not authorized" state for a non-staff user
   // (the server 403s regardless) — so a deep link here never crashes.
@@ -121,6 +129,8 @@ function renderRoute(pathname: string): ReactElement {
           return <AdminJobsPage />;
         case "incidents":
           return <AdminIncidentsPage />;
+        case "flywheel":
+          return <AdminFlywheelPage />;
         case "audit":
           return <AdminAuditPage />;
       }

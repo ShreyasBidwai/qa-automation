@@ -2,13 +2,14 @@ import { AlertTriangle, Building2, Search, X } from "lucide-react";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 
 import { Pagination } from "@/components/Pagination";
-import { SkeletonRows } from "@/components/Skeleton";
+import { Skeleton, SkeletonRows } from "@/components/Skeleton";
 import { StatePanel } from "@/components/StatePanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { AdminOrgListItem } from "@/lib/api/types";
-import { adminApi } from "@/lib/api/client";
+import { Select } from "@/components/ui/select";
+import type { AdminOrgListItem, PlanItem } from "@/lib/api/types";
+import { adminApi, planApi } from "@/lib/api/client";
 import { useStaff } from "@/lib/auth/useStaff";
 import { relativeTime } from "@/lib/time";
 import { usePagedList } from "@/lib/usePagedList";
@@ -208,13 +209,14 @@ function OrgDrawer({
       ) : (
         <div className="flex flex-col gap-5">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-semibold text-foreground">{org.name}</h2>
               {org.suspended ? (
                 <Badge level="fail">Suspended</Badge>
               ) : (
                 <Badge level="pass">Active</Badge>
               )}
+              <Badge level="info">{planLabel(org.plan_key)} plan</Badge>
             </div>
             <p className="mt-1 text-[12.5px] text-status-neutral-solid">
               {org.is_personal ? "Personal workspace" : "Team organization"} · created{" "}
@@ -226,6 +228,15 @@ function OrgDrawer({
             <StatBox label="Members" value={org.member_count} />
             <StatBox label="Projects" value={org.project_count} />
           </div>
+
+          <BillingSection
+            orgId={org.id}
+            planKey={org.plan_key}
+            onPlanChanged={() => {
+              detail.reload();
+              onChanged();
+            }}
+          />
 
           {canManage ? (
             <div>
@@ -297,6 +308,206 @@ function StatBox({ label, value }: { label: string; value: number }) {
       </div>
     </div>
   );
+}
+
+// --- billing (B4, ADR-0069) --------------------------------------------------
+
+const USAGE_WINDOW_DAYS = 30;
+
+/** Capitalize a plan key for display (`team` → "Team"). A stable read even before the
+ *  plan catalog loads (the badge shows immediately from the org detail). */
+function planLabel(key: string): string {
+  return key ? key.charAt(0).toUpperCase() + key.slice(1) : "Free";
+}
+
+/**
+ * The org's plan + metered AI cost, inside the tenant drawer. The plan SELECTOR shows
+ * only with MANAGE_BILLING (a 422 unknown-plan / 403 surfaces inline); the COST panel
+ * shows only with VIEW_BILLING. The server stays authoritative on both — the UI only
+ * hides an action it already knows will be refused.
+ */
+function BillingSection({
+  orgId,
+  planKey,
+  onPlanChanged,
+}: {
+  orgId: string;
+  planKey: string;
+  onPlanChanged: () => void;
+}) {
+  const { hasPerm } = useStaff();
+  const canManageBilling = hasPerm("manage_billing");
+  const canViewBilling = hasPerm("view_billing");
+
+  // Neither price nor bill → keep the drawer quiet (the plan badge already shows above).
+  if (!canManageBilling && !canViewBilling) return null;
+
+  return (
+    <div>
+      <h3 className="mb-2 text-sm font-semibold text-foreground">Plan &amp; billing</h3>
+      <div className="flex flex-col gap-3">
+        {canManageBilling ? (
+          <PlanSelector orgId={orgId} planKey={planKey} onPlanChanged={onPlanChanged} />
+        ) : null}
+        {canViewBilling ? <UsagePanel orgId={orgId} /> : null}
+      </div>
+    </div>
+  );
+}
+
+function PlanSelector({
+  orgId,
+  planKey,
+  onPlanChanged,
+}: {
+  orgId: string;
+  planKey: string;
+  onPlanChanged: () => void;
+}) {
+  const plansFetcher = useCallback(() => planApi.list(), []);
+  const plans = useAdminResource(plansFetcher);
+
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  async function change(next: string) {
+    if (next === planKey) return;
+    setError(null);
+    setSaved(false);
+    setBusy(true);
+    const result = await adminApi.setOrgPlan(orgId, next);
+    setBusy(false);
+    if (result.ok) {
+      setSaved(true);
+      onPlanChanged();
+      return;
+    }
+    // A 422 (unknown plan) / 403 (insufficient) arrives already voiced from the client.
+    setError(result.error ?? "Couldn't update the plan.");
+  }
+
+  const catalog: PlanItem[] = plans.data?.items ?? [];
+  // Keep the current key selectable even if the catalog omits it (a legacy/private tier),
+  // so the <select> value always matches an option and never renders blank.
+  const hasCurrent = catalog.some((plan) => plan.key === planKey);
+
+  return (
+    <div className="rounded-lg border border-border-subtle bg-background px-3.5 py-3">
+      <label
+        htmlFor="org-plan"
+        className="text-[11px] font-medium text-muted-foreground"
+      >
+        Assign plan
+      </label>
+      <Select
+        id="org-plan"
+        className="mt-1.5"
+        value={planKey}
+        disabled={busy || plans.loading}
+        onChange={(event) => change(event.target.value)}
+      >
+        {!hasCurrent ? <option value={planKey}>{planLabel(planKey)}</option> : null}
+        {catalog.map((plan) => (
+          <option key={plan.key} value={plan.key}>
+            {plan.name}
+          </option>
+        ))}
+      </Select>
+      {error ? (
+        <p role="alert" className="mt-2 text-xs text-status-fail-fg">
+          {error}
+        </p>
+      ) : null}
+      {saved ? (
+        <p role="status" className="mt-2 text-xs text-status-pass-fg">
+          Plan updated.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function UsagePanel({ orgId }: { orgId: string }) {
+  const fetcher = useCallback(
+    () => adminApi.orgUsage(orgId, USAGE_WINDOW_DAYS),
+    [orgId],
+  );
+  const { data, loading, error } = useAdminResource(fetcher);
+
+  if (loading) return <Skeleton className="h-28 rounded-lg" />;
+  if (error || !data) {
+    return (
+      <p className="rounded-lg border border-border-subtle bg-background px-3.5 py-3 text-[13px] text-muted-foreground">
+        {error ?? "Couldn't load usage."}
+      </p>
+    );
+  }
+
+  const tokens = data.input_tokens + data.output_tokens;
+  return (
+    <div className="rounded-lg border border-border-subtle bg-background px-3.5 py-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-medium text-muted-foreground">
+          AI cost · last {data.since_days}d
+        </span>
+        <span className="text-sm font-semibold tabular-nums text-foreground">
+          {formatUsd(data.total_cost_usd)}
+        </span>
+      </div>
+      <div className="mt-2.5 grid grid-cols-3 gap-2">
+        <MiniStat label="Runs" value={data.run_count.toLocaleString()} />
+        <MiniStat label="Calls" value={data.invocation_count.toLocaleString()} />
+        <MiniStat label="Tokens" value={compactTokens(tokens)} />
+      </div>
+      {data.by_model.length > 0 ? (
+        <div className="mt-3 border-t border-border-subtle pt-2.5">
+          <div className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-status-neutral-solid">
+            By model
+          </div>
+          <div className="flex flex-col gap-1">
+            {data.by_model.map((model) => (
+              <div
+                key={model.model ?? "unknown"}
+                className="flex items-center justify-between gap-3 text-[12.5px]"
+              >
+                <span className="min-w-0 truncate font-mono text-status-neutral-fg">
+                  {model.model ?? "unknown"}
+                </span>
+                <span className="flex-none tabular-nums text-muted-foreground">
+                  {model.invocation_count.toLocaleString()} ·{" "}
+                  {formatUsd(model.total_cost_usd)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[10.5px] text-status-neutral-solid">{label}</div>
+      <div className="text-[13px] font-semibold tabular-nums text-foreground">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+/** USD with cents — the metered AI cost per org is small, so cents are meaningful. */
+function formatUsd(amount: number): string {
+  return `$${amount.toFixed(2)}`;
+}
+
+/** Compact large token totals (12.3K / 4.5M) so the row stays legible. */
+function compactTokens(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return value.toLocaleString();
 }
 
 // --- shared bits -------------------------------------------------------------

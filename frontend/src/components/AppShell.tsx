@@ -14,6 +14,7 @@ import {
   Search,
   Settings as SettingsIcon,
   ShieldCheck,
+  Sparkles,
   User,
   Users,
   type LucideIcon,
@@ -69,6 +70,7 @@ const ADMIN: AdminNavEntry[] = [
   { to: "/admin/users", label: "Users", icon: Users, perm: "view_users" },
   { to: "/admin/jobs", label: "Queue", icon: ListChecks, perm: "view_ops" },
   { to: "/admin/incidents", label: "Incidents", icon: AlertTriangle, perm: "view_ops" },
+  { to: "/admin/flywheel", label: "Flywheel", icon: Sparkles, perm: "view_ops" },
   { to: "/admin/audit", label: "Audit", icon: ScrollText, perm: "view_audit" },
 ];
 
@@ -300,6 +302,8 @@ function sectionLabel(pathname: string): string {
       return "Admin";
     case "account":
       return "Account";
+    case "pricing":
+      return "Plans & pricing";
     case "settings":
       return "Settings";
     case "help":

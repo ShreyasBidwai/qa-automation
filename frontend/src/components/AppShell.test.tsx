@@ -182,6 +182,8 @@ describe("AppShell", () => {
     expect(admin.getByRole("link", { name: "Tenants" })).toBeInTheDocument();
     expect(admin.getByRole("link", { name: "Queue" })).toBeInTheDocument();
     expect(admin.getByRole("link", { name: "Incidents" })).toBeInTheDocument();
+    // The flywheel dashboard rides view_ops, so it appears for this caller too.
+    expect(admin.getByRole("link", { name: "Flywheel" })).toBeInTheDocument();
     // Permissions the caller lacks hide their tabs entirely.
     expect(admin.queryByRole("link", { name: "Users" })).toBeNull();
     expect(admin.queryByRole("link", { name: "Audit" })).toBeNull();

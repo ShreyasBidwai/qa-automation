@@ -1,6 +1,13 @@
-import { AlertTriangle, MoreHorizontal, Users } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronRight,
+  CreditCard,
+  MoreHorizontal,
+  Users,
+} from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
+import { Link } from "@/components/Link";
 import { PageShell } from "@/components/PageShell";
 import { Skeleton } from "@/components/Skeleton";
 import { StatePanel } from "@/components/StatePanel";
@@ -146,7 +153,35 @@ function ProfileTab() {
 
       <ProfileForm />
       <ChangePasswordForm />
+      <BillingLink />
     </div>
+  );
+}
+
+/** A quiet doorway from the account into the customer pricing page (B5) — billing lives
+ *  in the account context, kept off the main workflow nav. */
+function BillingLink() {
+  return (
+    <Link
+      to="/pricing"
+      className="mt-4 flex items-center gap-3.5 rounded-xl border border-border bg-surface p-5 shadow-card transition-colors hover:bg-background"
+    >
+      <span className="flex h-9 w-9 flex-none items-center justify-center rounded-lg border-[1.5px] border-marker">
+        <CreditCard className="h-4 w-4 text-status-neutral-solid" aria-hidden="true" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold text-foreground">
+          Plans &amp; pricing
+        </span>
+        <span className="mt-0.5 block text-[12.5px] text-muted-foreground">
+          Compare what each Polaris plan includes — seats, run credits, and quotas.
+        </span>
+      </span>
+      <ChevronRight
+        className="h-4 w-4 flex-none text-status-neutral-solid"
+        aria-hidden="true"
+      />
+    </Link>
   );
 }
 

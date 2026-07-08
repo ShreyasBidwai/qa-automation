@@ -6,6 +6,7 @@ import type {
   AdminMe,
   AdminOrgDetail,
   AdminOrgList,
+  AdminOrgUsage,
   AdminUserDetail,
   AdminUserList,
   AuthTokenResponse,
@@ -23,6 +24,7 @@ import type {
   FieldError,
   Finding,
   FindingsResponse,
+  GenerationQuality,
   HealthzResponse,
   IncidentDetail,
   IncidentList,
@@ -40,6 +42,7 @@ import type {
   OpenFindingsResponse,
   OrgListResponse,
   PageParams,
+  PlanList,
   Project,
   ProjectCreateBody,
   ProjectDocument,
@@ -276,6 +279,12 @@ export const accountApi = {
     getJson<AccountDashboard>(`${API_BASE}/account/dashboard?range_days=${rangeDays}`),
 };
 
+/** The plan catalog (B5, ADR-0069) — the public pricing tiers, authenticated read. */
+export const planApi = {
+  /** GET /plans — the public plan tiers (name, price, quotas, features). */
+  list: () => getJson<PlanList>(`${API_BASE}/plans`),
+};
+
 function pageQuery({ limit, offset }: PageParams): string {
   return `limit=${limit}&offset=${offset}`;
 }
@@ -474,6 +483,15 @@ export const adminApi = {
     ),
   /** GET /admin/orgs/{id} — one org with members + counts. */
   getOrg: (id: string) => getJson<AdminOrgDetail>(`${API_BASE}/admin/orgs/${id}`),
+  /** GET /admin/orgs/{id}/usage — the org's metered AI cost over `days` (VIEW_BILLING). */
+  orgUsage: (id: string, days: number) =>
+    getJson<AdminOrgUsage>(`${API_BASE}/admin/orgs/${id}/usage${qs({ days })}`),
+  /** POST /admin/orgs/{id}/plan — assign the org's plan (MANAGE_BILLING). 422 for an
+   *  unknown plan key; the updated org detail comes back. */
+  setOrgPlan: (id: string, planKey: string) =>
+    postJson<AdminOrgDetail>(`${API_BASE}/admin/orgs/${id}/plan`, {
+      plan_key: planKey,
+    }),
   /** POST /admin/orgs/{id}/suspend — suspend an org (MANAGE_TENANTS). */
   suspendOrg: (id: string) =>
     postJson<AdminOrgDetail>(`${API_BASE}/admin/orgs/${id}/suspend`, {}),
@@ -509,6 +527,15 @@ export const adminApi = {
    *  returns a NEW job. 404 if absent, 409 if the job isn't requeueable. */
   requeueJob: (id: string) =>
     postJson<JobSummary>(`${API_BASE}/admin/jobs/${id}/requeue`, {}),
+  /** GET /admin/generation-quality — the flywheel eval aggregate over `days`, optionally
+   *  scoped to one `promptVersion` (VIEW_OPS, ADR-0070). */
+  generationQuality: (days: number, promptVersion?: string) =>
+    getJson<GenerationQuality>(
+      `${API_BASE}/admin/generation-quality${qs({
+        days,
+        prompt_version: promptVersion,
+      })}`,
+    ),
 };
 
 /** Operator queue view (B4, ADR-0034/0035) — readable by any staff member. */
