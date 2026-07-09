@@ -19,6 +19,7 @@ from .normalize import normalize_rules
 from .route_list import (
     RouteFacts,
     RouteTarget,
+    derive_is_api,
     path_params_from_uri,
     route_facts_from_output,
 )
@@ -77,6 +78,7 @@ class LaravelExtractor:
             path_params=path_params_from_uri(facts.uri),
             query_params=[],
             validation_fields=normalize_rules(extraction.rules),
+            is_api=derive_is_api(facts.middleware, facts.uri),
         )
 
     def _route_facts(self, repo_path: str, target: RouteTarget) -> RouteFacts:

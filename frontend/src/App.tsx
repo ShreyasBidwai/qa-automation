@@ -4,6 +4,15 @@ import { AppShell } from "@/components/AppShell";
 import { AuthSplash } from "@/components/AuthSplash";
 import { GenericErrorPage } from "@/components/GenericErrorPage";
 import { NotFoundPage } from "@/components/NotFoundPage";
+import { AdminAuditPage } from "@/features/admin/AdminAuditPage";
+import { AdminFlywheelPage } from "@/features/admin/AdminFlywheelPage";
+import { AdminIncidentsPage } from "@/features/admin/AdminIncidentsPage";
+import { AdminJobsPage } from "@/features/admin/AdminJobsPage";
+import { AdminOverviewPage } from "@/features/admin/AdminOverviewPage";
+import { AdminTenantsPage } from "@/features/admin/AdminTenantsPage";
+import { AdminUsersPage } from "@/features/admin/AdminUsersPage";
+import { ConnectorPage } from "@/features/connectors/ConnectorPage";
+import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { ForgotPasswordPage } from "@/features/auth/ForgotPasswordPage";
 import { SignInPage } from "@/features/auth/SignInPage";
 import { SignUpPage } from "@/features/auth/SignUpPage";
@@ -11,7 +20,7 @@ import { AccountPage } from "@/features/account/AccountPage";
 import { FindingsInboxPage } from "@/features/findings/FindingsInboxPage";
 import { SingleFindingPage } from "@/features/findings/SingleFindingPage";
 import { HelpCenterPage } from "@/features/help/HelpCenterPage";
-import { PlaceholderPage } from "@/features/placeholders/PlaceholderPage";
+import { PricingPage } from "@/features/pricing/PricingPage";
 import { CreateProjectPage } from "@/features/projects/CreateProjectPage";
 import { EditProjectPage } from "@/features/projects/EditProjectPage";
 import { ProjectPage } from "@/features/projects/ProjectPage";
@@ -23,8 +32,10 @@ import { OngoingRunPage } from "@/features/runs/OngoingRunPage";
 import { RunDashboard } from "@/features/runs/RunDashboard";
 import { RunStatusPage } from "@/features/runs/RunStatusPage";
 import { RunsListPage } from "@/features/runs/RunsListPage";
+import { SettingsPage } from "@/features/settings/SettingsPage";
 import { SystemStatusPage } from "@/features/system-status/SystemStatusPage";
 import { useAuth } from "@/lib/auth/useAuth";
+import { useStaff } from "@/lib/auth/useStaff";
 import { navigate, useLocation } from "@/lib/router";
 
 /** Full-screen routes that render outside the app shell (no sidebar). */
@@ -46,12 +57,14 @@ function renderStandaloneRoute(pathname: string): ReactElement | null {
 function renderRoute(pathname: string): ReactElement {
   const segments = pathname.replace(/\/+$/, "").split("/").filter(Boolean);
 
-  if (segments.length === 0) return <ProjectsListPage />;
+  // The account dashboard is the landing (ADR-0065); it hands off to Projects when the
+  // account has no projects yet. `/dashboard` is its canonical URL.
+  if (segments.length === 0) return <DashboardPage />;
+  if (segments.length === 1 && segments[0] === "dashboard") return <DashboardPage />;
 
   if (segments[0] === "projects") {
     if (segments.length === 1) return <ProjectsListPage />;
-    if (segments.length === 2 && segments[1] === "new")
-      return <CreateProjectPage />;
+    if (segments.length === 2 && segments[1] === "new") return <CreateProjectPage />;
     if (segments.length === 2) return <ProjectPage projectId={segments[1]} />;
     if (segments.length === 3 && segments[2] === "edit") {
       return <EditProjectPage projectId={segments[1]} />;
@@ -79,6 +92,11 @@ function renderRoute(pathname: string): ReactElement {
     if (segments.length === 2) return <RunStatusPage runId={segments[1]} />;
   }
 
+  if (segments[0] === "connectors" && segments.length === 2) {
+    if (segments[1] === "gitea") return <ConnectorPage kind="gitea" />;
+    if (segments[1] === "pm") return <ConnectorPage kind="pm" />;
+  }
+
   if (segments[0] === "findings" && segments.length === 1) {
     return <FindingsInboxPage />;
   }
@@ -91,24 +109,49 @@ function renderRoute(pathname: string): ReactElement {
     return <AccountPage />;
   }
 
-  if (segments[0] === "settings" && segments.length === 1) {
-    return (
-      <PlaceholderPage
-        title="Settings"
-        description="Workspace settings arrive in a later slice."
-      />
-    );
+  // Customer-facing plans & pricing (B5) — reached discreetly from the account area,
+  // deliberately kept off the main workflow nav.
+  if (segments[0] === "pricing" && segments.length === 1) {
+    return <PricingPage />;
   }
 
-  if (segments[0] === "help" && segments.length === 1)
-    return <HelpCenterPage />;
+  // The operator/admin console (staff-only). Each page self-gates on the caller's
+  // staff permission and renders a clean "not authorized" state for a non-staff user
+  // (the server 403s regardless) — so a deep link here never crashes.
+  if (segments[0] === "admin") {
+    if (segments.length === 1) return <AdminOverviewPage />;
+    if (segments.length === 2) {
+      switch (segments[1]) {
+        case "tenants":
+          return <AdminTenantsPage />;
+        case "users":
+          return <AdminUsersPage />;
+        case "jobs":
+          return <AdminJobsPage />;
+        case "incidents":
+          return <AdminIncidentsPage />;
+        case "flywheel":
+          return <AdminFlywheelPage />;
+        case "audit":
+          return <AdminAuditPage />;
+      }
+    }
+  }
+
+  if (segments[0] === "settings" && segments.length === 1) {
+    return <SettingsPage />;
+  }
+
+  if (segments[0] === "help" && segments.length === 1) return <HelpCenterPage />;
 
   if (segments[0] === "status") {
-    // In-shell the status page carried no page gutters (it rendered flush to the
-    // top bar and sidebar); give it the same balanced container the other screens use.
+    // Full-height + own scroll (ADR-0066): the window never scrolls; the status page
+    // scrolls its own body inside the app content region.
     return (
-      <main className="mx-auto max-w-[860px] px-6 py-8">
-        <SystemStatusPage />
+      <main className="h-full overflow-y-auto px-6 py-8">
+        <div className="mx-auto max-w-[860px]">
+          <SystemStatusPage />
+        </div>
       </main>
     );
   }
@@ -128,6 +171,7 @@ function NavigateTo({ to }: { to: string }) {
 
 export function App() {
   const { status } = useAuth();
+  const { staff } = useStaff();
   const pathname = useLocation();
   const clean = pathname.replace(/\/+$/, "") || "/";
 
@@ -141,9 +185,13 @@ export function App() {
   // preserved through login).
   if (status === "anonymous") {
     if (clean === "/status") {
+      // Public (signed-out) status view renders straight into #root — give it its own
+      // full-height scroll so the window never scrolls (ADR-0066).
       return (
-        <main className="mx-auto max-w-3xl px-6 py-8">
-          <SystemStatusPage />
+        <main className="h-full overflow-y-auto px-6 py-8">
+          <div className="mx-auto max-w-3xl">
+            <SystemStatusPage />
+          </div>
         </main>
       );
     }
@@ -153,5 +201,9 @@ export function App() {
   // Signed in: bounce away from the auth pages, otherwise render the app.
   if (AUTH_PATHS.has(clean)) return <NavigateTo to="/" />;
   if (clean === "/error") return <GenericErrorPage />;
+  // Staff are platform operators: land them on the console, not the customer dashboard.
+  if (staff && (clean === "/" || clean === "/dashboard")) {
+    return <NavigateTo to="/admin" />;
+  }
   return <AppShell>{renderRoute(pathname)}</AppShell>;
 }

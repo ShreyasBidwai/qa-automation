@@ -2,6 +2,7 @@ import { AlertTriangle, ArrowLeft, Inbox, MousePointerClick } from "lucide-react
 import type { ReactNode } from "react";
 
 import { Link } from "@/components/Link";
+import { PageShell } from "@/components/PageShell";
 import { SkeletonRows } from "@/components/Skeleton";
 import { StatePanel } from "@/components/StatePanel";
 import { Badge } from "@/components/ui/badge";
@@ -42,62 +43,69 @@ export function SingleFindingPage({ findingId }: { findingId: string }) {
   const { finding, loading, error, notFound } = useFinding(findingId, runId);
 
   return (
-    <div className="mx-auto max-w-[900px] px-6 py-8">
-      <Link
-        to="/findings"
-        className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-        Findings
-      </Link>
-
-      {loading ? (
-        <div className="mt-6">
-          <SkeletonRows label="Loading finding…" />
-        </div>
-      ) : error ? (
-        <div className="mt-10 flex justify-center">
-          <StatePanel
-            icon={AlertTriangle}
-            tone="danger"
-            title="Couldn't load this finding"
-            description="Polaris couldn't reach the findings service. This is usually temporary."
-            code={error}
-            actions={
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => window.location.reload()}
-              >
-                Retry
-              </Button>
-            }
-          />
-        </div>
-      ) : !finding ? (
-        <div className="mt-10 flex justify-center">
-          <StatePanel
-            icon={notFound ? MousePointerClick : Inbox}
-            title="This finding isn't available here"
-            description={
-              runId
-                ? "It isn't among this run's findings — it may have been removed."
-                : "It isn't in the currently-open set across your projects. Open it from a run to see a resolved or superseded finding."
-            }
-            actions={
-              <Link
-                to="/findings"
-                className="rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-foreground hover:bg-background"
-              >
-                Back to inbox
-              </Link>
-            }
-          />
-        </div>
-      ) : (
-        <Report finding={finding} />
-      )}
-    </div>
+    <PageShell
+      scroll={false}
+      maxWidth="max-w-[900px]"
+      header={
+        <Link
+          to="/findings"
+          className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+          Findings
+        </Link>
+      }
+    >
+      {/* The back-link header stays put (ADR-0066); the detail body scrolls. */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {loading ? (
+          <div className="mt-6">
+            <SkeletonRows label="Loading finding…" />
+          </div>
+        ) : error ? (
+          <div className="mt-10 flex justify-center">
+            <StatePanel
+              icon={AlertTriangle}
+              tone="danger"
+              title="Couldn't load this finding"
+              description="Polaris couldn't reach the findings service. This is usually temporary."
+              code={error}
+              actions={
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => window.location.reload()}
+                >
+                  Retry
+                </Button>
+              }
+            />
+          </div>
+        ) : !finding ? (
+          <div className="mt-10 flex justify-center">
+            <StatePanel
+              icon={notFound ? MousePointerClick : Inbox}
+              title="This finding isn't available here"
+              description={
+                runId
+                  ? "It isn't among this run's findings — it may have been removed."
+                  : "It isn't in the currently-open set across your projects. Open it from a run to see a resolved or superseded finding."
+              }
+              actions={
+                <Link
+                  to="/findings"
+                  className="rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-foreground hover:bg-background"
+                >
+                  Back to inbox
+                </Link>
+              }
+            />
+          </div>
+        ) : (
+          <Report finding={finding} />
+        )}
+      </div>
+    </PageShell>
   );
 }
 

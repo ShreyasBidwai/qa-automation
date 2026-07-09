@@ -131,6 +131,10 @@ class ModeBRunReport:
     cases_reused: int
     status: str
     ranked_findings: tuple[Finding, ...]
+    # Per-outcome result counts (pass / fail / error / skipped) — the run dashboard's
+    # headline breakdown, so a run self-explains (ADR-0064). SKIPPED = reachable-but-
+    # unverified (a precondition 4xx/redirect), neither pass nor fail.
+    outcome_counts: dict[str, int]
     # DB-state phase outcome (B11, ADR-0044): None when no DB-state phase is wired
     # (default) or the project is ``off``; carries the refusal reason when the
     # non-prod gate refused the target. Additive — internal report only.
@@ -138,6 +142,15 @@ class ModeBRunReport:
     # Frontend crawl outcome (T4.2): None when no crawler is wired or the UI layer is
     # out of scope; carries page/edge counts when the run crawled the target frontend.
     crawl: CrawlResult | None = None
+
+
+def _count_outcomes(results: Sequence[Result]) -> dict[str, int]:
+    """Per-outcome result counts for the run summary (ADR-0064). Always includes every
+    key (0 when absent) so the dashboard renders a stable, complete breakdown."""
+    counts = {outcome.value: 0 for outcome in Outcome}
+    for result in results:
+        counts[result.outcome.value] += 1
+    return counts
 
 
 def _trigger_for(kind: SelectionStrategyKind) -> RunTrigger:
@@ -315,6 +328,7 @@ class ModeBOrchestrator:
             cases_reused=len(ensured) - generated,
             status=run.status,
             ranked_findings=tuple(ranked),
+            outcome_counts=_count_outcomes(results),
             db_state=db_state_report,
             crawl=crawl_result,
         )

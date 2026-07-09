@@ -15,7 +15,13 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import Framework, OracleSource, TestLayer, TestType
-from tests.factories import make_node, make_test_case, make_test_script
+from tests.factories import (
+    make_node,
+    make_result,
+    make_run,
+    make_test_case,
+    make_test_script,
+)
 
 
 async def _new_project(client: AsyncClient) -> uuid.UUID:
@@ -105,6 +111,40 @@ async def test_a_case_with_no_target_at_all_reads_as_a_dash(
     item = resp.json()["items"][0]
     assert item["target"] == "—"
     assert item["code"] == ""
+
+
+async def test_tests_can_be_scoped_to_a_single_run(
+    authed_client: tuple[AsyncClient, FastAPI],
+    db_session: AsyncSession,
+) -> None:
+    # `?run=` narrows the viewer to the exact tests that run exercised (its Results),
+    # so a module-scoped run shows only its tests — not the whole project's.
+    client, _ = authed_client
+    project_id = await _new_project(client)
+    in_run = make_test_case(project_id, case_key="GET /orders::happy::happy")
+    other = make_test_case(project_id, case_key="GET /users::happy::happy")
+    db_session.add_all([in_run, other])
+    await db_session.flush()
+    run = make_run(project_id, status="succeeded", run_number=1)
+    db_session.add(run)
+    await db_session.flush()
+    db_session.add(make_result(project_id, run.id, in_run.id))
+    await db_session.flush()
+
+    all_tests = (await client.get(f"/api/v1/projects/{project_id}/tests")).json()
+    assert all_tests["total"] == 2  # unscoped = the whole project
+
+    scoped = (
+        await client.get(f"/api/v1/projects/{project_id}/tests?run={run.id}")
+    ).json()
+    assert scoped["total"] == 1
+    assert scoped["items"][0]["target"] == "GET /orders"
+
+    # A run id from outside the project yields nothing (project-scoped, no leak).
+    empty = (
+        await client.get(f"/api/v1/projects/{project_id}/tests?run={uuid.uuid4()}")
+    ).json()
+    assert empty["total"] == 0
 
 
 async def test_tests_are_scoped_and_view_gated(

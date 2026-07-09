@@ -5,10 +5,12 @@ vi.mock("@/lib/api/client", () => ({
   runApi: { get: vi.fn(), findings: vi.fn(), triage: vi.fn() },
 }));
 vi.mock("@/lib/router", () => ({ navigate: vi.fn() }));
+vi.mock("./exportFindings", () => ({ downloadFindingsCsv: vi.fn() }));
 
 import { runApi } from "@/lib/api/client";
 import type { Finding, JobStatusValue } from "@/lib/api/types";
 
+import { downloadFindingsCsv } from "./exportFindings";
 import { RunDashboard } from "./RunDashboard";
 
 function summaryResult(summary: Record<string, unknown>) {
@@ -72,6 +74,26 @@ describe("RunDashboard", () => {
     // Stats are derived from the findings list, not invented.
     expect(within(cards).getByText("1 major")).toBeInTheDocument();
     expect(within(cards).getByText("All rule-derived")).toBeInTheDocument();
+  });
+
+  it("surfaces the verified/unverified breakdown so all-green doesn't hide skips", async () => {
+    // A module where 8 endpoints were only REACHABLE (returned a precondition 4xx) and
+    // 3 verified: the run must SAY so, not read as a blank/blindly-passing dashboard.
+    vi.mocked(runApi.get).mockResolvedValue(
+      summaryResult({
+        pass_rate: 1,
+        passed: 3,
+        failed: 0,
+        errors: 0,
+        skipped: 8,
+        tests: 11,
+      }),
+    );
+    vi.mocked(runApi.findings).mockResolvedValue(findingsResult([]));
+
+    render(<RunDashboard runId="r1" />);
+
+    expect(await screen.findByText("3/3 verified · 8 unverified")).toBeInTheDocument();
   });
 
   it("renders the ranked findings with trust marks + badges, in order", async () => {
@@ -189,13 +211,45 @@ describe("RunDashboard", () => {
   });
 
   it("renders the clean-run state when there are no findings", async () => {
-    vi.mocked(runApi.get).mockResolvedValue(summaryResult({ pass_rate: 1 }));
+    vi.mocked(runApi.get).mockResolvedValue(
+      summaryResult({ pass_rate: 1, passed: 5, failed: 0, skipped: 0, tests: 5 }),
+    );
     vi.mocked(runApi.findings).mockResolvedValue(findingsResult([]));
 
     render(<RunDashboard runId="r1" />);
 
+    // Success is shown, not just the absence of failures: the passed count is named.
     expect(await screen.findByText("This run came back clean")).toBeInTheDocument();
-    expect(screen.getByText(/No findings across the run/)).toBeInTheDocument();
+    expect(screen.getByText(/5 tests passed/)).toBeInTheDocument();
+  });
+
+  it("shows the always-on test-results breakdown of every outcome", async () => {
+    vi.mocked(runApi.get).mockResolvedValue(
+      summaryResult({ passed: 6, failed: 2, errors: 1, skipped: 3, tests: 12 }),
+    );
+    vi.mocked(runApi.findings).mockResolvedValue(findingsResult([]));
+
+    render(<RunDashboard runId="r1" />);
+
+    const results = await screen.findByRole("region", { name: "Test results" });
+    expect(within(results).getByText("12 tests")).toBeInTheDocument();
+    expect(within(results).getByText("passed")).toBeInTheDocument();
+    expect(within(results).getByText("unverified")).toBeInTheDocument();
+  });
+
+  it("is honest when a clean run verified nothing (all unverified)", async () => {
+    // No findings, but every endpoint only returned a precondition — do NOT claim
+    // every assertion held (nothing was asserted).
+    vi.mocked(runApi.get).mockResolvedValue(
+      summaryResult({ passed: 0, failed: 0, errors: 0, skipped: 11, tests: 11 }),
+    );
+    vi.mocked(runApi.findings).mockResolvedValue(findingsResult([]));
+
+    render(<RunDashboard runId="r1" />);
+
+    expect(
+      await screen.findByText("No findings — but nothing was verified"),
+    ).toBeInTheDocument();
   });
 
   it("renders the error state when the run cannot be loaded", async () => {
@@ -261,5 +315,43 @@ describe("RunDashboard", () => {
 
     expect(within(list).getByText("Open issue")).toBeInTheDocument();
     expect(within(list).queryByText("Muted issue")).toBeNull();
+  });
+
+  describe("Export", () => {
+    beforeEach(() => {
+      vi.mocked(downloadFindingsCsv).mockReset();
+    });
+
+    it("is disabled while the run is loading", () => {
+      vi.mocked(runApi.get).mockReturnValue(new Promise(() => {})); // never resolves
+      vi.mocked(runApi.findings).mockReturnValue(new Promise(() => {}));
+      render(<RunDashboard runId="r1" />);
+      expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
+    });
+
+    it("downloads the current run's findings as CSV on click", async () => {
+      vi.mocked(runApi.get).mockResolvedValue(summaryResult({}));
+      const findings = [finding({ id: "f1", title: "Checkout 500" })];
+      vi.mocked(runApi.findings).mockResolvedValue(findingsResult(findings));
+
+      render(<RunDashboard runId="r1" />);
+      await listRegion();
+
+      fireEvent.click(screen.getByRole("button", { name: "Export" }));
+      expect(downloadFindingsCsv).toHaveBeenCalledWith("r1", findings);
+    });
+
+    it("stays enabled for a clean run with zero findings", async () => {
+      vi.mocked(runApi.get).mockResolvedValue(summaryResult({ pass_rate: 1 }));
+      vi.mocked(runApi.findings).mockResolvedValue(findingsResult([]));
+
+      render(<RunDashboard runId="r1" />);
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Export" })).not.toBeDisabled(),
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Export" }));
+      expect(downloadFindingsCsv).toHaveBeenCalledWith("r1", []);
+    });
   });
 });

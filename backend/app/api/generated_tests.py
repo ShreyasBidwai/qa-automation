@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.permissions import Permission
 from app.models.test_case import TestCase
 from app.repositories.node_repository import NodeRepository
+from app.repositories.result_repository import ResultRepository
 from app.repositories.test_case_repository import TestCaseRepository
 from app.repositories.test_script_repository import TestScriptRepository
 from app.services.case_review_service import CaseReviewError, CaseReviewService
@@ -63,12 +64,27 @@ async def list_project_tests(
     session: Annotated[AsyncSession, Depends(get_session)],
     limit: Annotated[int, Query(ge=1, le=500)] = 200,
     offset: Annotated[int, Query(ge=0)] = 0,
+    run: Annotated[uuid.UUID | None, Query()] = None,
 ) -> TestCaseListResponse:
-    """The project's current generated tests + their code (VIEW). Read-only."""
+    """The project's generated tests + their code (VIEW). Read-only.
+
+    Without ``run``: the project's CURRENT tests. With ``run``: only the exact test
+    versions that run exercised (its Results) — so a module-scoped run shows just its
+    tests, not the whole project's (ADR-0062). The filter is project-scoped, so a run
+    id from another project simply yields nothing (no cross-tenant leak)."""
     await authorize_project(session, project_id, current_user, Permission.VIEW)
 
     case_repo = TestCaseRepository(session)
-    cases = await case_repo.list_current(project_id, limit=limit, offset=offset)
+    if run is not None:
+        results = await ResultRepository(session).list_for_run(project_id, run)
+        case_ids = {result.test_case_id for result in results}
+        by_id = await case_repo.get_many(project_id, case_ids)
+        ordered = sorted(by_id.values(), key=lambda case: case.created_at, reverse=True)
+        total = len(ordered)
+        cases = ordered[offset : offset + limit]
+    else:
+        cases = await case_repo.list_current(project_id, limit=limit, offset=offset)
+        total = await case_repo.count_current(project_id)
 
     # Resolve the two joins in ONE batched query each (never N+1): the runnable
     # script per case, and the Brain node name each case targets.
@@ -101,7 +117,6 @@ async def list_project_tests(
             )
         )
 
-    total = await case_repo.count_current(project_id)
     return TestCaseListResponse(items=items, total=total)
 
 

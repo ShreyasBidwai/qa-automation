@@ -29,6 +29,7 @@ from app.services.case_merge_service import CaseMergeService, MergeAction
 from .e2e_plan import PlannedE2ECase, build_e2e_plan, e2e_case_key
 from .e2e_render import render_e2e_spec
 from .mutation_gate import enforce_mutation_gate
+from .version import PROMPT_VERSION
 
 logger = logging.getLogger("app.generation.e2e")
 
@@ -57,6 +58,8 @@ def _to_test_case(
         edited_by_human=False,
         origin=CaseOrigin.GENERATED,
         case_key=e2e_case_key(case.page_path, case.name),
+        gen_prompt_version=PROMPT_VERSION,  # flywheel attribution (ADR-0070)
+        gen_strategy="e2e",
     )
 
 

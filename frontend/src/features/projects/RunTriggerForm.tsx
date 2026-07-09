@@ -8,6 +8,7 @@ import { projectApi, runApi } from "@/lib/api/client";
 import type {
   AuthoringLayer,
   CsvImportResponse,
+  ModuleSummary,
   RunCreateBody,
   RunLayer,
   SelectionStrategy,
@@ -83,6 +84,28 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Module data drives the picker AND the auto-layer selection; fetched only on the
+  // autonomous mode (where module scoping lives).
+  const {
+    modules,
+    loading: modulesLoading,
+    error: modulesError,
+  } = useProjectModules(projectId, mode === "autonomous");
+
+  // Picking modules auto-sets the layers to what those modules actually support: their
+  // pages → UI, their endpoints → API (DB isn't a per-module target, so it's dropped).
+  function handleModulesChange(keys: string[]) {
+    setSelectedModules(keys);
+    const chosen = modules.filter((module) => keys.includes(module.key));
+    if (chosen.length > 0) {
+      setLayers({
+        ui: chosen.some((module) => module.page_count > 0),
+        api: chosen.some((module) => module.endpoint_count > 0),
+        db: false,
+      });
+    }
+  }
+
   function buildBody(): RunCreateBody | null {
     if (mode === "describe") {
       if (!prompt.trim()) {
@@ -155,9 +178,7 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
       // instead of an empty live-run page. An autonomous run IS watchable, so it goes
       // straight to the live view (Polaris driving the site, page-by-page).
       if (body.mode === "mode_c") {
-        navigate(
-          `/projects/${projectId}/tests?authoring=${result.data.run_id}`,
-        );
+        navigate(`/projects/${projectId}/tests?authoring=${result.data.run_id}`);
       } else {
         navigate(`/runs/${result.data.run_id}/live`);
       }
@@ -168,10 +189,10 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
 
   return (
     <form onSubmit={onSubmit} noValidate>
-      {/* Two columns: the run configuration on the left, and a context panel on the
-          right — the searchable module picker when scoping by module (ADR-0061), a
-          run preview otherwise — so the width isn't wasted. Stacks on small screens. */}
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem] xl:grid-cols-[minmax(0,1fr)_28rem]">
+      {/* The run configuration on the left; the searchable module picker fills the
+          rest of the width on the right ONLY when scoping by module (ADR-0061) —
+          nothing there otherwise. Stacks to one column on small screens. */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)]">
         <div className="space-y-6">
           <div
             role="radiogroup"
@@ -216,10 +237,7 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
               </fieldset>
 
               <div className="space-y-2">
-                <label
-                  htmlFor="prompt"
-                  className="text-sm font-medium text-foreground"
-                >
+                <label htmlFor="prompt" className="text-sm font-medium text-foreground">
                   What to test
                 </label>
                 <Textarea
@@ -292,9 +310,7 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
                     }
                     className="font-mono text-[13px]"
                   />
-                  <p className="text-xs text-muted-foreground">
-                    One path per line.
-                  </p>
+                  <p className="text-xs text-muted-foreground">One path per line.</p>
                 </div>
               ) : null}
 
@@ -336,31 +352,24 @@ export function RunTriggerForm({ projectId }: { projectId: string }) {
           </Button>
         </div>
 
-        <aside aria-label="Run details" className="min-w-0">
-          {mode === "autonomous" && scope === "modules" ? (
-            <div className="space-y-2">
-              <h2 className="text-sm font-medium text-foreground">
-                Modules to test
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                Search and pick the feature areas — combine with the layers to
-                target their API and/or frontend.
-              </p>
-              <ModulePicker
-                projectId={projectId}
-                selected={selectedModules}
-                onChange={setSelectedModules}
-              />
-            </div>
-          ) : (
-            <RunPreview
-              mode={mode}
-              scope={scope}
-              authoringLayer={authoringLayer}
-              layers={layers}
+        {/* The right column only exists when scoping by module — nothing otherwise,
+            so the config isn't crowded and the width isn't faked with filler. */}
+        {mode === "autonomous" && scope === "modules" ? (
+          <aside aria-label="Modules to test" className="min-w-0 space-y-2">
+            <h2 className="text-sm font-medium text-foreground">Modules to test</h2>
+            <p className="text-xs text-muted-foreground">
+              Search and pick the feature areas — the layers update to match what each
+              can be tested on (its API and/or frontend).
+            </p>
+            <ModulePicker
+              modules={modules}
+              loading={modulesLoading}
+              error={modulesError}
+              selected={selectedModules}
+              onChange={handleModulesChange}
             />
-          )}
-        </aside>
+          </aside>
+        ) : null}
       </div>
     </form>
   );
@@ -407,9 +416,7 @@ function CsvImportPanel({ projectId }: { projectId: string }) {
     <div className="rounded-lg border border-dashed border-border bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-foreground">
-            Or import from CSV
-          </p>
+          <p className="text-sm font-medium text-foreground">Or import from CSV</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Upload QA-authored scenarios — each row becomes a runnable test (API
             endpoint or UI page smoke).{" "}
@@ -451,9 +458,7 @@ function CsvImportPanel({ projectId }: { projectId: string }) {
         </p>
       ) : null}
 
-      {result ? (
-        <CsvImportSummary projectId={projectId} result={result} />
-      ) : null}
+      {result ? <CsvImportSummary projectId={projectId} result={result} /> : null}
     </div>
   );
 }
@@ -470,8 +475,7 @@ function CsvImportSummary({
     <div className="mt-3 space-y-2 border-t border-border pt-3">
       {persisted > 0 ? (
         <p className="text-sm text-status-pass-fg">
-          Imported {persisted} test{persisted === 1 ? "" : "s"} (
-          {result.created} new
+          Imported {persisted} test{persisted === 1 ? "" : "s"} ({result.created} new
           {result.updated > 0 ? `, ${result.updated} updated` : ""}).{" "}
           <Link
             to={`/projects/${projectId}/tests`}
@@ -488,8 +492,7 @@ function CsvImportSummary({
       {result.errors.length > 0 ? (
         <div className="space-y-1">
           <p className="text-xs font-medium text-status-fail-fg">
-            {result.errors.length} row{result.errors.length === 1 ? "" : "s"}{" "}
-            skipped:
+            {result.errors.length} row{result.errors.length === 1 ? "" : "s"} skipped:
           </p>
           <ul className="space-y-0.5">
             {result.errors.map((rowError) => (
@@ -510,63 +513,6 @@ function CsvImportSummary({
   );
 }
 
-/** A compact preview of what the configured run will do — fills the right column
- *  when the module picker isn't shown, so the space stays useful, not empty. */
-function RunPreview({
-  mode,
-  scope,
-  authoringLayer,
-  layers,
-}: {
-  mode: Mode;
-  scope: AutoScope;
-  authoringLayer: AuthoringLayer;
-  layers: Record<RunLayer, boolean>;
-}) {
-  const activeLayers = LAYERS.filter((layer) => layers[layer.key]);
-  const layerText =
-    activeLayers.length === LAYERS.length
-      ? "all"
-      : activeLayers.map((layer) => layer.label).join(" · ") || "none";
-  return (
-    <div className="rounded-xl border border-border bg-surface p-4">
-      <h2 className="text-sm font-medium text-foreground">This run</h2>
-      {mode === "describe" ? (
-        <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
-          Polaris authors a{" "}
-          <span className="font-medium text-foreground">
-            {authoringLayer === "api" ? "API contract" : "UI journey"}
-          </span>{" "}
-          test from your description, for you to review before it runs.
-        </p>
-      ) : (
-        <dl className="mt-2 space-y-1.5 text-[13px] text-muted-foreground">
-          <div className="flex justify-between gap-3">
-            <dt>Scope</dt>
-            <dd className="text-right font-medium text-foreground">
-              {scope === "change_impact"
-                ? "What changed"
-                : scope === "modules"
-                  ? "Specific modules"
-                  : "Everything"}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-3">
-            <dt>Layers</dt>
-            <dd className="text-right font-medium text-foreground">
-              {layerText}
-            </dd>
-          </div>
-        </dl>
-      )}
-      <p className="mt-3 rounded-lg border border-dashed border-border bg-background px-3 py-2 text-xs text-muted-foreground">
-        Tip: “Test specific modules” scopes the run to a feature area —
-        including just its frontend.
-      </p>
-    </div>
-  );
-}
-
 /**
  * The module picker (ADR-0061): a searchable, multi-select list of the project's
  * feature areas, laid out across the width. Selecting modules narrows the run to
@@ -574,15 +520,18 @@ function RunPreview({
  * Controlled: the parent owns the selected keys.
  */
 function ModulePicker({
-  projectId,
+  modules,
+  loading,
+  error,
   selected,
   onChange,
 }: {
-  projectId: string;
+  modules: ModuleSummary[];
+  loading: boolean;
+  error: string | null;
   selected: string[];
   onChange: (keys: string[]) => void;
 }) {
-  const { modules, loading, error } = useProjectModules(projectId);
   const [query, setQuery] = useState("");
   const selectedSet = new Set(selected);
 
@@ -591,8 +540,7 @@ function ModulePicker({
     if (!needle) return modules;
     return modules.filter(
       (module) =>
-        module.label.toLowerCase().includes(needle) ||
-        module.key.includes(needle),
+        module.label.toLowerCase().includes(needle) || module.key.includes(needle),
     );
   }, [modules, query]);
 
@@ -625,8 +573,7 @@ function ModulePicker({
   if (modules.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-border bg-surface px-3 py-4 text-center text-[13px] text-muted-foreground">
-        No modules yet — build the model first, and the app’s feature areas
-        appear here.
+        No modules yet — build the model first, and the app’s feature areas appear here.
       </p>
     );
   }
@@ -811,12 +758,8 @@ function LayerToggle({
         className="mt-0.5 h-4 w-4 shrink-0 text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       />
       <span className="min-w-0">
-        <span className="block text-sm font-medium text-foreground">
-          {label}
-        </span>
-        <span className="block text-xs text-muted-foreground">
-          {description}
-        </span>
+        <span className="block text-sm font-medium text-foreground">{label}</span>
+        <span className="block text-xs text-muted-foreground">{description}</span>
       </span>
     </label>
   );
@@ -839,9 +782,7 @@ function StrategyOption({
     <label
       className={cn(
         "flex cursor-pointer items-start gap-3 rounded-lg border p-3",
-        selected
-          ? "border-accent bg-accent-subtle"
-          : "border-border bg-surface",
+        selected ? "border-accent bg-accent-subtle" : "border-border bg-surface",
       )}
     >
       <input
@@ -853,12 +794,8 @@ function StrategyOption({
         className="mt-0.5 h-4 w-4 text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       />
       <span>
-        <span className="block text-sm font-medium text-foreground">
-          {title}
-        </span>
-        <span className="block text-xs text-muted-foreground">
-          {description}
-        </span>
+        <span className="block text-sm font-medium text-foreground">{title}</span>
+        <span className="block text-xs text-muted-foreground">{description}</span>
       </span>
     </label>
   );

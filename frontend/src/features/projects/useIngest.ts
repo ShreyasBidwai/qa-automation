@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useToast } from "@/components/useToast";
 import { jobApi, projectApi } from "@/lib/api/client";
 import type { JobStatusValue } from "@/lib/api/types";
 
@@ -37,26 +38,51 @@ export function useIngest(projectId: string): IngestState {
   const [status, setStatus] = useState<JobStatusValue | null>(null);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Tracks the last-seen status so a fresh terminal transition (running → succeeded/
+  // failed) fires exactly one toast, not one per poll while already terminal.
+  const previousStatus = useRef<JobStatusValue | null>(null);
+  const { notify } = useToast();
 
-  const pollJob = useCallback(async (jobId: string): Promise<void> => {
-    const result = await jobApi.get(jobId);
-    if (result.ok && result.data) {
-      setStatus(result.data.status);
-      // A failed build isn't a Polaris crash — surface WHY (from the job detail) so
-      // the operator can fix it, instead of a bare "Failed".
-      if (result.data.status === "failed") {
-        setError(ingestFailureMessage(result.data.detail));
+  const pollJob = useCallback(
+    async (jobId: string): Promise<void> => {
+      const result = await jobApi.get(jobId);
+      if (result.ok && result.data) {
+        const next = result.data.status;
+        const wasAlreadyTerminal =
+          previousStatus.current !== null && isTerminal(previousStatus.current);
+        previousStatus.current = next;
+        setStatus(next);
+        // A failed build isn't a Polaris crash — surface WHY (from the job detail) so
+        // the operator can fix it, instead of a bare "Failed".
+        if (next === "failed") {
+          setError(ingestFailureMessage(result.data.detail));
+        }
+        // App-wide toast (mission item 3): fires even if the operator has since
+        // navigated away from this project's page, because whichever ProjectPage
+        // instance is mounted when the poll lands still owns this hook's toast.
+        if (!wasAlreadyTerminal && isTerminal(next)) {
+          const succeeded = next === "succeeded";
+          notify({
+            title: succeeded ? "Model build finished" : "Model build failed",
+            tone: succeeded ? "success" : "error",
+            description: succeeded
+              ? undefined
+              : ingestFailureMessage(result.data.detail),
+          });
+        }
+        if (!isTerminal(next)) {
+          timer.current = setTimeout(() => void pollJob(jobId), POLL_INTERVAL_MS);
+        }
+        return;
       }
-      if (!isTerminal(result.data.status)) {
-        timer.current = setTimeout(() => void pollJob(jobId), POLL_INTERVAL_MS);
-      }
-      return;
-    }
-    setError(result.error ?? "Could not check the model build.");
-  }, []);
+      setError(result.error ?? "Could not check the model build.");
+    },
+    [notify],
+  );
 
   const start = useCallback(() => {
     setError(null);
+    previousStatus.current = null;
     // Optimistic initial state mirrors the server's first status ("queued"), so the
     // badge matches what the first poll returns — no flicker, no unmodeled value.
     setStatus("queued");

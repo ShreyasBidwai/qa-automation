@@ -2,6 +2,7 @@ import { AlertTriangle } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { Link } from "@/components/Link";
+import { PageShell } from "@/components/PageShell";
 import { Skeleton } from "@/components/Skeleton";
 import { StatePanel } from "@/components/StatePanel";
 import { Button } from "@/components/ui/button";
@@ -23,47 +24,52 @@ export function EditProjectPage({ projectId }: { projectId: string }) {
   const { project, loading, error } = useProject(projectId);
 
   return (
-    <div className="mx-auto max-w-[760px] px-6 py-10">
-      <Link
-        to={`/projects/${projectId}`}
-        className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
-      >
-        ← {project?.name ?? "Project"}
-      </Link>
-      <div className="mb-7 mt-3">
-        <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-foreground">
-          Project settings
-        </h1>
-        {project ? (
-          <p className="mt-1.5 text-[13px] text-muted-foreground">{project.name}</p>
-        ) : null}
+    <PageShell scroll={false} maxWidth="max-w-[760px]">
+      {/* Back-link + title stay put (ADR-0066); the settings body scrolls on its own. */}
+      <div className="shrink-0">
+        <Link
+          to={`/projects/${projectId}`}
+          className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
+        >
+          ← {project?.name ?? "Project"}
+        </Link>
+        <div className="mb-7 mt-3">
+          <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-foreground">
+            Project settings
+          </h1>
+          {project ? (
+            <p className="mt-1.5 text-[13px] text-muted-foreground">{project.name}</p>
+          ) : null}
+        </div>
       </div>
 
-      {loading ? (
-        <Skeleton className="h-80 rounded-xl" />
-      ) : error || !project ? (
-        <StatePanel
-          icon={AlertTriangle}
-          tone="danger"
-          title="Couldn't load this project"
-          description="It may have been removed, or the service is briefly unavailable."
-          actions={
-            <Button asChild>
-              <Link to="/projects">Back to projects</Link>
-            </Button>
-          }
-        />
-      ) : (
-        <div className="space-y-7">
-          <EditForm key={project.id} projectId={projectId} project={project} />
-          <ProjectCredentialsCard key={`cred-${project.id}`} projectId={projectId} />
-          <ProjectLoginConfigCard key={`login-${project.id}`} projectId={projectId} />
-          <ProjectDocumentsCard key={`docs-${project.id}`} projectId={projectId} />
-          <DbStateTierCard key={`tier-${project.id}`} projectId={projectId} />
-          <DangerZone projectId={projectId} name={project.name} />
-        </div>
-      )}
-    </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {loading ? (
+          <Skeleton className="h-80 rounded-xl" />
+        ) : error || !project ? (
+          <StatePanel
+            icon={AlertTriangle}
+            tone="danger"
+            title="Couldn't load this project"
+            description="It may have been removed, or the service is briefly unavailable."
+            actions={
+              <Button asChild>
+                <Link to="/projects">Back to projects</Link>
+              </Button>
+            }
+          />
+        ) : (
+          <div className="space-y-7">
+            <EditForm key={project.id} projectId={projectId} project={project} />
+            <ProjectCredentialsCard key={`cred-${project.id}`} projectId={projectId} />
+            <ProjectLoginConfigCard key={`login-${project.id}`} projectId={projectId} />
+            <ProjectDocumentsCard key={`docs-${project.id}`} projectId={projectId} />
+            <DbStateTierCard key={`tier-${project.id}`} projectId={projectId} />
+            <DangerZone projectId={projectId} name={project.name} />
+          </div>
+        )}
+      </div>
+    </PageShell>
   );
 }
 

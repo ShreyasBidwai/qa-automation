@@ -58,15 +58,27 @@ export function collapseSteps(events: RunProgressEvent[]): RunProgressEvent[] {
   );
 }
 
+// The crawl ("Explore live site") phase only happens when a run tests the UI layer.
+// An api-only run never crawls, so the phase must NOT show as an empty, misleading
+// step in its timeline — it appears only once the run actually explores the live site
+// (has ≥1 crawl event). Every other spine phase always appears.
+const UI_ONLY_PHASES = new Set(["crawl"]);
+
 /**
- * Group events into the phase spine: the four known phases always appear (in spine
- * order, possibly empty so the journey ahead is visible), then any other non-`run`
+ * Group events into the phase spine: the always-present phases appear in spine order
+ * (possibly empty, so the journey ahead is visible); a UI-only phase (crawl) appears
+ * only when the run produced its events (see `UI_ONLY_PHASES`); then any other non-`run`
  * phase the backend emits is appended in first-seen order (forward-compat, never
  * dropped). The `run` phase is excluded — it's the overall frame, not a step.
  */
 export function groupByPhase(events: RunProgressEvent[]): PhaseGroup[] {
   const known = new Map(PHASE_SPINE.map((spec) => [spec.key, spec]));
-  const order: string[] = PHASE_SPINE.map((spec) => spec.key);
+  const present = new Set(
+    events.filter((event) => event.phase !== RUN_PHASE).map((e) => e.phase),
+  );
+  const order: string[] = PHASE_SPINE.filter(
+    (spec) => !UI_ONLY_PHASES.has(spec.key) || present.has(spec.key),
+  ).map((spec) => spec.key);
   for (const event of events) {
     if (event.phase === RUN_PHASE) continue;
     if (!order.includes(event.phase)) order.push(event.phase);

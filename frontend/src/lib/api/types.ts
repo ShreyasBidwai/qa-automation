@@ -548,12 +548,24 @@ export interface ProjectListResponse {
   offset: number;
 }
 
+/** The choices a run was started with (ADR-0062) — so recent runs are distinguishable
+ *  and re-runnable. Derived from the run's durable job payload. */
+export interface RunPreferences {
+  mode: string; // mode_b | mode_c
+  strategy: string | null; // full_sweep | change_impact (mode_b)
+  layers: string[] | null; // ui/api/db subset; null = all
+  modules: string[] | null; // module keys; null = all
+  changeset_size: number | null; // number of changed files (change_impact)
+  layer: string | null; // mode_c authoring layer (ui | api)
+}
+
 export interface RunListItem {
   id: string;
   mode: string; // the persisted Run.mode ("B" / "C")
   status: string; // the persisted Run.status (passed/failed/errored/…)
   created_at: string;
   pass_rate: number | null;
+  preferences?: RunPreferences | null;
 }
 
 export interface RunListResponse {
@@ -566,4 +578,324 @@ export interface RunListResponse {
 export interface PageParams {
   limit: number;
   offset: number;
+}
+
+// --- account dashboard (ADR-0065) -------------------------------------------
+
+export interface ProjectHealthItem {
+  project_id: string;
+  name: string;
+  status: string; // passing | action_needed | errored | never_run
+  pass_rate: number | null;
+  open_findings: number;
+  last_run_at: string | null;
+}
+
+export interface TrendPoint {
+  date: string; // YYYY-MM-DD
+  runs: number;
+  passed: number;
+  failed: number;
+  errored: number;
+  skipped: number;
+  pass_rate: number | null;
+}
+
+export interface RecentRunItem {
+  run_id: string;
+  project_id: string;
+  project_name: string;
+  mode: string;
+  status: string;
+  pass_rate: number | null;
+  created_at: string;
+}
+
+export interface AccountDashboard {
+  range_days: number;
+  projects_total: number;
+  projects_by_status: Record<string, number>;
+  open_findings: Record<string, number>; // critical / major / minor / total
+  project_health: ProjectHealthItem[];
+  runs_total: number;
+  tests_total: number;
+  outcomes: Record<string, number>; // pass / fail / error / skipped
+  pass_rate: number | null;
+  trend: TrendPoint[];
+  recent_runs: RecentRunItem[];
+}
+
+// --- plans / pricing (B5, ADR-0069) -----------------------------------------
+
+/** One plan tier from the public catalog (GET /plans). A NULL price means the tier
+ *  is custom ("contact us"); a NULL quota (projects/seats/credits) means unlimited.
+ *  `features` is a free-form flag bag (SSO, priority support, …) rendered as bullets. */
+export interface PlanItem {
+  key: string;
+  name: string;
+  price_per_seat_monthly_usd: number | null;
+  included_run_credits_monthly: number | null;
+  max_projects: number | null;
+  max_seats: number | null;
+  max_parallelism: number;
+  retention_days: number;
+  features: Record<string, unknown>;
+}
+
+export interface PlanList {
+  items: PlanItem[];
+}
+
+// --- operator / admin console (staff-only, cross-tenant) ---------------------
+// Mirrors backend/app/api/admin.py + ops.py + incidents.py. Every surface here is
+// staff-gated server-side (403 for a non-staff caller); the UI only hides what it
+// knows will be refused — the server is the real authority.
+
+/** The staff roles the backend recognises (the allow-list). */
+export type StaffRole = "superadmin" | "support" | "billing" | "read_only_ops";
+
+/** The fine-grained actions a staff role grants. `permissions` is widened to
+ *  `string[]` on the wire for forward-compat; this names the values we gate on. */
+export type StaffPermission =
+  | "view_ops"
+  | "manage_jobs"
+  | "view_tenants"
+  | "manage_tenants"
+  | "view_users"
+  | "manage_users"
+  | "view_billing"
+  | "manage_billing"
+  | "view_audit"
+  | "impersonate";
+
+/** GET /admin/me — the signed-in staff member's console identity (403 if not staff). */
+export interface AdminMe {
+  user_id: string;
+  email: string;
+  staff_role: string;
+  permissions: string[];
+}
+
+// Tenants (organizations) ----------------------------------------------------
+
+export interface AdminOrgListItem {
+  id: string;
+  name: string;
+  is_personal: boolean;
+  suspended: boolean;
+  member_count: number;
+  project_count: number;
+  created_at: string;
+}
+
+export interface AdminOrgList {
+  items: AdminOrgListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AdminOrgMember {
+  user_id: string;
+  email: string;
+  name: string | null;
+  role: string;
+}
+
+export interface AdminOrgDetail {
+  id: string;
+  name: string;
+  is_personal: boolean;
+  suspended: boolean;
+  member_count: number;
+  project_count: number;
+  created_at: string;
+  // The org's effective plan tier (ADR-0069). Defaults to `free`; an unknown/absent key
+  // is treated as `free` server-side. Drives the billing panel's plan badge + selector.
+  plan_key: string;
+  members: AdminOrgMember[];
+}
+
+// Billing / usage (B4, ADR-0069/0049) ----------------------------------------
+
+/** One model's slice of an org's AI spend (GET /admin/orgs/{id}/usage `by_model`).
+ *  `model` is null when a call didn't record which model served it. */
+export interface AdminModelCost {
+  model: string | null;
+  invocation_count: number;
+  total_cost_usd: number;
+}
+
+/** An org's metered AI cost over a trailing window (VIEW_BILLING). Cost is the REAL
+ *  billed spend already captured per run (ADR-0049), so the margin is known. */
+export interface AdminOrgUsage {
+  org_id: string;
+  since_days: number;
+  total_cost_usd: number;
+  invocation_count: number;
+  run_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  by_model: AdminModelCost[];
+}
+
+// Generation-quality flywheel (C6, ADR-0070) ---------------------------------
+
+/** The eval aggregate over the generation-signal log (GET /admin/generation-quality).
+ *  Free labels from execution + triage: `by_outcome` (pass/fail/error/skipped),
+ *  `repaired` (needed a self-repair pass), `healed` (brittle), `flaky`, and the triage
+ *  split (`triaged` total human-labelled, `triage_rejected` = judged a false positive).
+ *  Segmentable by `prompt_version` so a quality shift is attributable to a change. */
+export interface GenerationQuality {
+  since_days: number;
+  prompt_version: string | null;
+  total: number;
+  by_outcome: Record<string, number>;
+  repaired: number;
+  healed: number;
+  flaky: number;
+  triaged: number;
+  triage_rejected: number;
+}
+
+// Users ----------------------------------------------------------------------
+
+export interface AdminUserListItem {
+  id: string;
+  email: string;
+  name: string | null;
+  is_active: boolean;
+  staff_role: string | null;
+  org_count: number;
+  created_at: string;
+}
+
+export interface AdminUserList {
+  items: AdminUserListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AdminUserOrg {
+  org_id: string;
+  org_name: string;
+  role: string;
+}
+
+export interface AdminUserDetail {
+  id: string;
+  email: string;
+  name: string | null;
+  is_active: boolean;
+  staff_role: string | null;
+  created_at: string;
+  orgs: AdminUserOrg[];
+}
+
+/** POST /admin/users/{id}/staff-role — grant a role name, or null to revoke. */
+export interface SetStaffRoleBody {
+  staff_role: string | null;
+}
+
+// Jobs / queue ---------------------------------------------------------------
+
+/** One job in the durable queue (GET /ops/jobs, POST /admin/jobs/{id}/…). `status`
+ *  is a JobStatusValue but stays a string for forward-compat with new statuses. */
+export interface JobSummary {
+  id: string;
+  kind: string;
+  status: JobStatusValue;
+  project_id: string;
+  mode: string | null;
+  attempts: number;
+  max_attempts: number;
+  detail: string | null;
+  created_at: string;
+  locked_at: string | null;
+  finished_at: string | null;
+}
+
+export interface JobList {
+  items: JobSummary[];
+  total: number;
+}
+
+/** GET /ops/queue — the cross-tenant queue snapshot. `stuck` = running past the
+ *  threshold; `runner_healthy` is the at-a-glance signal (no stuck jobs). */
+export interface QueueStats {
+  queued: number;
+  running: number;
+  succeeded: number;
+  failed: number;
+  cancelled: number;
+  stuck: number;
+  total: number;
+  runner_healthy: boolean;
+}
+
+// Staff audit trail ----------------------------------------------------------
+
+export interface StaffAuditItem {
+  id: string;
+  created_at: string;
+  actor_id: string | null;
+  actor_email: string;
+  action: string;
+  target_type: string | null;
+  target_id: string | null;
+  detail: Record<string, unknown>;
+}
+
+export interface StaffAuditList {
+  items: StaffAuditItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+// Internal incidents (ADR-0047) ----------------------------------------------
+
+/** One captured internal failure (operator diagnostic). Same failure groups under
+ *  one `fingerprint`; the traceback is only on the detail view. */
+export interface IncidentListItem {
+  id: string;
+  created_at: string;
+  phase: string;
+  component: string | null;
+  project_id: string | null;
+  run_id: string | null;
+  exception_type: string;
+  message: string;
+  fingerprint: string;
+}
+
+export interface IncidentList {
+  items: IncidentListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/** GET /incidents/{id} — the full incident, including the captured traceback. */
+export interface IncidentDetail extends IncidentListItem {
+  traceback: string | null;
+}
+
+// --- global search (ADR-0072, the ⌘K command palette) -----------------------
+
+export type SearchResultType = "project" | "finding" | "run";
+
+/** One name-search hit — enough to render a row and jump straight to it. */
+export interface SearchResultItem {
+  type: SearchResultType;
+  id: string;
+  label: string;
+  subtitle: string | null;
+  url: string;
+}
+
+export interface SearchResponse {
+  query: string;
+  items: SearchResultItem[];
 }

@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     # Server-side opaque sessions: a bearer token (hashed at rest) valid for this
     # long; password-reset tokens are single-use and short-lived.
     session_ttl_seconds: int = 1_209_600  # 14 days
+    # Staff impersonation sessions are deliberately short — a support action, not a
+    # login (ADR-0071). 30 minutes; a forgotten impersonation self-expires.
+    impersonation_ttl_seconds: int = 1_800
     password_reset_ttl_seconds: int = 3_600  # 1 hour
     org_invite_ttl_seconds: int = 604_800  # 7 days (B3; ADR-0033)
 
@@ -178,6 +181,15 @@ class Settings(BaseSettings):
     # Cap for a single per-minute wait (also the default when the 429 omits a
     # RetryInfo). Keeps a hostile/garbled retryDelay from stalling the run.
     gemini_minute_retry_cap_seconds: float = 60.0
+
+    # --- Billing / Stripe (B6, ADR-0069) ---------------------------------------
+    # SECRETS, env-ONLY (never in the DB, a payload, a URL, or logs; sent to Stripe via
+    # the Authorization header). Unset ⇒ billing stays in stub mode: plans are still
+    # seeded and staff-assignable (ADR-0069), only LIVE payment collection is inert. Set
+    # these + BILLING_MODE=stripe to activate the Stripe integration.
+    billing_mode: str = "stub"  # stub | stripe
+    stripe_api_key: str | None = None
+    stripe_webhook_secret: str | None = None
 
     # --- Anthropic API provider (AI_PROVIDER_MODE=anthropic_api) ---------------
     # The PRODUCTION Claude backend — the Messages API directly (no `claude` CLI).

@@ -2,6 +2,7 @@ import { AlertTriangle, FolderGit2 } from "lucide-react";
 import { useCallback, type ReactNode } from "react";
 
 import { Link } from "@/components/Link";
+import { PageShell } from "@/components/PageShell";
 import { Pagination } from "@/components/Pagination";
 import { SkeletonRows } from "@/components/Skeleton";
 import { StatePanel } from "@/components/StatePanel";
@@ -31,31 +32,34 @@ export function ProjectsListPage() {
   const list = usePagedList(fetchPage, { pageSize: PAGE_SIZE, resetKey: "projects" });
 
   return (
-    <div className="mx-auto max-w-[1760px] px-6 py-8 lg:px-8">
-      <div className="mb-6 flex items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <span className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg border-[1.5px] border-marker">
-            <FolderGit2
-              className="h-4 w-4 text-status-neutral-solid"
-              aria-hidden="true"
-            />
-          </span>
-          <div>
-            <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-foreground">
-              Projects
-            </h1>
-            {!list.loading && !list.error ? (
-              <p className="mt-0.5 text-[13px] text-status-neutral-solid">
-                {list.total} {list.total === 1 ? "codebase" : "codebases"} under test
-              </p>
-            ) : null}
+    <PageShell
+      scroll={false}
+      header={
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg border-[1.5px] border-marker">
+              <FolderGit2
+                className="h-4 w-4 text-status-neutral-solid"
+                aria-hidden="true"
+              />
+            </span>
+            <div>
+              <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-foreground">
+                Projects
+              </h1>
+              {!list.loading && !list.error ? (
+                <p className="mt-0.5 text-[13px] text-status-neutral-solid">
+                  {list.total} {list.total === 1 ? "codebase" : "codebases"} under test
+                </p>
+              ) : null}
+            </div>
           </div>
+          <Button asChild>
+            <Link to="/projects/new">New project</Link>
+          </Button>
         </div>
-        <Button asChild>
-          <Link to="/projects/new">New project</Link>
-        </Button>
-      </div>
-
+      }
+    >
       {list.loading ? (
         <SkeletonRows label="Loading projects…" />
       ) : list.error ? (
@@ -79,9 +83,9 @@ export function ProjectsListPage() {
           }
         />
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border bg-surface">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-surface">
           <div
-            className={`grid ${COLS} border-b border-border-subtle bg-background px-5 py-2.5`}
+            className={`grid shrink-0 ${COLS} border-b border-border-subtle bg-background px-5 py-2.5`}
           >
             <ColHead>Project</ColHead>
             <ColHead>Stack</ColHead>
@@ -90,11 +94,14 @@ export function ProjectsListPage() {
             <ColHead>Status</ColHead>
           </div>
 
-          {list.items.map((project) => (
-            <ProjectRow key={project.id} project={project} />
-          ))}
+          {/* The rows are the overflow — they scroll inside the card (ADR-0066). */}
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {list.items.map((project) => (
+              <ProjectRow key={project.id} project={project} />
+            ))}
+          </div>
 
-          <div className="px-5 pb-3">
+          <div className="shrink-0 border-t border-border-subtle px-5 py-3">
             <Pagination
               offset={list.offset}
               pageSize={list.pageSize}
@@ -107,7 +114,7 @@ export function ProjectsListPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }
 

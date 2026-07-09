@@ -68,6 +68,50 @@ async def test_claim_marks_running_and_blocks_double_claim(
     assert done.locked_at is None  # lease released
 
 
+async def test_reclaim_stale_running_fails_only_stale_leased_jobs(
+    db_session: AsyncSession,
+) -> None:
+    # A job whose worker died leaks its lease and lingers 'running' forever (the
+    # perpetual "ongoing run" bug, ADR-0067). The reaper fails only those whose lease is
+    # older than the threshold; a freshly-leased (genuinely running) job is untouched.
+    queue = JobQueue(db_session)
+    pid = await _project_id(db_session)
+    fresh = await queue.enqueue(kind=JobKind.RUN, project_id=pid)
+    stale = await queue.enqueue(kind=JobKind.INGEST, project_id=pid)
+    await queue.claim(fresh.id, worker_id="w")
+    await queue.claim(stale.id, worker_id="w")
+
+    stale_job = await queue.get(stale.id)
+    assert stale_job is not None
+    stale_job.locked_at = datetime.now(UTC) - timedelta(hours=2)  # a dead lease
+    await db_session.flush()
+
+    reclaimed = await queue.reclaim_stale_running(older_than_seconds=3600)  # 1h
+    assert reclaimed == [(stale.id, JobKind.INGEST)]
+
+    dead = await queue.get(stale.id)
+    assert dead is not None
+    assert dead.status == JobStatus.FAILED and dead.locked_at is None  # lease released
+    alive = await queue.get(fresh.id)
+    assert alive is not None and alive.status == JobStatus.RUNNING  # fresh untouched
+
+
+async def test_reclaim_stale_running_zero_threshold_reclaims_all_running(
+    db_session: AsyncSession,
+) -> None:
+    # The startup sweep (older_than_seconds=0): with no worker alive, EVERY running job
+    # is orphaned and reclaimed; queued jobs are left alone to run.
+    queue = JobQueue(db_session)
+    pid = await _project_id(db_session)
+    running = await queue.enqueue(kind=JobKind.RUN, project_id=pid)
+    queued = await queue.enqueue(kind=JobKind.RUN, project_id=pid)
+    await queue.claim(running.id, worker_id="w")
+
+    reclaimed = await queue.reclaim_stale_running(older_than_seconds=0)
+    assert reclaimed == [(running.id, JobKind.RUN)]
+    assert (await queue.get(queued.id)).status == JobStatus.QUEUED  # type: ignore[union-attr]
+
+
 async def test_cancel_queued_job_is_never_claimed(db_session: AsyncSession) -> None:
     queue = JobQueue(db_session)
     pid = await _project_id(db_session)
@@ -197,6 +241,39 @@ async def test_worker_processes_a_persisted_job_after_restart(
         async with sessionmaker_() as session:
             done = await JobQueue(session).get(job_id)
         assert done is not None and done.status == JobStatus.SUCCEEDED
+    finally:
+        await _cleanup(sessionmaker_, pid)
+
+
+async def test_worker_startup_reaps_orphaned_running_job(
+    sessionmaker_: async_sessionmaker[AsyncSession],
+) -> None:
+    """A job left 'running' by a dead worker is reclaimed to 'failed' on startup — so it
+    can no longer linger forever as a phantom 'ongoing run' (ADR-0067)."""
+    pid = await _committed_project(sessionmaker_)
+    try:
+        job_id = await _commit_job(sessionmaker_, pid, mode="mode_b")
+        # Claim it (→ running) then orphan it: backdate the lease as if the worker died.
+        async with sessionmaker_() as session:
+            queue = JobQueue(session)
+            await queue.claim(job_id, worker_id="dead")
+            job = await queue.get(job_id)
+            assert job is not None
+            job.locked_at = datetime.now(UTC) - timedelta(hours=2)
+            await session.commit()
+
+        # A fresh worker runs its startup recovery, then exits (stop already set).
+        stop = asyncio.Event()
+        stop.set()
+        worker = JobWorker(
+            sessionmaker_, _RecordingHandlers().as_dict(), worker_id="new"
+        )
+        await worker.run_forever(stop_event=stop)
+
+        async with sessionmaker_() as session:
+            reaped = await JobQueue(session).get(job_id)
+        assert reaped is not None
+        assert reaped.status == JobStatus.FAILED and reaped.locked_at is None
     finally:
         await _cleanup(sessionmaker_, pid)
 

@@ -130,3 +130,9 @@ class TestCase(Base, ProjectScopedMixin):
     resolved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # The flywheel's version tag (ADR-0070): the prompt-template version + strategy that
+    # GENERATED this case. Set on AI-generated cases only; NULL for human/CSV-authored
+    # ones (they carry no generation signal). Read at execution to attribute an outcome
+    # to the generation that produced it.
+    gen_prompt_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    gen_strategy: Mapped[str | None] = mapped_column(String(64), nullable=True)

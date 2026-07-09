@@ -85,9 +85,7 @@ describe("OngoingRunPage", () => {
     vi.mocked(runApi.active).mockResolvedValue(NO_RUN);
     render(<OngoingRunPage />);
     expect(await screen.findByText("No run in progress")).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "Start a run" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Start a run" })).toBeInTheDocument();
   });
 
   it("renders the run journey once an active run is found", async () => {

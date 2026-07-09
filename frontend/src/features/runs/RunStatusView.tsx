@@ -52,10 +52,10 @@ export function RunStatusView({ runId }: { runId: string }) {
         </Link>
         {run.projectId ? (
           <Link
-            to={`/projects/${run.projectId}/tests`}
+            to={`/projects/${run.projectId}/tests?run=${runId}`}
             className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline"
           >
-            View generated tests
+            View this run's tests
             <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
           </Link>
         ) : null}

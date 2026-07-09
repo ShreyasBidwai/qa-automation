@@ -32,40 +32,57 @@ from .extract import (
 from .plan import PlannedCase
 
 _INSTRUCTION = (
-    "You are rendering ONE Laravel/PHPUnit feature test CLASS for an API endpoint. "
+    "You are rendering ONE Laravel/PHPUnit feature test CLASS for a route. "
     "Emit a PHP class in `namespace Tests\\Feature;` that extends `Tests\\TestCase`, "
     "uses `Illuminate\\Foundation\\Testing\\RefreshDatabase`, and has a SINGLE public "
-    "method `test_<case>(): void`. Drive the endpoint with Laravel's JSON test "
-    "helpers ($this->getJson/postJson/putJson/patchJson/deleteJson) and assert with "
-    "$response->assertStatus(...) / assertJson... — do NOT use Pest's it()/test()/"
-    "uses()/expect(). Use EXACTLY the HTTP request (method, URI, path values, "
-    "payload) and the expected status given in the context below; do NOT invent or "
-    "change any payload value or the expected status.\n\n"
+    "method `test_<case>(): void`. Do NOT use Pest's it()/test()/uses()/expect(). Use "
+    "EXACTLY the HTTP request (method, URI, path values, payload) given in the "
+    "context; do NOT invent or change any payload value.\n\n"
+    # The request helper depends on the route CLASS: api routes speak JSON, web routes
+    # speak sessions/redirects. Using the JSON helper on a web route (and asserting a
+    # JSON body) is the single biggest source of false failures — ADR-0063.
+    "CHOOSE THE REQUEST HELPER by `endpoint.is_api`: if is_api is true, drive it with "
+    "the JSON helpers ($this->getJson/postJson/putJson/patchJson/deleteJson) so "
+    "Laravel sets the JSON Accept header; if is_api is FALSE (a web route), use the "
+    "plain helpers ($this->get/post/put/patch/delete) and do NOT assert a JSON body — "
+    "a web route returns HTML or a redirect, not JSON.\n\n"
     # Self-analysis in the SAME call: reason about the contract, record the intent as
-    # a PHP comment (valid code, so output stays code-only), then assert THAT
-    # behaviour — grounded only in the context, never an invented value.
+    # a PHP comment (valid code, so output stays code-only), then assert THAT behaviour.
     "FIRST, analyse the contract from the context — the HTTP method's semantics, the "
-    "endpoint's validation rules, this case's intent/target field, the expected "
-    "status, and the response shape — and open the test method body with a concise "
-    "`// Intent:` comment (1-2 lines) stating WHAT behaviour this verifies and WHY it "
-    "matters for THIS endpoint. THEN write assertions that verify exactly that "
-    "behaviour, grounded ONLY in the context: never assert a specific body field "
-    "VALUE you cannot derive from the context — an ungrounded value is a false "
-    "failure.\n\n"
-    "For a 'characterization' / happy case: assert the success status, AND — when the "
-    "context's expected.shape lists keys — assert that structure with "
-    "$response->assertJsonStructure([...]); if no shape is given, assert the body is "
-    "JSON ($this->assertIsArray($response->json())). If the context's expected.shape "
-    "has an `echo` object (a create/update that returns the resource), ALSO assert the "
-    "response echoes those exact field:value pairs with "
-    "$response->assertJsonFragment([...]) — you SENT those values so the endpoint must "
-    "return them, and assertJsonFragment matches inside a `data` wrapper too. Never "
-    "assert a value that is NOT in `echo` (the server may transform/hide it). "
-    "For a 'rule-derived' / negative case: assert the EXACT expected status and, for "
-    "422s, that the validation error envelope reports the targeted field(s) — matching "
-    "the field's validation rule shown in the context — via "
-    "$response->assertJsonValidationErrors([...]); for an auth case, assert the "
-    "unauthenticated / forbidden status."
+    "route class (is_api), the endpoint's validation rules, this case's intent/target "
+    "field, and `expected` — and open the test method body with a concise `// Intent:` "
+    "comment (1-2 lines) stating WHAT behaviour this verifies and WHY. THEN assert "
+    "exactly that, grounded ONLY in the context: never assert a body field VALUE you "
+    "cannot derive from the context — an ungrounded value is a false failure.\n\n"
+    # The assertion is driven by expected.assert — NEVER a hardcoded status. Guessing an
+    # exact 200 for every happy case is precisely the bug this replaces (ADR-0063).
+    "ASSERT ACCORDING TO `expected.assert`:\n"
+    "- 'reachable' (EVERY happy characterization) — a THREE-WAY outcome so the run "
+    "self-explains (ADR-0064): capture `$status = $response->getStatusCode();`. (1) A "
+    'SERVER ERROR is a real defect — `if ($status >= 500) { $this->fail("server error: '
+    'HTTP {$status}"); }`. (2) A non-2xx that is not a server error means the endpoint '
+    "was REACHED but its success could not be verified (an auth / config / "
+    "missing-record / required-query-param precondition we cannot satisfy statically, "
+    "or a route not served in the test boot) — record it as a SKIP (not a pass/fail) "
+    "WITH the status: `if ($status < 200 || $status >= 300) { "
+    '$this->markTestSkipped("reachable but unverified: HTTP {$status} — needs a '
+    'precondition (auth / data / query params) or the route is not served here"); }`. '
+    "(3) ONLY a 2xx success reaches the body assertions: when expected.shape is "
+    "non-empty (an api route) assert the body is well-formed — JSON "
+    "($this->assertIsArray($response->json())); if expected.shape lists keys assert "
+    "the structure via assertJsonStructure([...]); if expected.shape has an `echo` "
+    "assert the response echoes those exact field:value pairs via "
+    "assertJsonFragment([...]) (you SENT them; matches inside a `data` wrapper too). "
+    "Never assert a value NOT in `echo`, and NEVER assert an exact status.\n"
+    "- 'status' (rule-derived negative/auth): assert the EXACT expected.status via "
+    "$response->assertStatus(expected.status). For a 422, ALSO assert the validation "
+    "envelope reports the targeted field(s) via assertJsonValidationErrors([...]) from "
+    "expected.shape.errors_for; for a 401, assert it is unauthorized.\n"
+    "- 'redirect' (auth on a web route): assert $response->assertRedirect() — an "
+    "unauthenticated web request is redirected to login, it is NOT a 401.\n"
+    "- 'redirect_with_errors' (validation on a web route): assert "
+    "$response->assertSessionHasErrors([...]) for expected.shape.errors_for — a web "
+    "validation failure redirects back with session errors, it is NOT a 422 JSON body."
 )
 # Defense in depth: demand code-only output so there's nothing to strip. The
 # extractor (extract.py) is the belt; this is the suspenders.
@@ -104,6 +121,24 @@ _FACTORY_SKIP_REASON = (
     "precondition seeding (model factories) unavailable on the target — deferred "
     "to B10"
 )
+# Retrieval-augmented generation (Loop 1, ADR-0070): a few of THIS project's own
+# previously-PASSING tests, fed as few-shot so each run sharpens the next. The model
+# mirrors their SHAPE only — request/expected still come from the context alone.
+_EXEMPLAR_INTRO = (
+    "\n\nHere are up to 2 tests previously generated for similar routes in THIS "
+    "project that PASSED first-try — mirror their STRUCTURE, request-helper choice, "
+    "and assertion style. Do NOT copy their routes/payloads; use ONLY the "
+    "request/expected in the context above. Examples:\n\n"
+)
+_EXEMPLAR_MAX_CHARS = 1600  # keep each exemplar within the token budget
+# Loop 0 self-repair (ADR-0070): when the model returns something that isn't a test
+# class, retry ONCE with the defect named. Bounded — a second miss ships as-is (the
+# run's SKIP/ERROR handling is the net). Execution remains the real oracle.
+_REPAIR_NOTE = (
+    "\n\nYOUR PREVIOUS ATTEMPT WAS NOT A VALID TEST CLASS. Emit a COMPLETE PHP file: "
+    "it MUST start with `<?php`, declare a `class ...Test extends Tests\\TestCase`, "
+    "and have a `public function test_...(): void` method. Output ONLY the PHP."
+)
 
 
 def build_context(spec: EndpointSpec, case: PlannedCase) -> Subgraph:
@@ -121,6 +156,9 @@ def build_context(spec: EndpointSpec, case: PlannedCase) -> Subgraph:
                 "uri": spec.uri,
                 "route_name": spec.route_name,
                 "auth_required": spec.auth_required,
+                # api (JSON) vs web (session/redirect) route — dictates the request
+                # helper and the whole assertion style (ADR-0063).
+                "is_api": spec.is_api,
                 "path_params": spec.path_params,
                 "query_params": spec.query_params,
                 # The REAL validation contract — so a negative asserts the RIGHT field
@@ -151,7 +189,15 @@ def build_context(spec: EndpointSpec, case: PlannedCase) -> Subgraph:
                 "authenticated": case.authenticated,
                 "payload": case.payload,
             },
-            "expected": {"status": case.expected.status, "shape": case.expected.shape},
+            "expected": {
+                "status": case.expected.status,
+                "shape": case.expected.shape,
+                # HOW to assert (ADR-0063) — the renderer instruction maps each value
+                # to the exact PHPUnit call. The status above is a representative hint
+                # for the reachable band, and the exact code for the
+                # status / redirect kinds.
+                "assert": case.expected.expectation.value,
+            },
             "dependencies": [asdict(dep) for dep in case.dependencies],
         },
         indent=2,
@@ -172,14 +218,27 @@ def _header(case: PlannedCase) -> str:
     ]
     if case.oracle_source is OracleSource.CHARACTERIZATION:
         lines.append(
-            "// CHARACTERIZATION: asserts only the success status + structural "
-            "shape (body is JSON)."
+            "// CHARACTERIZATION: 5xx FAILS, a non-2xx precondition is SKIPPED "
+            "(reachable-but-unverified), a 2xx PASSES (api: + well-formed JSON)."
         )
         lines.append(
             "// It asserts NO specific body values — upgrade to spec-grounded "
             "once a requirement is ingested."
         )
     return "\n".join(lines)
+
+
+def _looks_like_test_class(code: str) -> bool:
+    """A cheap structural check that the render is a PHP test class, not prose or an
+    empty/malformed file — the trigger for one self-repair retry (Loop 0, ADR-0070).
+    Deterministic; NOT a substitute for execution, which is the real oracle."""
+    lowered = code.lower()
+    return (
+        "<?php" in code
+        and "class " in code
+        and "extends" in code
+        and "function test" in lowered
+    )
 
 
 def render_script(
@@ -189,6 +248,7 @@ def render_script(
     budget_tokens: int,
     *,
     factories_available: bool = True,
+    exemplars: list[str] | None = None,
 ) -> str:
     """Render a DIRECTLY-RUNNABLE PHPUnit test class from the model.
 
@@ -196,7 +256,8 @@ def render_script(
     snuck through before — B5 smoke), forces a deterministic globally-unique class
     name (so files don't collide in one runner invocation), assembles a valid PHP
     file, and — when the target has no factories — honestly skips a factory-dependent
-    case rather than emitting one that hard-fails (ADR-0037).
+    case rather than emitting one that hard-fails (ADR-0037). ``exemplars`` are this
+    project's own previously-passing tests, injected as few-shot (Loop 1, ADR-0070).
     """
     instruction = _INSTRUCTION + _CODE_ONLY
     if factories_available:
@@ -205,8 +266,19 @@ def render_script(
             instruction += _DEPENDENCY_ORDER
     else:
         instruction += _NO_FACTORIES
+    # Loop 1 (ADR-0070): show the model this project's own proven tests as few-shot.
+    if exemplars:
+        blocks = "\n\n---\n\n".join(ex[:_EXEMPLAR_MAX_CHARS] for ex in exemplars)
+        instruction += _EXEMPLAR_INTRO + blocks
     raw = provider.generate(instruction, build_context(spec, case), budget_tokens)
     code = extract_code(raw)
+    # Loop 0 self-repair (ADR-0070): a malformed first attempt gets ONE bounded retry
+    # with the defect named — cheaper than shipping garbage that ERRORs at execution.
+    if not _looks_like_test_class(code):
+        raw = provider.generate(
+            instruction + _REPAIR_NOTE, build_context(spec, case), budget_tokens
+        )
+        code = extract_code(raw)
     if not factories_available:
         code = skip_if_uses_factory(code, _FACTORY_SKIP_REASON)
     seed = f"{spec.method} {spec.uri} {case.name}"

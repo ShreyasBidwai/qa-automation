@@ -84,6 +84,31 @@ def _location_payload(subgraph: Subgraph | None) -> dict[str, Any]:
     }
 
 
+def _endpoint_from_case_key(case_key: str | None) -> str | None:
+    """The endpoint token a ``case_key`` starts with — e.g.
+    ``"GET /login/apple::happy::happy"`` → ``"GET /login/apple"`` — or None.
+    ``compute_case_key`` guarantees this prefix, so it names the failing endpoint even
+    when the case never linked a Brain node."""
+    if not case_key:
+        return None
+    head = case_key.split("::", 1)[0].strip()
+    return head or None
+
+
+def _with_case_key_fallback(location: dict[str, Any], case: TestCase) -> dict[str, Any]:
+    """Name the failing endpoint from the case's stable ``case_key`` when nothing else
+    located it, so a finding reads ``at GET /login/apple`` instead of ``at unknown
+    target``. Additive and last-resort: only fires when no page/endpoint/table resolved
+    (e.g. a case with no ``target_node``), never overriding a real cross-layer location.
+    """
+    if location.get("endpoints") or location.get("page") or location.get("tables"):
+        return location
+    endpoint = _endpoint_from_case_key(case.case_key)
+    if endpoint is None:
+        return location
+    return {**location, "endpoints": [endpoint]}
+
+
 def _anchor(location: Mapping[str, Any]) -> str:
     """The deepest shared failing node: table → endpoint → page (ADR-0021)."""
     for layer in ("tables", "endpoints"):
@@ -197,15 +222,20 @@ class FindingAssembler:
     ) -> list[_Prepared]:
         prepared: list[_Prepared] = []
         for result in results:
-            if result.outcome is Outcome.PASS:
-                continue  # passing results are not findings
+            if result.outcome in (Outcome.PASS, Outcome.SKIPPED):
+                # Passing results are not findings; SKIPPED ones are reachable-but-
+                # unverified observations (no defect, no crash) — surfaced as a run
+                # count, never a finding (ADR-0064).
+                continue
             case = await self._cases.get(project_id, result.test_case_id)
             if case is None:
                 raise FindingAssemblyError(
                     f"result {result.id} references test case "
                     f"{result.test_case_id} not in project {project_id}"
                 )
-            location = _location_payload(await self._resolve(project_id, case))
+            location = _with_case_key_fallback(
+                _location_payload(await self._resolve(project_id, case)), case
+            )
             key = root_cause_key(location, result.outcome, case.expected)
             prepared.append(_Prepared(result, case, location, key))
         return prepared

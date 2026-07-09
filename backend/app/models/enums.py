@@ -133,6 +133,13 @@ class Outcome(str, enum.Enum):
     PASS = "pass"
     FAIL = "fail"
     ERROR = "error"
+    # The test RAN and the endpoint was reachable, but its success could not be
+    # verified — it returned a precondition status (a 4xx/redirect: auth, missing
+    # record, required query params, or a route that isn't served in the test boot).
+    # NEITHER a pass (nothing was proven) NOR a fail (no defect, no crash). Kept out of
+    # pass-rate and never a finding, but surfaced so a run self-explains (ADR-0064). A
+    # framework `<skipped>` (e.g. an unavailable-factory skip, ADR-0037) maps here too.
+    SKIPPED = "skipped"
 
 
 class Triage(str, enum.Enum):
@@ -244,6 +251,22 @@ class OrgRole(str, enum.Enum):
     ADMIN = "admin"
     MEMBER = "member"
     VIEWER = "viewer"
+
+
+class StaffRole(str, enum.Enum):
+    """A platform-staff member's instance-level role (ADR-0068).
+
+    Instance-wide, NOT an org role: governs the cross-tenant operator/admin
+    console. Ordered most→least privileged. Persisted as the ``staff_role`` pg
+    enum; the permission matrix lives in ``app.core.staff_permissions``. Supersedes
+    the boolean ``users.is_operator`` (ADR-0035) — a null role means the user is not
+    staff. Granted only by a superadmin (admin API) or seed.
+    """
+
+    SUPERADMIN = "superadmin"
+    SUPPORT = "support"
+    BILLING = "billing"
+    READ_ONLY_OPS = "read_only_ops"
 
 
 class JobKind(str, enum.Enum):

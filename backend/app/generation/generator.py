@@ -24,12 +24,14 @@ from app.ingestion.models import EndpointSpec
 from app.models.enums import AuthoredBy, CaseOrigin, Framework, TestLayer
 from app.models.test_case import TestCase
 from app.models.test_script import TestScript
+from app.repositories.generation_signal_repository import GenerationSignalRepository
 from app.repositories.test_script_repository import TestScriptRepository
 from app.services.case_merge_service import CaseMergeService, MergeAction
 
 from .case_key import compute_case_key
 from .plan import PlannedCase, plan_cases
 from .render import render_script
+from .version import PROMPT_VERSION
 
 if TYPE_CHECKING:
     from app.documents.grounding import SpecGroundingService
@@ -78,6 +80,8 @@ def _to_test_case(
         edited_by_human=False,
         origin=CaseOrigin.GENERATED,
         case_key=case_key,
+        gen_prompt_version=PROMPT_VERSION,  # flywheel attribution (ADR-0070)
+        gen_strategy="endpoint",
     )
 
 
@@ -131,6 +135,16 @@ class TestGenerator:
         merge = CaseMergeService(session)
         script_repo = TestScriptRepository(session)
 
+        # Retrieval (Loop 1, ADR-0070): this project's own previously-passing tests for
+        # the same route class, fed to the renderer as few-shot so each run sharpens the
+        # next. Best-effort — empty on a cold start, and never blocks generation.
+        try:
+            exemplars = await GenerationSignalRepository(session).good_exemplars(
+                project_id, "api" if spec.is_api else "web"
+            )
+        except Exception:  # noqa: BLE001 — retrieval is an optimization, never fatal
+            exemplars = []
+
         # Render every case, then reconcile the whole set through the merge engine
         # (create / update / propose) — never a blind write; human-edited cases
         # are protected. Scripts attach to whichever version the merge produced.
@@ -150,6 +164,7 @@ class TestGenerator:
                         c,
                         self._budget,
                         factories_available=self._factories_available,
+                        exemplars=exemplars,
                     )
                     for c in cases
                 )

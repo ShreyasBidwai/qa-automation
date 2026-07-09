@@ -7,7 +7,7 @@ or an all-null response when none. Org-scoped: it never surfaces another tenant'
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 from fastapi import FastAPI
@@ -93,6 +93,28 @@ async def test_returns_the_newest_active_run(
 
     body = (await client.get("/api/v1/runs/active", headers=headers)).json()
     assert body["run_id"] == newest
+
+
+async def test_orphaned_running_run_is_not_shown_as_active(
+    app_client: tuple[httpx.AsyncClient, FastAPI],
+    db_session: AsyncSession,
+) -> None:
+    # A run whose worker died is left 'running' with a dead lease. It must NOT read as
+    # "ongoing" (ADR-0067) — this was the perpetual frozen "ongoing run" bug.
+    client, _ = app_client
+    headers = await _signup(client)
+    pid = await _project(client, headers)
+    run_id = await _new_run(client, headers, pid)
+
+    queue = JobQueue(db_session)
+    await queue.claim(uuid.UUID(run_id), worker_id="w")  # → running, fresh lease
+    job = await queue.get(uuid.UUID(run_id))
+    assert job is not None
+    job.locked_at = datetime.now(UTC) - timedelta(hours=2)  # worker died 2h ago
+    await db_session.flush()
+
+    body = (await client.get("/api/v1/runs/active", headers=headers)).json()
+    assert body["run_id"] is None  # orphaned, not ongoing
 
 
 async def test_active_run_is_org_scoped_no_leak(

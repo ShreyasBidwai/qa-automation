@@ -1,6 +1,14 @@
-import { AlertTriangle, MoreHorizontal, Users } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronRight,
+  CreditCard,
+  MoreHorizontal,
+  Users,
+} from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
+import { Link } from "@/components/Link";
+import { PageShell } from "@/components/PageShell";
 import { Skeleton } from "@/components/Skeleton";
 import { StatePanel } from "@/components/StatePanel";
 import { Badge } from "@/components/ui/badge";
@@ -54,12 +62,17 @@ export function AccountPage() {
   const [tab, setTab] = useState<Tab>("profile");
 
   return (
-    <div className="mx-auto max-w-[960px] px-6 py-8">
-      <h1 className="mb-5 text-[20px] font-semibold tracking-[-0.01em] text-foreground">
-        Account
-      </h1>
-
-      <div role="tablist" className="mb-7 flex gap-1 border-b border-border">
+    <PageShell
+      scroll={false}
+      maxWidth="max-w-[960px]"
+      header={
+        <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-foreground">
+          Account
+        </h1>
+      }
+    >
+      {/* Header + tab bar stay put (ADR-0066); only the active panel scrolls. */}
+      <div role="tablist" className="mb-7 flex shrink-0 gap-1 border-b border-border">
         <TabButton
           id="profile"
           active={tab === "profile"}
@@ -72,16 +85,18 @@ export function AccountPage() {
         </TabButton>
       </div>
 
-      {tab === "profile" ? (
-        <div role="tabpanel" aria-labelledby="tab-profile">
-          <ProfileTab />
-        </div>
-      ) : (
-        <div role="tabpanel" aria-labelledby="tab-team">
-          <TeamTab />
-        </div>
-      )}
-    </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {tab === "profile" ? (
+          <div role="tabpanel" aria-labelledby="tab-profile">
+            <ProfileTab />
+          </div>
+        ) : (
+          <div role="tabpanel" aria-labelledby="tab-team">
+            <TeamTab />
+          </div>
+        )}
+      </div>
+    </PageShell>
   );
 }
 
@@ -138,7 +153,35 @@ function ProfileTab() {
 
       <ProfileForm />
       <ChangePasswordForm />
+      <BillingLink />
     </div>
+  );
+}
+
+/** A quiet doorway from the account into the customer pricing page (B5) — billing lives
+ *  in the account context, kept off the main workflow nav. */
+function BillingLink() {
+  return (
+    <Link
+      to="/pricing"
+      className="mt-4 flex items-center gap-3.5 rounded-xl border border-border bg-surface p-5 shadow-card transition-colors hover:bg-background"
+    >
+      <span className="flex h-9 w-9 flex-none items-center justify-center rounded-lg border-[1.5px] border-marker">
+        <CreditCard className="h-4 w-4 text-status-neutral-solid" aria-hidden="true" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold text-foreground">
+          Plans &amp; pricing
+        </span>
+        <span className="mt-0.5 block text-[12.5px] text-muted-foreground">
+          Compare what each Polaris plan includes — seats, run credits, and quotas.
+        </span>
+      </span>
+      <ChevronRight
+        className="h-4 w-4 flex-none text-status-neutral-solid"
+        aria-hidden="true"
+      />
+    </Link>
   );
 }
 

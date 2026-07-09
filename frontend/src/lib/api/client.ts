@@ -1,7 +1,14 @@
 import { clearToken, getToken } from "@/lib/auth/session";
 
 import type {
+  AccountDashboard,
   ActiveRunResponse,
+  AdminMe,
+  AdminOrgDetail,
+  AdminOrgList,
+  AdminOrgUsage,
+  AdminUserDetail,
+  AdminUserList,
   AuthTokenResponse,
   AuthUser,
   ChangePasswordBody,
@@ -17,12 +24,17 @@ import type {
   FieldError,
   Finding,
   FindingsResponse,
+  GenerationQuality,
   HealthzResponse,
+  IncidentDetail,
+  IncidentList,
   IngestResponse,
   InviteCreateBody,
   InviteListResponse,
   InviteResponse,
+  JobList,
   JobStatus,
+  JobSummary,
   MemberListResponse,
   MemberResponse,
   ModelStats,
@@ -30,12 +42,14 @@ import type {
   OpenFindingsResponse,
   OrgListResponse,
   PageParams,
+  PlanList,
   Project,
   ProjectCreateBody,
   ProjectDocument,
   ProjectListResponse,
   ProfileUpdateBody,
   ProjectUpdateBody,
+  QueueStats,
   ReadyzResponse,
   RoleUpdateBody,
   RunCreateBody,
@@ -43,8 +57,12 @@ import type {
   RunListResponse,
   RunResponse,
   RunStatus,
+  SearchResponse,
+  SearchResultType,
+  SetStaffRoleBody,
   SignInBody,
   SignUpBody,
+  StaffAuditList,
   TestCaseListResponse,
   TriagePatchBody,
 } from "./types";
@@ -155,8 +173,7 @@ async function request<T>(
         status: response.status,
         data: null,
         error: problemMessage(body, response.status),
-        fieldErrors:
-          fieldErrors && fieldErrors.length > 0 ? fieldErrors : undefined,
+        fieldErrors: fieldErrors && fieldErrors.length > 0 ? fieldErrors : undefined,
       };
     }
     return { ok: true, status: response.status, data: body as T };
@@ -245,10 +262,7 @@ export const orgApi = {
     postJson<InviteResponse>(`${API_BASE}/orgs/${orgId}/invites`, body),
   /** PATCH /orgs/{id}/members/{uid} — change a member's role. */
   changeRole: (orgId: string, userId: string, body: RoleUpdateBody) =>
-    patchJson<MemberResponse>(
-      `${API_BASE}/orgs/${orgId}/members/${userId}`,
-      body,
-    ),
+    patchJson<MemberResponse>(`${API_BASE}/orgs/${orgId}/members/${userId}`, body),
   /** DELETE /orgs/{id}/members/{uid} — remove a member (204). */
   removeMember: (orgId: string, userId: string) =>
     del(`${API_BASE}/orgs/${orgId}/members/${userId}`),
@@ -261,19 +275,54 @@ export const healthApi = {
   readiness: () => getJson<ReadyzResponse>("/readyz"),
 };
 
+export const accountApi = {
+  /** GET /account/dashboard — account-wide health + a `rangeDays` trend (ADR-0065). */
+  dashboard: (rangeDays: number) =>
+    getJson<AccountDashboard>(`${API_BASE}/account/dashboard?range_days=${rangeDays}`),
+};
+
+/** The plan catalog (B5, ADR-0069) — the public pricing tiers, authenticated read. */
+export const planApi = {
+  /** GET /plans — the public plan tiers (name, price, quotas, features). */
+  list: () => getJson<PlanList>(`${API_BASE}/plans`),
+};
+
+/** Global name search (ADR-0072) — the ⌘K command palette. Org-scoped server-side;
+ *  never a client-side filter over an already-fetched page (see the ADR). */
+export const searchApi = {
+  /** GET /search?q=…&types=…&limit=… — omit `types` for every kind, newest first. */
+  search: (q: string, types?: SearchResultType[], limit?: number) => {
+    const params = new URLSearchParams({ q });
+    if (types && types.length > 0) params.set("types", types.join(","));
+    if (limit != null) params.set("limit", String(limit));
+    return getJson<SearchResponse>(`${API_BASE}/search?${params.toString()}`);
+  },
+};
+
 function pageQuery({ limit, offset }: PageParams): string {
   return `limit=${limit}&offset=${offset}`;
 }
 
+/** Build a `?a=b&c=d` query string, dropping undefined/null/empty values so an
+ *  omitted filter never leaks a bare `param=` onto the URL. */
+function qs(params: Record<string, string | number | undefined | null>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") {
+      search.set(key, String(value));
+    }
+  }
+  const encoded = search.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
 export const projectApi = {
   /** POST /projects — register a project. */
-  create: (body: ProjectCreateBody) =>
-    postJson<Project>(`${API_BASE}/projects`, body),
+  create: (body: ProjectCreateBody) => postJson<Project>(`${API_BASE}/projects`, body),
   /** GET /projects/{id}. */
   get: (id: string) => getJson<Project>(`${API_BASE}/projects/${id}`),
   /** GET /projects/{id}/model — the built-model summary (node/edge counts, by kind). */
-  model: (id: string) =>
-    getJson<ModelStats>(`${API_BASE}/projects/${id}/model`),
+  model: (id: string) => getJson<ModelStats>(`${API_BASE}/projects/${id}/model`),
   /** GET /projects/{id}/modules — the feature areas a run can be scoped to (ADR-0061). */
   modules: (id: string) =>
     getJson<ModuleListResponse>(`${API_BASE}/projects/${id}/modules`),
@@ -288,9 +337,14 @@ export const projectApi = {
   /** POST /projects/{id}/ingest — kick off Brain build (background job). */
   ingest: (id: string) =>
     postJson<IngestResponse>(`${API_BASE}/projects/${id}/ingest`, {}),
-  /** GET /projects/{id}/tests — the generated test cases + their code (VIEW). */
-  tests: (id: string) =>
-    getJson<TestCaseListResponse>(`${API_BASE}/projects/${id}/tests`),
+  /** GET /projects/{id}/tests — the generated test cases + their code (VIEW).
+   *  Pass ``run`` to scope to just the cases a single run exercised (ADR-0062). */
+  tests: (id: string, run?: string | null) =>
+    getJson<TestCaseListResponse>(
+      run
+        ? `${API_BASE}/projects/${id}/tests?run=${encodeURIComponent(run)}`
+        : `${API_BASE}/projects/${id}/tests`,
+    ),
   /** POST /projects/{id}/tests/import — import QA-authored scenarios from a CSV
    *  (multipart, MANAGE_PROJECT). Returns a per-row summary; bad rows report. */
   importTests: (id: string, file: File) => {
@@ -318,10 +372,7 @@ export const projectApi = {
     getJson<DbStateTierResponse>(`${API_BASE}/projects/${id}/db-state-tier`),
   /** PUT /projects/{id}/db-state-tier — set the tier (MANAGE_PROJECT; bad value → 422). */
   setDbStateTier: (id: string, body: DbStateTierUpdateBody) =>
-    putJson<DbStateTierResponse>(
-      `${API_BASE}/projects/${id}/db-state-tier`,
-      body,
-    ),
+    putJson<DbStateTierResponse>(`${API_BASE}/projects/${id}/db-state-tier`, body),
 };
 
 export const findingApi = {
@@ -341,6 +392,9 @@ export const runApi = {
     postJson<RunResponse>(`${API_BASE}/projects/${projectId}/runs`, body),
   /** GET /runs/active — the caller's current in-progress run (Ongoing view), or nulls. */
   active: () => getJson<ActiveRunResponse>(`${API_BASE}/runs/active`),
+  /** POST /runs/{id}/rerun — start a fresh run with the same preferences (ADR-0062). */
+  rerun: (runId: string) =>
+    postJson<RunResponse>(`${API_BASE}/runs/${runId}/rerun`, {}),
   /** GET /projects/{id}/runs — list a project's runs (bounded, newest first). */
   list: (projectId: string, params: PageParams) =>
     getJson<RunListResponse>(
@@ -374,9 +428,7 @@ export const jobApi = {
 export const documentApi = {
   /** GET /projects/{id}/documents. */
   list: (projectId: string) =>
-    getJson<DocumentListResponse>(
-      `${API_BASE}/projects/${projectId}/documents`,
-    ),
+    getJson<DocumentListResponse>(`${API_BASE}/projects/${projectId}/documents`),
   /** POST /projects/{id}/documents/upload — multipart (file + doc_kind, optional title). */
   upload: (
     projectId: string,
@@ -405,13 +457,131 @@ export const credentialApi = {
     getJson<CredentialStatus>(`${API_BASE}/projects/${projectId}/credentials`),
   /** PUT /projects/{id}/credentials — set/replace; returns the safe status. */
   put: (projectId: string, body: CredentialUpsertBody) =>
-    putJson<CredentialStatus>(
-      `${API_BASE}/projects/${projectId}/credentials`,
-      body,
-    ),
+    putJson<CredentialStatus>(`${API_BASE}/projects/${projectId}/credentials`, body),
   /** DELETE /projects/{id}/credentials — clear stored credentials. */
-  remove: (projectId: string) =>
-    del(`${API_BASE}/projects/${projectId}/credentials`),
+  remove: (projectId: string) => del(`${API_BASE}/projects/${projectId}/credentials`),
+};
+
+/**
+ * The operator/admin console (staff-only, cross-tenant). Every call is gated
+ * server-side by the caller's staff permissions — a non-staff caller gets 403 on
+ * `me` and on every management action. The console only hides actions it knows the
+ * server will refuse (the caller's `permissions`); the server stays authoritative.
+ */
+export const adminApi = {
+  /** GET /admin/me — the caller's staff identity + permissions (403 if not staff). */
+  me: () => getJson<AdminMe>(`${API_BASE}/admin/me`),
+  /** GET /admin/audit — the staff audit trail, newest-first (VIEW_AUDIT). */
+  listAudit: (params: {
+    action?: string;
+    actorId?: string;
+    limit: number;
+    offset: number;
+  }) =>
+    getJson<StaffAuditList>(
+      `${API_BASE}/admin/audit${qs({
+        action: params.action,
+        actor_id: params.actorId,
+        limit: params.limit,
+        offset: params.offset,
+      })}`,
+    ),
+  /** GET /admin/orgs — all organizations with rollup counts (VIEW_TENANTS). */
+  listOrgs: (params: { search?: string; limit: number; offset: number }) =>
+    getJson<AdminOrgList>(
+      `${API_BASE}/admin/orgs${qs({
+        search: params.search,
+        limit: params.limit,
+        offset: params.offset,
+      })}`,
+    ),
+  /** GET /admin/orgs/{id} — one org with members + counts. */
+  getOrg: (id: string) => getJson<AdminOrgDetail>(`${API_BASE}/admin/orgs/${id}`),
+  /** GET /admin/orgs/{id}/usage — the org's metered AI cost over `days` (VIEW_BILLING). */
+  orgUsage: (id: string, days: number) =>
+    getJson<AdminOrgUsage>(`${API_BASE}/admin/orgs/${id}/usage${qs({ days })}`),
+  /** POST /admin/orgs/{id}/plan — assign the org's plan (MANAGE_BILLING). 422 for an
+   *  unknown plan key; the updated org detail comes back. */
+  setOrgPlan: (id: string, planKey: string) =>
+    postJson<AdminOrgDetail>(`${API_BASE}/admin/orgs/${id}/plan`, {
+      plan_key: planKey,
+    }),
+  /** POST /admin/orgs/{id}/suspend — suspend an org (MANAGE_TENANTS). */
+  suspendOrg: (id: string) =>
+    postJson<AdminOrgDetail>(`${API_BASE}/admin/orgs/${id}/suspend`, {}),
+  /** POST /admin/orgs/{id}/reactivate — lift a suspension (MANAGE_TENANTS). */
+  reactivateOrg: (id: string) =>
+    postJson<AdminOrgDetail>(`${API_BASE}/admin/orgs/${id}/reactivate`, {}),
+  /** GET /admin/users — all users, newest-first (VIEW_USERS). */
+  listUsers: (params: { search?: string; limit: number; offset: number }) =>
+    getJson<AdminUserList>(
+      `${API_BASE}/admin/users${qs({
+        search: params.search,
+        limit: params.limit,
+        offset: params.offset,
+      })}`,
+    ),
+  /** GET /admin/users/{id} — one user with their org memberships. */
+  getUser: (id: string) => getJson<AdminUserDetail>(`${API_BASE}/admin/users/${id}`),
+  /** POST /admin/users/{id}/deactivate — disable an account (MANAGE_USERS). */
+  deactivateUser: (id: string) =>
+    postJson<AdminUserDetail>(`${API_BASE}/admin/users/${id}/deactivate`, {}),
+  /** POST /admin/users/{id}/reactivate — re-enable an account (MANAGE_USERS). */
+  reactivateUser: (id: string) =>
+    postJson<AdminUserDetail>(`${API_BASE}/admin/users/${id}/reactivate`, {}),
+  /** POST /admin/users/{id}/staff-role — grant/revoke a staff role (MANAGE_USERS).
+   *  422 for an invalid role name; 400 when targeting your own account. */
+  setStaffRole: (id: string, body: SetStaffRoleBody) =>
+    postJson<AdminUserDetail>(`${API_BASE}/admin/users/${id}/staff-role`, body),
+  /** POST /admin/jobs/{id}/cancel — cancel a queued/running job (MANAGE_JOBS).
+   *  404 if absent, 409 if the job isn't in a cancellable state. */
+  cancelJob: (id: string) =>
+    postJson<JobSummary>(`${API_BASE}/admin/jobs/${id}/cancel`, {}),
+  /** POST /admin/jobs/{id}/requeue — re-enqueue a failed/cancelled job (MANAGE_JOBS);
+   *  returns a NEW job. 404 if absent, 409 if the job isn't requeueable. */
+  requeueJob: (id: string) =>
+    postJson<JobSummary>(`${API_BASE}/admin/jobs/${id}/requeue`, {}),
+  /** GET /admin/generation-quality — the flywheel eval aggregate over `days`, optionally
+   *  scoped to one `promptVersion` (VIEW_OPS, ADR-0070). */
+  generationQuality: (days: number, promptVersion?: string) =>
+    getJson<GenerationQuality>(
+      `${API_BASE}/admin/generation-quality${qs({
+        days,
+        prompt_version: promptVersion,
+      })}`,
+    ),
+};
+
+/** Operator queue view (B4, ADR-0034/0035) — readable by any staff member. */
+export const opsApi = {
+  /** GET /ops/queue — the cross-tenant queue snapshot + runner health. */
+  queue: () => getJson<QueueStats>(`${API_BASE}/ops/queue`),
+  /** GET /ops/jobs — recent jobs across all tenants, optionally filtered by status. */
+  jobs: (params: { status?: string; limit: number }) =>
+    getJson<JobList>(
+      `${API_BASE}/ops/jobs${qs({ status: params.status, limit: params.limit })}`,
+    ),
+};
+
+/** Internal incidents (ADR-0047) — operator-only READ surface, no mutation. */
+export const incidentApi = {
+  /** GET /incidents — captured internal failures, newest-first. */
+  list: (params: {
+    phase?: string;
+    projectId?: string;
+    limit: number;
+    offset: number;
+  }) =>
+    getJson<IncidentList>(
+      `${API_BASE}/incidents${qs({
+        phase: params.phase,
+        project_id: params.projectId,
+        limit: params.limit,
+        offset: params.offset,
+      })}`,
+    ),
+  /** GET /incidents/{id} — one incident with its captured traceback. */
+  get: (id: string) => getJson<IncidentDetail>(`${API_BASE}/incidents/${id}`),
 };
 
 /** Login config for the authenticated crawl (ADR-0056) — where/how runs sign in.
@@ -422,11 +592,7 @@ export const authConfigApi = {
     getJson<AuthConfigStatus>(`${API_BASE}/projects/${projectId}/auth-config`),
   /** PUT /projects/{id}/auth-config — set/replace the login config. */
   put: (projectId: string, body: AuthConfigUpsertBody) =>
-    putJson<AuthConfigStatus>(
-      `${API_BASE}/projects/${projectId}/auth-config`,
-      body,
-    ),
+    putJson<AuthConfigStatus>(`${API_BASE}/projects/${projectId}/auth-config`, body),
   /** DELETE /projects/{id}/auth-config — clear it (crawl reverts to unauthenticated). */
-  remove: (projectId: string) =>
-    del(`${API_BASE}/projects/${projectId}/auth-config`),
+  remove: (projectId: string) => del(`${API_BASE}/projects/${projectId}/auth-config`),
 };

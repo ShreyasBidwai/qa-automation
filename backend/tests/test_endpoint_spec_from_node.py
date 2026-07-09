@@ -69,6 +69,37 @@ def test_endpoint_spec_from_static_ingest_string_fields_does_not_raise() -> None
     assert [f.name for f in spec.validation_fields] == ["name", "email", "age"]
 
 
+def _route_node(uri: str, middleware: object) -> ModelNode:
+    attrs: dict[str, object] = {"method": "GET", "uri": uri, "validation": {}}
+    if middleware is not None:
+        attrs["middleware"] = middleware
+    return ModelNode(
+        project_id=uuid.uuid4(),
+        kind=NodeKind.ENDPOINT,
+        name=f"GET {uri}",
+        attributes=attrs,
+    )
+
+
+def test_is_api_derived_from_the_api_middleware_group() -> None:
+    # The `api` middleware group is the reliable signal — a JSON api route (ADR-0063).
+    spec = endpoint_spec_from_node(_route_node("api/users", ["api", "throttle:60,1"]))
+    assert spec.is_api is True
+
+
+def test_is_api_false_for_a_web_route() -> None:
+    # A `web` route (session/redirect) — the login-module case that must NOT be treated
+    # as a JSON API, or every generated test false-fails.
+    spec = endpoint_spec_from_node(_route_node("login/apple", ["web", "guest"]))
+    assert spec.is_api is False
+
+
+def test_is_api_falls_back_to_the_uri_prefix_when_middleware_missing() -> None:
+    # Older Brains captured no middleware — fall back to the conventional `api/` prefix.
+    assert endpoint_spec_from_node(_route_node("api/orders", None)).is_api is True
+    assert endpoint_spec_from_node(_route_node("dashboard", None)).is_api is False
+
+
 def test_endpoint_spec_from_extractor_dict_fields_still_works() -> None:
     # The richer per-endpoint extractor shape (dicts) must keep working unchanged.
     node = _endpoint_node(

@@ -2,8 +2,9 @@
 
 Pure and deterministic: input is the trusted JUnit XML our own runner produced;
 output is one ``JUnitCase`` per ``<testcase>``. A testcase with a ``<failure>``
-child is a FAIL, an ``<error>`` (or ``<skipped>``, which we treat as not-run) is
-an ERROR, and a bare testcase is a PASS.
+child is a FAIL, an ``<error>`` is an ERROR, a ``<skipped>`` is SKIPPED (the test ran
+but couldn't verify — a reachable-but-unverified endpoint or an unavailable-factory
+skip, ADR-0064; NOT an error), and a bare testcase is a PASS.
 """
 
 from __future__ import annotations
@@ -38,8 +39,10 @@ def _outcome(testcase: Element) -> tuple[Outcome, str | None]:
     if testcase.find("failure") is not None:
         return Outcome.FAIL, _message(testcase, "failure")
     if testcase.find("skipped") is not None:
-        # No SKIP outcome in the contract; a skipped test did not execute.
-        return Outcome.ERROR, "test skipped"
+        # The test ran but couldn't verify (reachable-but-unverified, or a deliberate
+        # unavailable-factory skip) — neither pass nor fail nor error (ADR-0064). The
+        # skip reason (PHPUnit puts it on the <skipped message=…>) rides along.
+        return Outcome.SKIPPED, _message(testcase, "skipped") or "test skipped"
     return Outcome.PASS, None
 
 

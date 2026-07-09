@@ -636,6 +636,19 @@ class SeverityBreakdown(BaseModel):
     minor: int = 0
 
 
+class RunPreferences(BaseModel):
+    """The choices a run was started with (from its durable job payload, ADR-0062) — so
+    recent runs are distinguishable at a glance and can be re-run without reconfiguring.
+    Read-only summary; the authoritative copy stays in the job for a faithful re-run."""
+
+    mode: str  # mode_b | mode_c
+    strategy: str | None = None  # full_sweep | change_impact (mode_b)
+    layers: list[str] | None = None  # ui/api/db subset; null = all layers
+    modules: list[str] | None = None  # module keys; null = all modules
+    changeset_size: int | None = None  # number of changed files (change_impact)
+    layer: str | None = None  # mode_c authoring layer (ui | api)
+
+
 class RunListItem(BaseModel):
     id: uuid.UUID
     mode: str
@@ -647,6 +660,9 @@ class RunListItem(BaseModel):
     run_number: int | None = None
     finished_at: datetime | None = None
     severity_breakdown: SeverityBreakdown = Field(default_factory=SeverityBreakdown)
+    # The run's preferences (ADR-0062), derived from its job payload; null if the job
+    # row is gone (very old runs).
+    preferences: RunPreferences | None = None
 
 
 class RunListResponse(BaseModel):
@@ -945,3 +961,271 @@ class HealScanResponse(BaseModel):
     real_findings: int
     unhealed: int
     items: list[HealResponse]
+
+
+# --- account dashboard (ADR-0065) -------------------------------------------
+
+
+class ProjectHealthItem(BaseModel):
+    """One project's row in the account dashboard's health table."""
+
+    project_id: uuid.UUID
+    name: str
+    status: str  # passing | action_needed | errored | never_run
+    pass_rate: float | None
+    open_findings: int
+    last_run_at: datetime | None
+
+
+class TrendPointItem(BaseModel):
+    """One day's outcome roll-up for the account trend chart."""
+
+    date: str  # YYYY-MM-DD (UTC)
+    runs: int
+    passed: int
+    failed: int
+    errored: int
+    skipped: int
+    pass_rate: float | None
+
+
+class RecentRunItem(BaseModel):
+    """One recent run across the account, for the activity feed."""
+
+    run_id: uuid.UUID
+    project_id: uuid.UUID
+    project_name: str
+    mode: str
+    status: str
+    pass_rate: float | None
+    created_at: datetime
+
+
+class AccountDashboardResponse(BaseModel):
+    """The post-login account overview: current health + a range-scoped trend.
+
+    CURRENT-state fields (projects, statuses, open findings, per-project health) reflect
+    each project's latest run; the RANGE-scoped fields (runs, tests, outcomes,
+    pass_rate, trend, recent_runs) honour ``range_days``. SKIPPED never counts as pass
+    or fail (ADR-0064). Org-scoped to the caller's projects.
+    """
+
+    range_days: int
+    projects_total: int
+    projects_by_status: dict[str, int]
+    open_findings: dict[str, int]  # critical / major / minor / total
+    project_health: list[ProjectHealthItem]
+    runs_total: int
+    tests_total: int
+    outcomes: dict[str, int]  # pass / fail / error / skipped
+    pass_rate: float | None
+    trend: list[TrendPointItem]
+    recent_runs: list[RecentRunItem]
+
+
+# --- Operator / admin console (ADR-0068) ------------------------------------
+
+
+class AdminMeResponse(BaseModel):
+    """The signed-in staff member's console identity: their role + the actions it
+    grants. The UI reads ``permissions`` to decide which admin surfaces to show."""
+
+    user_id: uuid.UUID
+    email: str
+    staff_role: str
+    permissions: list[str]
+
+
+class StaffAuditItem(BaseModel):
+    """One immutable staff-action entry from the cross-tenant audit trail."""
+
+    id: uuid.UUID
+    created_at: datetime
+    actor_id: uuid.UUID | None
+    actor_email: str
+    action: str
+    target_type: str | None
+    target_id: str | None
+    detail: dict[str, Any]
+
+
+class StaffAuditListResponse(BaseModel):
+    items: list[StaffAuditItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminOrgListItem(BaseModel):
+    """One organization in the cross-tenant admin list, with rollup counts."""
+
+    id: uuid.UUID
+    name: str
+    is_personal: bool
+    suspended: bool
+    member_count: int
+    project_count: int
+    created_at: datetime
+
+
+class AdminOrgListResponse(BaseModel):
+    items: list[AdminOrgListItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminOrgMemberItem(BaseModel):
+    user_id: uuid.UUID
+    email: str
+    name: str | None
+    role: str
+
+
+class AdminOrgDetailResponse(BaseModel):
+    """One organization with its rollup counts + members (staff drill-in)."""
+
+    id: uuid.UUID
+    name: str
+    is_personal: bool
+    suspended: bool
+    plan_key: str
+    member_count: int
+    project_count: int
+    created_at: datetime
+    members: list[AdminOrgMemberItem]
+
+
+class PlanItem(BaseModel):
+    """One tier in the public plan catalog (ADR-0069). NULL quota = unlimited; NULL
+    price = custom / contact us."""
+
+    key: str
+    name: str
+    price_per_seat_monthly_usd: float | None
+    included_run_credits_monthly: int | None
+    max_projects: int | None
+    max_seats: int | None
+    max_parallelism: int
+    retention_days: int
+    features: dict[str, Any]
+
+
+class PlanListResponse(BaseModel):
+    items: list[PlanItem]
+
+
+class SetOrgPlanRequest(BaseModel):
+    """Assign an org to a plan (validated against the catalog in the endpoint)."""
+
+    plan_key: str
+
+
+class AdminUserListItem(BaseModel):
+    """One user in the cross-tenant admin list."""
+
+    id: uuid.UUID
+    email: str
+    name: str | None
+    is_active: bool
+    staff_role: str | None
+    org_count: int
+    created_at: datetime
+
+
+class AdminUserListResponse(BaseModel):
+    items: list[AdminUserListItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminUserOrgItem(BaseModel):
+    org_id: uuid.UUID
+    org_name: str
+    role: str
+
+
+class AdminUserDetailResponse(BaseModel):
+    """One user with their org memberships + roles (staff drill-in)."""
+
+    id: uuid.UUID
+    email: str
+    name: str | None
+    is_active: bool
+    staff_role: str | None
+    created_at: datetime
+    orgs: list[AdminUserOrgItem]
+
+
+class SetStaffRoleRequest(BaseModel):
+    """Grant (a role name) or revoke (null) a user's staff role. The name is validated
+    against the StaffRole allow-list in the endpoint — never trusted raw."""
+
+    staff_role: str | None
+
+
+class AdminModelCostItem(BaseModel):
+    model: str | None
+    invocation_count: int
+    total_cost_usd: float
+
+
+class AdminOrgUsageResponse(BaseModel):
+    """Per-org AI cost + usage over a window — the cost-to-serve view (ADR-0069)."""
+
+    org_id: uuid.UUID
+    since_days: int
+    total_cost_usd: float
+    invocation_count: int
+    run_count: int
+    input_tokens: int
+    output_tokens: int
+    by_model: list[AdminModelCostItem]
+
+
+class ImpersonateResponse(BaseModel):
+    """A short-lived session minted by a staff member impersonating a tenant user
+    (ADR-0071). Returned once — use it as the Bearer token to act as the user."""
+
+    access_token: str
+    token_type: str
+    expires_at: datetime
+    user_id: uuid.UUID
+    email: str
+
+
+class AdminGenerationQualityResponse(BaseModel):
+    """The flywheel's eval aggregate over a window (ADR-0070). The dashboard derives a
+    composite quality index from these; pass-rate alone is never the target (it rewards
+    always-pass tests) — false positives + repair/heal are the counterweights."""
+
+    since_days: int
+    prompt_version: str | None
+    total: int
+    by_outcome: dict[str, int]  # pass / fail / error / skipped
+    repaired: int
+    healed: int
+    flaky: int
+    triaged: int
+    triage_rejected: int
+
+
+# --- global search (ADR-0072) ------------------------------------------------
+
+
+class SearchResultItem(BaseModel):
+    """One name-search hit — a minimal row the command palette can render + jump
+    to. Deliberately thin (no secrets, no full entity payload): type + id + a label
+    and optional subtitle to render, and the in-app ``url`` to navigate to."""
+
+    type: Literal["project", "finding", "run"]
+    id: uuid.UUID
+    label: str
+    subtitle: str | None
+    url: str
+
+
+class SearchResponse(BaseModel):
+    query: str
+    items: list[SearchResultItem]

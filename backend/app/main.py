@@ -8,8 +8,11 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from .api.account import router as account_router
+from .api.admin import router as admin_router
 from .api.auth import router as auth_router
 from .api.auth_config import router as auth_config_router
+from .api.billing import router as billing_router
 from .api.credentials import router as credentials_router
 from .api.documents import router as documents_router
 from .api.findings import router as findings_router
@@ -21,6 +24,7 @@ from .api.ops import router as ops_router
 from .api.orgs import router as orgs_router
 from .api.projects import router as projects_router
 from .api.runs import router as runs_router
+from .api.search import router as search_router
 from .core.config import get_settings
 from .core.errors import register_exception_handlers
 from .core.lifespan import lifespan
@@ -63,12 +67,18 @@ def create_app() -> FastAPI:
     app.include_router(projects_router)
     app.include_router(runs_router)
     app.include_router(findings_router)
+    app.include_router(account_router)
     app.include_router(ops_router)
     app.include_router(documents_router)
     app.include_router(credentials_router)
     app.include_router(auth_config_router)
     app.include_router(incidents_router)
+    # Cross-tenant operator/admin console — staff-only (ADR-0068).
+    app.include_router(admin_router)
+    # Customer-facing plan catalog (ADR-0069).
+    app.include_router(billing_router)
     app.include_router(heals_router)
     app.include_router(tests_router)
+    app.include_router(search_router)
 
     return app

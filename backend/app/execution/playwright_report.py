@@ -21,13 +21,14 @@ from app.models.enums import Outcome
 from .errors import PlaywrightReportError
 
 # Playwright result.status → our contract Outcome. "failed" is a genuine test
-# failure; the rest of the non-passing statuses mean the test did not complete.
+# failure; timedOut/interrupted did not complete (ERROR); "skipped" is a deliberate
+# skip — reachable-but-unverified, neither pass nor fail (SKIPPED, ADR-0064).
 _STATUS_OUTCOME: dict[str, Outcome] = {
     "passed": Outcome.PASS,
     "failed": Outcome.FAIL,
     "timedOut": Outcome.ERROR,
     "interrupted": Outcome.ERROR,
-    "skipped": Outcome.ERROR,
+    "skipped": Outcome.SKIPPED,
 }
 
 
@@ -40,10 +41,16 @@ class PlaywrightCase:
 
 
 def _worst(outcomes: list[Outcome]) -> Outcome:
+    # Severity order: a real defect/crash dominates; then a verified pass; a suite that
+    # only SKIPPED (nothing pass/fail/error) is itself SKIPPED, not a silent pass.
     if Outcome.ERROR in outcomes:
         return Outcome.ERROR
     if Outcome.FAIL in outcomes:
         return Outcome.FAIL
+    if Outcome.PASS in outcomes:
+        return Outcome.PASS
+    if Outcome.SKIPPED in outcomes:
+        return Outcome.SKIPPED
     return Outcome.PASS
 
 

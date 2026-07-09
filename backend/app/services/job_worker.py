@@ -47,6 +47,7 @@ class JobWorker:
         worker_id: str = "worker",
         backoff_base_seconds: float = 2.0,
         max_duration_seconds: float = 1800.0,
+        reap_interval_seconds: float = 60.0,
         incident_recorder: IncidentRecorder | None = None,
     ) -> None:
         self._sm = sessionmaker
@@ -55,6 +56,8 @@ class JobWorker:
         self._backoff = backoff_base_seconds
         # Watchdog budget: a run exceeding this is force-failed (see _run).
         self._max_duration = max_duration_seconds
+        # How often the loop reaps orphaned/wedged running jobs (ADR-0067).
+        self._reap_interval = reap_interval_seconds
         # The universal capture seam: every autonomous failure surfaces here. Records
         # in a fresh session (best-effort) so it survives the job's own rollback.
         self._recorder = incident_recorder or IncidentRecorder(sessionmaker)
@@ -88,9 +91,21 @@ class JobWorker:
         """Poll until stopped — the durability/recovery loop (gated in lifespan)."""
         # Run-durability: on (re)start, reconcile runs orphaned by a crashed process
         # (left in 'running') to 'interrupted' — there is no live run in flight at
-        # startup, so any 'running' row is stale.
+        # startup, so any 'running' row is stale. Then reclaim the orphaned JOBS too:
+        # a job left 'running' will never have its lease released, so it lingers
+        # forever and shows as a perpetual "ongoing run" (ADR-0067). At startup EVERY
+        # running job is orphaned (older_than_seconds=0).
         await self._reconcile_orphan_runs()
+        await self._reap_orphan_jobs(older_than_seconds=0.0)
+        loop = asyncio.get_running_loop()
+        next_reap = loop.time() + self._reap_interval
         while stop_event is None or not stop_event.is_set():
+            # Periodic reaper: while the worker keeps running, a job can still be
+            # orphaned (a sibling worker died, a leaked lease). Reclaim any whose lease
+            # outlived the watchdog bound — no legitimate run runs that long (ADR-0067).
+            if loop.time() >= next_reap:
+                await self._reap_orphan_jobs(older_than_seconds=self._max_duration)
+                next_reap = loop.time() + self._reap_interval
             try:
                 worked = await self.process_next()
             except Exception:  # never let the poller die on one bad job
@@ -212,6 +227,27 @@ class JobWorker:
                 logger.info("jobs.reconciled_orphan_runs", extra={"count": len(ids)})
         except Exception:  # noqa: BLE001 — never block worker startup
             logger.exception("jobs.reconcile_orphan_runs_failed")
+
+    async def _reap_orphan_jobs(self, *, older_than_seconds: float) -> None:
+        """Fail orphaned/wedged running jobs and reconcile their run rows (ADR-0067).
+
+        A job whose worker died leaks its lease and lingers ``running`` forever — the
+        cause of a run that shows as perpetually "ongoing". Reclaim it (terminal) and,
+        for a RUN job, mark its run ``interrupted`` so the two never diverge.
+        Best-effort (a RUN reclaim after the run sweep is idempotent); never fatal."""
+        try:
+            async with self._sm() as session:
+                reclaimed = await JobQueue(session).reclaim_stale_running(
+                    older_than_seconds=older_than_seconds
+                )
+                await session.commit()
+            for job_id, kind in reclaimed:
+                if kind is JobKind.RUN:
+                    await self._reconcile_run(job_id)
+            if reclaimed:
+                logger.info("jobs.reaped_orphans", extra={"count": len(reclaimed)})
+        except Exception:  # noqa: BLE001 — reaping is best-effort, never fatal
+            logger.exception("jobs.reap_orphans_failed")
 
     async def _reconcile_run(self, run_id: uuid.UUID) -> None:
         """Best-effort: compare-and-set this crashed run's row (id == job id) to

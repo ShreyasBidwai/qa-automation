@@ -11,12 +11,13 @@ import asyncio
 import json
 import uuid
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.config import get_settings
 from app.core.permissions import Permission
 from app.models.ai_usage import AiUsage
 from app.models.enums import JobKind, JobStatus, TriageStatus
@@ -47,6 +48,7 @@ from .deps import CurrentUser, get_session
 from .finding_view import build_finding_response
 from .jobs import dispatch_job
 from .ports import run_request_to_payload, to_run_request
+from .quota import enforce_org_can_run
 from .schemas import (
     ActiveRunResponse,
     AiUsageBucket,
@@ -59,6 +61,7 @@ from .schemas import (
     RunEventsResponse,
     RunListItem,
     RunListResponse,
+    RunPreferences,
     RunResponse,
     RunStatusResponse,
     RunUsageAggregate,
@@ -107,7 +110,9 @@ async def create_run(
     background_tasks: BackgroundTasks,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> RunResponse:
-    await authorize_project(session, project_id, current_user, Permission.RUN)
+    project = await authorize_project(session, project_id, current_user, Permission.RUN)
+    # Enqueue gate (ADR-0068 suspension + ADR-0069 run quota): may this org run?
+    await enforce_org_can_run(session, project.org_id)
     run_request = to_run_request(body)
     # A run is non-idempotent (it persists a run + findings), so it gets a single
     # attempt — no auto-replay of partial side effects. The queue itself supports
@@ -135,6 +140,21 @@ async def create_run(
     return RunResponse(run_id=job.id, status=job.status.value)
 
 
+def _run_preferences(payload: dict[str, Any]) -> RunPreferences:
+    """A readable summary of the choices a run was started with, from its durable job
+    payload (ADR-0062). Prompt TEXT is deliberately not surfaced (it can hold sensitive
+    detail); only the layer flag is."""
+    changeset = payload.get("changeset") or []
+    return RunPreferences(
+        mode=str(payload.get("mode", "")),
+        strategy=payload.get("strategy"),
+        layers=payload.get("layers"),
+        modules=payload.get("modules"),
+        changeset_size=len(changeset) if changeset else None,
+        layer=payload.get("layer"),
+    )
+
+
 @router.get("/projects/{project_id}/runs", response_model=RunListResponse)
 async def list_project_runs(
     project_id: uuid.UUID,
@@ -152,6 +172,9 @@ async def list_project_runs(
     )
     # Per-run open-findings severity breakdown — one batched, reused query (ADR-0048).
     severity = await OpenFindingsReader(session).severity_counts_by_run(run_ids)
+    # A run's id equals its job's id (ADR-0036), so one batched fetch gives every run's
+    # preferences (the choices it was started with) for the recent-runs list.
+    jobs = await JobQueue(session).get_many(run_ids)
     items = [
         RunListItem(
             id=run.id,
@@ -162,6 +185,9 @@ async def list_project_runs(
             finished_at=run.finished_at,
             pass_rate=pass_rate(counts.get(run.id)),
             severity_breakdown=SeverityBreakdown(**severity.get(run.id, {})),
+            preferences=(
+                _run_preferences(jobs[run.id].payload) if run.id in jobs else None
+            ),
         )
         for run in runs
     ]
@@ -182,7 +208,12 @@ async def active_run(
 
     Declared BEFORE ``/runs/{run_id}`` so "active" isn't parsed as a run id. Scoped by
     org membership (the query only sees runs in the user's projects) — no leak."""
-    job = await JobQueue(session).latest_active_run_for_user(current_user.id)
+    # A running run is only "active" while its lease is fresher than the watchdog bound;
+    # beyond that it's orphaned/wedged, not ongoing (ADR-0067).
+    job = await JobQueue(session).latest_active_run_for_user(
+        current_user.id,
+        running_ttl_seconds=get_settings().job_max_duration_seconds,
+    )
     if job is None:
         return ActiveRunResponse()
     return ActiveRunResponse(
@@ -240,6 +271,39 @@ async def cancel_run(
     await session.commit()
     refreshed = await JobQueue(session).get(run_id)
     return RunResponse(run_id=run_id, status=(refreshed or job).status.value)
+
+
+@router.post("/runs/{run_id}/rerun", status_code=202, response_model=RunResponse)
+async def rerun_run(
+    run_id: uuid.UUID,
+    current_user: CurrentUser,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> RunResponse:
+    """Start a fresh run with the SAME preferences as an existing one (RUN). Copies the
+    original run's durable job payload verbatim (ADR-0062) — a faithful re-run without
+    re-entering the options. The original run is untouched; a new run id is returned."""
+    job = await _authorized_run_job(
+        run_id, session=session, user=current_user, permission=Permission.RUN
+    )
+    new_job = await JobQueue(session).enqueue(
+        kind=JobKind.RUN,
+        project_id=job.project_id,  # same project — never re-targets elsewhere
+        mode=job.mode,
+        payload=dict(job.payload),  # the exact, already-validated preferences
+        max_attempts=1,
+    )
+    await session.commit()
+    executor = getattr(request.app.state, "run_executor", None)
+    if executor is not None:
+        background_tasks.add_task(
+            dispatch_job,
+            sessionmaker=request.app.state.sessionmaker,
+            job_id=new_job.id,
+            executor=executor,
+        )
+    return RunResponse(run_id=new_job.id, status=new_job.status.value)
 
 
 @router.get("/runs/{run_id}/ci", response_model=CiSummaryResponse)

@@ -156,9 +156,7 @@ export function findingRationale(finding: {
       ? "behaviour-pinned (low confidence)"
       : finding.oracle_source;
   const blast =
-    finding.explains_count > 1
-      ? `affects ${finding.explains_count} tests`
-      : "isolated";
+    finding.explains_count > 1 ? `affects ${finding.explains_count} tests` : "isolated";
   const verdict =
     finding.status === "flaky"
       ? "confirm it reproduces before prioritising"
@@ -167,8 +165,7 @@ export function findingRationale(finding: {
         : finding.status === "regression" || finding.severity === "critical"
           ? "act now"
           : "worth fixing";
-  const severity =
-    finding.severity.charAt(0).toUpperCase() + finding.severity.slice(1);
+  const severity = finding.severity.charAt(0).toUpperCase() + finding.severity.slice(1);
   return `${severity} · ${confidence} · ${blast} → ${verdict}`;
 }
 

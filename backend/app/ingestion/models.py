@@ -45,3 +45,11 @@ class EndpointSpec:
     path_params: list[str] = field(default_factory=list)
     query_params: list[str] = field(default_factory=list)
     validation_fields: list[ValidationField] = field(default_factory=list)
+    # Is this a JSON API route (``api`` middleware group) or a web route (session/
+    # HTML, redirects)? Laravel's two route classes behave DIFFERENTLY on the same
+    # events — a validation failure is a 422 JSON envelope on an api route but a 302
+    # redirect + session errors on a web route; an unauthenticated call is 401 on api
+    # but a 302 redirect to /login on web. Generation MUST branch on this or it asserts
+    # the wrong contract for half the app (ADR-0063). Defaults to api (the historical
+    # assumption) so any caller that doesn't set it keeps the old behaviour.
+    is_api: bool = True

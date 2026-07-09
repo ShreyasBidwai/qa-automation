@@ -56,8 +56,13 @@ Run everything in Docker via the Makefile. Do NOT run `pytest`/`npm` on the host
   `make test-e2e-runner` (real browser), `make test-db-state`.
 - `make audit` — `pip-audit` (shipped deps) + `npm audit --omit=dev`.
 
-Fast iteration without a rebuild: bind-mount the working tree into the test image,
-e.g. `… run --rm -v "$PWD/backend:/host" -w /host backend-tests sh -c "pytest …"`.
+Fast iteration without a full rebuild — copy the source into the test image and run the
+gate (from the repo root): mount `backend/{app,tests,migrations}` read-only, `cp -a` them
+over `/app/{app,tests,migrations}`, then `ruff check app && black --check app && mypy app
+&& pytest`. **Mount `backend/migrations` whenever a test uses a new migration/enum value**
+— the conftest runs `alembic upgrade head`, so a missing mount is the #1 cause of a
+spurious test-DB failure. The frontend gate is the same shape with `--no-deps` +
+`frontend/src`; `prettier --write` needs a rw mount + `--user 1001:1001`.
 
 ## Coding standards
 
@@ -67,6 +72,9 @@ e.g. `… run --rm -v "$PWD/backend:/host" -w /host backend-tests sh -c "pytest 
   must be reproducible). Prefer the dedicated repository/service over ad-hoc SQL.
 - **TypeScript/React:** functional components, hooks, the existing design-system
   components and API client — match the surrounding code; `eslint`/`prettier`/`tsc` gate.
+  **Desktop-app layout (ADR-0066): the window NEVER scrolls** — `html/body/#root` are
+  `100dvh; overflow:hidden`. Use `PageShell`; put `min-h-0` on every flex ancestor of a
+  scroll region; overflowing content scrolls in-section, never the page; overlays float.
 - **Tests are part of the change, not optional.** Cover the happy path AND the failure
   path. Match the existing test style (fast hermetic suite + injected fakes; real
   toolchains only in the heavy lanes).
@@ -84,15 +92,24 @@ e.g. `… run --rm -v "$PWD/backend:/host" -w /host backend-tests sh -c "pytest 
   **headers, not URLs** (a key in a URL leaks into logs). Redact on the way out.
 - **Validate any client-chosen mode against an allow-list** (provider, status, role) —
   never feed user input into a command, a path, a URL host, or a model/argv element.
-- **Never target production.** The runner writes only to a throwaway test DB
-  (dual-DB guard). Real runs target the QA environment, not prod.
+- **Never target production.** The runner writes only to a throwaway test DB (dual-DB
+  guard). Real runs target the QA environment — verify a run's target base_url is the QA
+  env before executing (per-project config, ADR-0054), never prod.
+- **Staff/operator power is bounded (ADR-0068).** Cross-tenant admin is a SEPARATE authz
+  lane (`app/api/staff_authz.py`), never a bypass of tenant RBAC's 404/403 leak-safety;
+  staff read the control-plane DB only; the credential vault stays write-only even under
+  impersonation (ADR-0071).
 - Outbound calls are timeout-bounded with bounded retry; auth failures are fatal, not
   retried forever.
 
 ## Git / workflow conventions
 
-- Trunk is **`chore/repo-scaffold`**. Branch a feature off freshly-synced trunk:
-  `git checkout -b feat/<name> <trunk-sha>`.
+- **Trunk/default is `chore/repo-scaffold` — there is NO `main` branch** (tooling may
+  wrongly assume `main`). Branch a feature off freshly-synced trunk:
+  `git checkout -b feat/<name> <trunk-sha>`. Direct pushes to trunk are guarded — land
+  work via PR. A feature branch may legitimately **stack** on an unmerged feature branch
+  when it builds on that work: base off the branch you extend, not stale trunk, and
+  rebase when it lands.
 - Commit messages: imperative subject, a body explaining the WHY, and end with:
   `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
 - For delegated/agent tasks: implement, get `make test` to exit 0, **STOP and paste —
@@ -108,3 +125,12 @@ e.g. `… run --rm -v "$PWD/backend:/host" -w /host backend-tests sh -c "pytest 
   `app/services/job_worker.py`, run wiring `app/api/real_execution.py`.
 - Reporting/findings: `app/reporting`. API routes: `app/api`. Config: `app/core/config.py`.
 - Per-project target/run config resolution: `app/api/project_target.py` (ADR-0054).
+- Operator/admin console (staff-only, cross-tenant): `app/api/admin.py`; staff RBAC in
+  `app/core/staff_permissions.py` + `app/api/staff_authz.py`, audit log
+  `app/models/staff_audit_log.py`, impersonation (ADR-0068, ADR-0071).
+- Billing/pricing: plan catalog + entitlements `app/models/plan.py` /
+  `app/core/entitlements.py`; the enqueue quota + suspension guard `app/api/quota.py`;
+  Stripe seam is env-stubbed (`billing_mode`), see `docs/future-scope.md` (ADR-0069).
+- Self-improvement flywheel: `app/models/generation_signal.py` +
+  `generation_signal_repository.py`; populated at execution (`app/execution/lifecycle.py`),
+  with retrieval + self-repair in `app/generation` (ADR-0070).

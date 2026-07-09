@@ -20,9 +20,7 @@ import type {
 import { RunJourney } from "./RunJourney";
 import { streamRunEvents } from "./runEventsStream";
 
-function event(
-  over: Partial<RunProgressEvent> & { seq: number },
-): RunProgressEvent {
+function event(over: Partial<RunProgressEvent> & { seq: number }): RunProgressEvent {
   return {
     phase: "execute",
     step: "step",
@@ -125,23 +123,20 @@ describe("RunJourney", () => {
       .mockResolvedValue(testsOk([testCase()]));
   });
 
-  it("shows every phase as a tab and defaults to the active phase", async () => {
+  it("shows each phase as a tab and defaults to the active phase", async () => {
     vi.mocked(runApi.events).mockResolvedValue(eventsResponse(JOURNEY));
 
     render(<RunJourney runId="r1" />);
     await screen.findByText("Run failed");
 
-    for (const label of [
-      "Understand",
-      "Generate",
-      "Execute",
-      "Explore live site",
-      "Review",
-    ]) {
-      expect(
-        screen.getByRole("tab", { name: new RegExp(label) }),
-      ).toBeInTheDocument();
+    for (const label of ["Understand", "Generate", "Execute", "Review"]) {
+      expect(screen.getByRole("tab", { name: new RegExp(label) })).toBeInTheDocument();
     }
+    // This is an api-only run (no crawl events) → the "Explore live site" phase is not
+    // shown as an empty, misleading step.
+    expect(
+      screen.queryByRole("tab", { name: /Explore live site/ }),
+    ).not.toBeInTheDocument();
     // The project this run belongs to is named at the top.
     expect(await screen.findByText("Acme API")).toBeInTheDocument();
     // A finished run defaults to the last active phase (Review) — only ITS content is
@@ -149,9 +144,7 @@ describe("RunJourney", () => {
     expect(screen.getByText("Review complete")).toBeInTheDocument();
     expect(screen.queryByText("POST api/orders returns 201")).toBeNull();
     // Terminal outcome + findings affordance; replay only, no live stream.
-    expect(
-      screen.getByRole("link", { name: "View findings" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "View findings" })).toBeInTheDocument();
     expect(streamRunEvents).not.toHaveBeenCalled();
   });
 
@@ -161,9 +154,7 @@ describe("RunJourney", () => {
     render(<RunJourney runId="r1" />);
     fireEvent.click(await screen.findByRole("tab", { name: /Execute/ }));
 
-    expect(
-      await screen.findByText("POST api/orders returns 201"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("POST api/orders returns 201")).toBeInTheDocument();
     // The failing step captured a screenshot → it auto-reveals.
     expect(await screen.findByText("Hide screenshot")).toBeInTheDocument();
     expect(
@@ -171,25 +162,23 @@ describe("RunJourney", () => {
     ).toBeInTheDocument();
   });
 
-  it("links through to the generated-tests page from the Generate phase", async () => {
+  it("links through to this run's tests from the Generate phase", async () => {
     vi.mocked(runApi.events).mockResolvedValue(eventsResponse(JOURNEY));
 
     render(<RunJourney runId="r1" />);
     fireEvent.click(await screen.findByRole("tab", { name: /Generate/ }));
 
-    // A single "View generated tests" link opens the full tests page (no per-test
-    // popup here); the authored count is surfaced.
+    // A single link opens the tests page scoped to THIS run (ADR-0062) — no per-test
+    // popup here; the authored count is surfaced.
     const link = await screen.findByRole("link", {
-      name: /View generated tests/,
+      name: /View this run's tests/,
     });
-    expect(link).toHaveAttribute("href", "/projects/p1/tests");
+    expect(link).toHaveAttribute("href", "/projects/p1/tests?run=r1");
     expect(screen.getByText(/Polaris authored 1 test/)).toBeInTheDocument();
   });
 
   it("shows the live watching state for an in-progress run", async () => {
-    vi.mocked(runApi.events).mockResolvedValue(
-      eventsResponse(JOURNEY.slice(0, 3)),
-    );
+    vi.mocked(runApi.events).mockResolvedValue(eventsResponse(JOURNEY.slice(0, 3)));
     vi.mocked(streamRunEvents).mockReturnValue(new Promise<void>(() => {}));
 
     render(<RunJourney runId="r1" />);

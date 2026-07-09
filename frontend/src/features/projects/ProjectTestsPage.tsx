@@ -8,6 +8,7 @@ import {
 import { useMemo, useState } from "react";
 
 import { Link } from "@/components/Link";
+import { PageShell } from "@/components/PageShell";
 import { Skeleton } from "@/components/Skeleton";
 import { StatePanel } from "@/components/StatePanel";
 import { Button } from "@/components/ui/button";
@@ -26,9 +27,10 @@ import { useProjectTests } from "./useProjectTests";
 export function ProjectTestsPage({ projectId }: { projectId: string }) {
   // A "Describe it" run lands here with ?authoring=<jobId>: poll that job and reload
   // the list when it succeeds, so the freshly-authored cases appear on their own.
-  const [authoringJobId] = useState(() =>
-    new URLSearchParams(window.location.search).get("authoring"),
-  );
+  // ?run=<runId> scopes the list to just the cases that run exercised (ADR-0062).
+  const [params] = useState(() => new URLSearchParams(window.location.search));
+  const authoringJobId = params.get("authoring");
+  const runId = params.get("run");
   const [reloadToken, setReloadToken] = useState(0);
   const authoring = useAuthoringJob(authoringJobId, () =>
     setReloadToken((token) => token + 1),
@@ -36,6 +38,7 @@ export function ProjectTestsPage({ projectId }: { projectId: string }) {
   const { tests, total, loading, error } = useProjectTests(
     projectId,
     reloadToken,
+    runId,
   );
   const [type, setType] = useState<string>("all");
 
@@ -43,34 +46,50 @@ export function ProjectTestsPage({ projectId }: { projectId: string }) {
   const shown = type === "all" ? tests : tests.filter((t) => t.type === type);
 
   return (
-    <div className="mx-auto max-w-[1760px] px-6 py-8 lg:px-8">
-      <Link
-        to={`/projects/${projectId}`}
-        className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-        Project
-      </Link>
+    <PageShell
+      scroll={false}
+      header={
+        <>
+          <Link
+            to={`/projects/${projectId}`}
+            className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+            Project
+          </Link>
 
-      <AuthoringBanner state={authoring} />
+          <AuthoringBanner state={authoring} />
 
-      <header className="mb-6 mt-3 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-[22px] font-semibold tracking-[-0.015em] text-foreground">
-            Generated tests
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            The runnable tests Polaris authored from the model — target, kind,
-            and the actual code.
-          </p>
-        </div>
-        {!loading && !error ? (
-          <span className="text-[13px] text-muted-foreground">
-            {total} {total === 1 ? "test" : "tests"}
-          </span>
-        ) : null}
-      </header>
-
+          <header className="mt-3 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h1 className="text-[22px] font-semibold tracking-[-0.015em] text-foreground">
+                {runId ? "Tests from this run" : "Generated tests"}
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {runId ? (
+                  <>
+                    Only the cases this run exercised.{" "}
+                    <Link
+                      to={`/projects/${projectId}/tests`}
+                      className="text-accent hover:underline"
+                    >
+                      View all tests
+                    </Link>
+                  </>
+                ) : (
+                  "The runnable tests Polaris authored from the model — target, kind, and the actual code."
+                )}
+              </p>
+            </div>
+            {!loading && !error ? (
+              <span className="text-[13px] text-muted-foreground">
+                {total} {total === 1 ? "test" : "tests"}
+              </span>
+            ) : null}
+          </header>
+        </>
+      }
+    >
       {loading ? (
         <div className="space-y-2.5">
           {[0, 1, 2, 3].map((i) => (
@@ -122,7 +141,8 @@ export function ProjectTestsPage({ projectId }: { projectId: string }) {
             ))}
           </div>
 
-          <ul className="space-y-2.5">
+          {/* The test list is the overflow — it scrolls internally (ADR-0066). */}
+          <ul className="min-h-0 flex-1 space-y-2.5 overflow-y-auto pb-1 pr-0.5">
             {shown.map((test) => (
               <TestRow
                 key={test.id}
@@ -134,7 +154,7 @@ export function ProjectTestsPage({ projectId }: { projectId: string }) {
           </ul>
         </>
       )}
-    </div>
+    </PageShell>
   );
 }
 
@@ -160,11 +180,9 @@ function AuthoringBanner({ state }: { state: AuthoringJobState }) {
   if (state.outcome === "failed" || state.outcome === "cancelled") {
     return (
       <div className="mt-3 rounded-lg border border-status-fail-border bg-status-fail-bg px-4 py-3 text-sm text-status-fail-fg">
-        {state.outcome === "failed"
-          ? "Authoring failed"
-          : "Authoring was cancelled"}
-        {state.detail ? ` — ${state.detail}` : "."} Try rephrasing, or make sure
-        the app has been ingested.
+        {state.outcome === "failed" ? "Authoring failed" : "Authoring was cancelled"}
+        {state.detail ? ` — ${state.detail}` : "."} Try rephrasing, or make sure the app
+        has been ingested.
       </div>
     );
   }
@@ -255,11 +273,7 @@ function TestRow({
           >
             Discard
           </Button>
-          <Button
-            size="sm"
-            disabled={busy}
-            onClick={() => void review("accept")}
-          >
+          <Button size="sm" disabled={busy} onClick={() => void review("accept")}>
             {busy ? "Saving…" : "Accept"}
           </Button>
         </div>
@@ -268,9 +282,7 @@ function TestRow({
       {open ? (
         <div className="border-t border-border-subtle bg-background">
           <pre className="max-h-[440px] overflow-auto px-5 py-4 font-mono text-[12.5px] leading-relaxed text-foreground-secondary">
-            <code>
-              {test.code || "// (no code generated for this case yet)"}
-            </code>
+            <code>{test.code || "// (no code generated for this case yet)"}</code>
           </pre>
         </div>
       ) : null}
@@ -329,8 +341,7 @@ function facetCounts(
   pick: (t: TestCaseSummary) => string,
 ): [string, number][] {
   const counts = new Map<string, number>();
-  for (const test of tests)
-    counts.set(pick(test), (counts.get(pick(test)) ?? 0) + 1);
+  for (const test of tests) counts.set(pick(test), (counts.get(pick(test)) ?? 0) + 1);
   return [...counts.entries()].sort((a, b) => b[1] - a[1]);
 }
 

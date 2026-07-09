@@ -83,3 +83,21 @@ def test_multiple_cases_per_script_take_the_worst_outcome() -> None:
     results = map_results(scripts, cases, evidence_ref=None)
     assert results[0].outcome is Outcome.FAIL
     assert results[0].message == "assertion failed"
+
+
+def test_skip_only_script_aggregates_to_skipped_not_pass() -> None:
+    # A script whose only case was SKIPPED (reachable-but-unverified, or an
+    # unavailable-factory skip) must aggregate to SKIPPED — NOT a silent pass that would
+    # wrongly count toward pass-rate and seed a heal candidate (ADR-0064).
+    scripts = [_script("skipme")]
+    cases = [_case("skipme", Outcome.SKIPPED, "reachable but unverified: HTTP 404")]
+    results = map_results(scripts, cases, evidence_ref=None)
+    assert results[0].outcome is Outcome.SKIPPED
+
+
+def test_pass_plus_skip_in_one_script_still_passes() -> None:
+    # A verified pass alongside a skip still aggregates to PASS (something was proven).
+    scripts = [_script("mixed")]
+    cases = [_case("mixed", Outcome.PASS), _case("mixed", Outcome.SKIPPED)]
+    results = map_results(scripts, cases, evidence_ref=None)
+    assert results[0].outcome is Outcome.PASS

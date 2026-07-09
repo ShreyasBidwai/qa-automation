@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/api/client", () => ({
   projectApi: { list: vi.fn() },
-  runApi: { list: vi.fn() },
+  runApi: { list: vi.fn(), rerun: vi.fn() },
 }));
+
+vi.mock("@/lib/router", () => ({ navigate: vi.fn() }));
 
 import { projectApi, runApi } from "@/lib/api/client";
 import type { ProjectListItem, RunListItem } from "@/lib/api/types";
@@ -49,6 +51,7 @@ describe("RunsListPage", () => {
   beforeEach(() => {
     vi.mocked(projectApi.list).mockReset();
     vi.mocked(runApi.list).mockReset();
+    vi.mocked(runApi.rerun).mockReset();
   });
 
   it("renders the selected project's runs with mode labels, status, pass rate", async () => {
@@ -72,6 +75,41 @@ describe("RunsListPage", () => {
     expect(screen.getAllByText("Failed").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("80%")).toBeInTheDocument();
     expect(runApi.list).toHaveBeenCalledWith("p1", { limit: 20, offset: 0 });
+  });
+
+  it("shows a run's preferences and re-runs it in one click", async () => {
+    vi.mocked(projectApi.list).mockResolvedValue(projectsPage(PROJECTS));
+    vi.mocked(runApi.list).mockResolvedValue(
+      runsPage(
+        [
+          run({
+            id: "r1",
+            preferences: {
+              mode: "mode_b",
+              strategy: "change_impact",
+              layers: ["ui"],
+              modules: null,
+              changeset_size: 4,
+              layer: null,
+            },
+          }),
+        ],
+        1,
+      ),
+    );
+    vi.mocked(runApi.rerun).mockResolvedValue({
+      ok: true,
+      status: 202,
+      data: { run_id: "r2", status: "queued" },
+    });
+
+    render(<RunsListPage />);
+
+    expect(
+      await screen.findByText("Autonomous · changed files (4) · UI"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Re-run/ }));
+    await waitFor(() => expect(runApi.rerun).toHaveBeenCalledWith("r1"));
   });
 
   it("shows an empty state when the project has no runs", async () => {

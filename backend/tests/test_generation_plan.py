@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from app.generation.plan import PlannedCase, plan_cases
+from dataclasses import replace
+
+from app.generation.plan import PlannedCase, ResponseExpectation, plan_cases
+from app.ingestion.models import (
+    EndpointSpec,
+    FieldConstraints,
+    ValidationField,
+)
 from app.models.enums import OracleSource, TestType
 
 EXPECTED_CASES = [
@@ -32,11 +39,20 @@ def test_plans_exactly_the_expected_case_set(endpoint_spec: object) -> None:
     assert [case.name for case in cases] == EXPECTED_CASES
 
 
-def test_happy_case_is_valid_payload_with_success_status(endpoint_spec: object) -> None:
+def test_happy_case_is_valid_payload_with_reachable_and_carries_echo(
+    endpoint_spec: object,
+) -> None:
     happy = _by_name(plan_cases(endpoint_spec))["happy"]  # type: ignore[arg-type]
     assert happy.case_type == TestType.HAPPY
     assert happy.oracle_source == OracleSource.CHARACTERIZATION
-    assert happy.expected.status == 201  # POST → 201
+    # No happy path asserts an exact 2xx statically (ADR-0063); the honest floor is
+    # REACHABLE (no 5xx). 201 is only a representative hint for POST.
+    assert happy.expected.expectation == ResponseExpectation.REACHABLE
+    assert happy.expected.status == 201  # POST → 201 (representative)
+    # An api route still carries the JSON/echo shape — the renderer asserts it ONLY when
+    # the response is actually 2xx (a successful api response must be well-formed).
+    assert happy.expected.shape.get("json_object") is True
+    assert "name" in happy.expected.shape.get("echo", {})  # a safe echoed field
     assert happy.authenticated is True
     assert set(happy.payload) == {"name", "email", "age", "country_id", "newsletter"}
     assert happy.payload["age"] == 18
@@ -99,3 +115,103 @@ def test_unique_negative_marks_existing_row_dependency(endpoint_spec: object) ->
     assert case.expected.status == 422
     deps = {(d.kind, d.table, d.column, d.value) for d in case.dependencies}
     assert ("row_present", "users", "email", "user@example.com") in deps
+
+
+# --- route-class awareness (ADR-0063) ---------------------------------------
+#
+# A web route (login/OAuth/form: session + redirects, NOT JSON) must assert
+# DIFFERENTLY from an api route on the same events, or every case false-fails —
+# the login-module regression that motivated ADR-0063.
+
+
+def _web_login_post() -> EndpointSpec:
+    """A web (non-api) auth-guarded form POST — e.g. submitting login credentials."""
+    return EndpointSpec(
+        method="POST",
+        uri="login",
+        route_name="login.store",
+        auth_required=True,
+        path_params=[],
+        query_params=[],
+        validation_fields=[
+            ValidationField(
+                name="email",
+                raw_rules=["required", "email"],
+                required=True,
+                type="email",
+                constraints=FieldConstraints(),
+            ),
+        ],
+        is_api=False,
+    )
+
+
+def test_web_happy_only_asserts_reachable_not_json() -> None:
+    happy = _by_name(plan_cases(_web_login_post()))["happy"]
+    # A web route's success isn't knowable statically (auth/OAuth/redirect/config-gated),
+    # so the honest floor is "handled without a 5xx" — never a JSON body (ADR-0063).
+    assert happy.expected.expectation == ResponseExpectation.REACHABLE
+    assert happy.expected.shape == {}  # no JSON structure/echo on a web route
+
+
+def test_web_auth_unauthenticated_expects_a_redirect_not_401() -> None:
+    case = _by_name(plan_cases(_web_login_post()))["auth_unauthenticated"]
+    # Laravel's auth middleware redirects a web request to /login (302), not 401.
+    assert case.expected.expectation == ResponseExpectation.REDIRECT
+    assert case.expected.status == 302
+    assert case.oracle_source == OracleSource.RULE_DERIVED
+
+
+def test_web_validation_negative_expects_session_errors_not_422() -> None:
+    case = _by_name(plan_cases(_web_login_post()))["email_required_missing"]
+    # A web validation failure redirects back with SESSION errors, not a 422 JSON body.
+    assert case.expected.expectation == ResponseExpectation.REDIRECT_WITH_ERRORS
+    assert case.expected.status == 302
+    assert case.expected.shape == {"errors_for": ["email"]}
+
+
+def test_api_auth_unauthenticated_still_expects_401() -> None:
+    # The api route class is unchanged: 401, exact status (no regression).
+    case = _by_name(plan_cases(_web_login_post_as_api()))["auth_unauthenticated"]
+    assert case.expected.expectation == ResponseExpectation.STATUS
+    assert case.expected.status == 401
+
+
+def _web_login_post_as_api() -> EndpointSpec:
+    return replace(_web_login_post(), uri="api/login", is_api=True)
+
+
+def test_happy_with_bound_path_params_only_asserts_reachable() -> None:
+    # A GET /resource/{id} happy path can't be asserted as 2xx statically — the record
+    # may not be seeded (route-model-binding 404 is expected), so pin "no server error".
+    spec = EndpointSpec(
+        method="GET",
+        uri="login/enter_password/{encId}",
+        route_name="login.enter_password",
+        auth_required=False,
+        path_params=["encId"],
+        query_params=[],
+        validation_fields=[],
+        is_api=False,
+    )
+    happy = _by_name(plan_cases(spec))["happy"]
+    assert happy.expected.expectation == ResponseExpectation.REACHABLE
+    assert happy.expected.shape == {}
+    assert happy.path_values == {"encId": 1}
+
+
+def test_api_happy_with_a_bound_path_param_is_reachable_not_success_json() -> None:
+    # Even an api GET /resource/{id}: the record isn't seeded, so a 404 is expected —
+    # only the payload-complete, param-free api CRUD case earns the strong 2xx assertion.
+    spec = EndpointSpec(
+        method="GET",
+        uri="api/users/{id}",
+        route_name="users.show",
+        auth_required=False,
+        path_params=["id"],
+        query_params=[],
+        validation_fields=[],
+        is_api=True,
+    )
+    happy = _by_name(plan_cases(spec))["happy"]
+    assert happy.expected.expectation == ResponseExpectation.REACHABLE

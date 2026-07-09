@@ -33,17 +33,21 @@ STATUS_PASSING = "passing"
 
 
 def pass_rate(counts: dict[Outcome, int] | None) -> float | None:
-    """passed / total over a run's results, rounded; None when there are no results.
+    """passed / VERIFIED over a run's results, rounded; None when nothing was verified.
 
-    The single definition of pass-rate, shared by the runs list and the projects
-    list (don't re-derive it a second way).
+    SKIPPED results (reachable-but-unverified — a precondition 4xx/redirect, ADR-0064)
+    are excluded from BOTH sides: they neither passed nor failed, so counting them would
+    understate a genuinely-passing run. The denominator is the verified set
+    (pass + fail + error); a run that only reached un-verifiable endpoints has no
+    pass-rate (None), not a misleading 0%. The single definition of pass-rate, shared by
+    the runs list and the projects list (don't re-derive it a second way).
     """
     if not counts:
         return None
-    total = sum(counts.values())
-    if total == 0:
+    verified = sum(n for outcome, n in counts.items() if outcome is not Outcome.SKIPPED)
+    if verified == 0:
         return None
-    return round(counts.get(Outcome.PASS, 0) / total, 4)
+    return round(counts.get(Outcome.PASS, 0) / verified, 4)
 
 
 def derive_status(last_run: Run | None, open_findings_count: int) -> str:

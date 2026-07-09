@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from app.ingestion.laravel.normalize import normalize_rules
-from app.ingestion.laravel.route_list import path_params_from_uri
+from app.ingestion.laravel.route_list import derive_is_api, path_params_from_uri
 from app.ingestion.models import (
     EndpointSpec,
     FieldConstraints,
@@ -59,9 +59,9 @@ def _validation_field(data: dict[str, Any] | str) -> ValidationField:
 def endpoint_spec_from_node(node: ModelNode) -> EndpointSpec:
     """Rebuild the generator's ``EndpointSpec`` from an endpoint node's attributes.
 
-    The Laravel ingestor stores method/uri/auth + the captured validation spec on
-    the node (``ingester.py``); this is its inverse so the backend generator can run
-    off the Brain without re-reading the repo.
+    The Laravel ingestor stores method/uri/auth/middleware + the captured validation
+    spec on the node (``ingester.py``); this is its inverse so the backend generator
+    can run off the Brain without re-reading the repo.
     """
     attrs = node.attributes or {}
     uri = str(attrs.get("uri", ""))
@@ -74,6 +74,7 @@ def endpoint_spec_from_node(node: ModelNode) -> EndpointSpec:
         path_params=path_params_from_uri(uri),
         query_params=[],
         validation_fields=_validation_fields_from(validation),
+        is_api=derive_is_api(attrs.get("middleware"), uri),
     )
 
 

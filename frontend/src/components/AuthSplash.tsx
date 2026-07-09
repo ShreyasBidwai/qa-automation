@@ -4,7 +4,7 @@ import { Wordmark } from "@/components/Wordmark";
 export function AuthSplash() {
   return (
     <div
-      className="flex min-h-screen items-center justify-center bg-background"
+      className="flex h-full items-center justify-center bg-background"
       role="status"
       aria-label="Loading"
     >
