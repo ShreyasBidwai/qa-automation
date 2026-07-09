@@ -192,7 +192,12 @@ class LaravelIngestorAdapter:
         git_provider: GitProvider | None = None,
     ) -> None:
         self._settings = settings
-        self._ingester = LaravelIngester(embedding_provider=embedding_provider)
+        self._ingester = LaravelIngester(
+            embedding_provider=embedding_provider,
+            # Opt-in, fail-safe route enrichment (ADR-0055): widens coverage to
+            # dynamic/package routes when the target boots, else static stands.
+            enrich_with_artisan=settings.ingest_artisan_enrichment,
+        )
         # Injectable so tests exercise the git path without a real remote; the default
         # is the read-only CLI provider, credentialed from the read-only GIT_TOKEN.
         self._git_provider = git_provider

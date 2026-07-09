@@ -43,10 +43,14 @@ def _uri_of(kind: NodeKind, name: str) -> str:
 def derive_module_key(kind: NodeKind, name: str) -> str | None:
     """The module a testable node belongs to — the first meaningful path segment — or
     ``None`` when none can be derived (a root path, or an all-prefix URI). Deterministic
-    and case-insensitive (keys are always lower-case)."""
+    and case-insensitive (keys are always lower-case).
+
+    Separators are canonicalized (``_`` → ``-``) so ``order-items`` and ``order_items``
+    key to the SAME module — otherwise two spellings of one feature area render the
+    same label (``module_label`` collapses both) and read as a duplicate row."""
     uri = _uri_of(kind, name)
     for raw in uri.strip("/").split("/"):
-        seg = raw.strip().lower()
+        seg = raw.strip().lower().replace("_", "-")
         if not seg or seg in _SKIP_SEGMENTS or _VERSION_RE.match(seg):
             continue
         # A path parameter (``{id}``, ``:id``, ``<id>``) is not a module.
