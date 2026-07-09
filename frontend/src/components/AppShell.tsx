@@ -293,6 +293,17 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     setMobileNavOpen(false);
   }, [pathname]);
+  // Dark mode is a signed-in preference (ADR-0073): the shell — mounted only for an
+  // authenticated session — applies the theme to <html>, and reverts to light when it
+  // unmounts (sign-out), so the public front door always paints on the light brand.
+  const { theme } = useTheme();
+  useEffect(() => {
+    const root = document.documentElement;
+    root.setAttribute("data-theme", theme);
+    return () => {
+      root.setAttribute("data-theme", "light");
+    };
+  }, [theme]);
   // Resolve the active entry ONCE across every VISIBLE nav target, so only the longest
   // match lights up (no double-highlight of "Runs" + "Ongoing run" on /runs/ongoing).
   const activeTarget = activeNavTarget(pathname, [

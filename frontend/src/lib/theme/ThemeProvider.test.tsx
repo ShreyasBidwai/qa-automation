@@ -46,7 +46,6 @@ describe("ThemeProvider / useTheme", () => {
       </ThemeProvider>,
     );
     expect(screen.getByText("current: light")).toBeInTheDocument();
-    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
   });
 
   it("falls back to the OS preference when nothing is persisted", () => {
@@ -57,7 +56,6 @@ describe("ThemeProvider / useTheme", () => {
       </ThemeProvider>,
     );
     expect(screen.getByText("current: dark")).toBeInTheDocument();
-    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
   });
 
   it("defaults to light when the OS has no preference", () => {
@@ -70,7 +68,7 @@ describe("ThemeProvider / useTheme", () => {
     expect(screen.getByText("current: light")).toBeInTheDocument();
   });
 
-  it("toggles the theme, applies data-theme, and persists the choice", () => {
+  it("toggles the theme and persists the choice", () => {
     mockMatchMedia(false);
     render(
       <ThemeProvider>
@@ -80,7 +78,6 @@ describe("ThemeProvider / useTheme", () => {
 
     fireEvent.click(screen.getByText("toggle"));
     expect(screen.getByText("current: dark")).toBeInTheDocument();
-    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
 
     fireEvent.click(screen.getByText("toggle"));

@@ -4,19 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Polaris — QA automation platform</title>
-    <!-- Sets the theme before first paint (same storage key as ThemeProvider, ADR-0073)
-         so a dark-mode user never sees a light flash while React boots. -->
+    <!-- Sets the theme before first paint (ADR-0073) so an authenticated dark-mode
+         user never sees a light flash while React boots. Dark is a signed-in surface:
+         with no session token we always paint light, so the public front door
+         (login / sign-up / landing) stays on the light brand. -->
     <script>
       (function () {
         try {
-          var stored = localStorage.getItem("polaris:theme");
-          var theme =
-            stored === "light" || stored === "dark"
-              ? stored
-              : window.matchMedia &&
-                  window.matchMedia("(prefers-color-scheme: dark)").matches
-                ? "dark"
-                : "light";
+          var theme = "light";
+          if (localStorage.getItem("polaris.auth.token")) {
+            var stored = localStorage.getItem("polaris:theme");
+            theme =
+              stored === "light" || stored === "dark"
+                ? stored
+                : window.matchMedia &&
+                    window.matchMedia("(prefers-color-scheme: dark)").matches
+                  ? "dark"
+                  : "light";
+          }
           document.documentElement.setAttribute("data-theme", theme);
         } catch (e) {
           // localStorage/matchMedia unavailable (e.g. privacy mode) — default light.
