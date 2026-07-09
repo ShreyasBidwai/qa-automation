@@ -40,7 +40,8 @@ describe("SettingsPage", () => {
 
     expect(dark).toHaveAttribute("aria-checked", "true");
     expect(light).toHaveAttribute("aria-checked", "false");
-    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    // The choice is recorded + persisted here; applying it to <html> is the signed-in
+    // app shell's job (AppShell), so that the public front door stays on the light brand.
     expect(localStorage.getItem("polaris:theme")).toBe("dark");
   });
 

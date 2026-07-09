@@ -264,5 +264,16 @@ describe("AppShell", () => {
         screen.getByRole("button", { name: "Switch to light theme" }),
       ).toBeInTheDocument();
     });
+
+    it("reverts <html> to the light brand when the shell unmounts (sign-out)", () => {
+      // Dark is a signed-in surface: once the authenticated shell is gone, the public
+      // front door must paint light regardless of the user's in-app preference.
+      const { unmount } = renderShell(<div>content</div>);
+      fireEvent.click(screen.getByRole("button", { name: "Switch to dark theme" }));
+      expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+
+      unmount();
+      expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+    });
   });
 });

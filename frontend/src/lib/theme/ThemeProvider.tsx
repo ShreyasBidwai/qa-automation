@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 
 import { ThemeContext, type Theme } from "./useTheme";
 
@@ -18,20 +18,20 @@ function storedTheme(): Theme | null {
 }
 
 /**
- * Real light/dark theming (ADR-0073, greenfield): initialized from a persisted
- * choice, else the OS `prefers-color-scheme`; user-toggleable and persisted
- * thereafter. Applies by flipping `data-theme` on `<html>` — the CSS variables in
- * index.css do the rest (never `dark:` utilities sprinkled through components).
- * An inline script in index.html sets the SAME attribute (same storage key)
- * synchronously before React mounts, so there's no flash of the wrong theme on
- * load; this provider takes over from there for the toggle + persistence.
+ * Real light/dark theming (ADR-0073, greenfield): holds the user's theme
+ * *preference* — initialized from a persisted choice, else the OS
+ * `prefers-color-scheme` — and is user-toggleable + persisted thereafter.
+ *
+ * It deliberately does NOT write `data-theme` to `<html>` itself. Dark mode is a
+ * signed-in surface: the authenticated app shell (`AppShell`) applies this
+ * preference to `<html>` while it is mounted, and reverts to light on sign-out —
+ * so the public front door (login / sign-up / landing), which is never wrapped in
+ * the shell, always stays on the light brand. The inline script in index.html
+ * mirrors the same rule for first paint (only a signed-in session gets a dark
+ * pre-render; everyone else paints light).
  */
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => storedTheme() ?? systemTheme());
-
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-  }, [theme]);
 
   const setTheme = useCallback((next: Theme) => {
     localStorage.setItem(THEME_STORAGE_KEY, next);
