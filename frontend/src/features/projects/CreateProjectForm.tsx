@@ -8,6 +8,7 @@ import { navigate } from "@/lib/router";
 
 import { ProjectCredentialsCard } from "./ProjectCredentialsCard";
 import { ProjectDocumentsCard } from "./ProjectDocumentsCard";
+import { ProjectLoginConfigCard } from "./ProjectLoginConfigCard";
 
 interface FieldErrors {
   name?: string;
@@ -69,11 +70,16 @@ export function CreateProjectForm() {
           </h2>
           <p className="mt-1 text-[13px] text-muted-foreground">
             <span className="font-medium text-foreground">{created.name}</span> is set
-            up. Attach documents and configure the target account now, or skip — you can
-            do both later in project settings.
+            up. Set up sign-in below so Polaris can test signed-in flows, and attach any
+            spec documents — or skip; you can do all of it later in project settings.
           </p>
         </div>
+        {/* Sign-in setup: the two halves of "log in as this account" — WHERE to sign in
+            (the login page + fields, ADR-0056) and WHO to sign in as (the account +
+            password, ADR-0053). Both optional; they reuse the same secure, write-only
+            cards as project settings, so registration and edit can never drift. */}
         <div className="mt-5 space-y-7">
+          <ProjectLoginConfigCard projectId={created.id} />
           <ProjectCredentialsCard projectId={created.id} />
           <ProjectDocumentsCard projectId={created.id} />
         </div>
