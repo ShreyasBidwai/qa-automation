@@ -218,6 +218,15 @@ class Settings(BaseSettings):
     git_token_username: str = "oauth2"
     git_clone_timeout_seconds: float = 120.0
 
+    # --- Auto-provision the PHP target checkout for execution (ADR-0074) ---
+    # When on, a run whose repo is a git URL auto-syncs it into ``target_app_path`` and
+    # runs ``composer install`` before the Pest/PHPUnit layer, so backend testing is
+    # fully frontend-driven (no manual checkout). Best-effort: on failure the run falls
+    # back to the graceful "skip API layer" path. Set false to require a pre-placed
+    # checkout (the old manual model).
+    target_provision_enabled: bool = True
+    composer_install_timeout_seconds: float = 600.0
+
     # --- Target-account credentials encryption (ADR-0053) ---
     # A urlsafe-base64 32-byte Fernet key used to encrypt target-app account secrets
     # at rest. Comes from the environment / secret store — NEVER hardcoded or in the

@@ -39,6 +39,7 @@ from app.documents.grounding import SpecGroundingService
 from app.embeddings.types import EmbeddingProvider
 from app.execution.php_test_runner import PhpTestRunner
 from app.execution.playwright_runner import PlaywrightRunner
+from app.execution.provision import TargetAppProvisioner
 from app.execution.types import DbHandle, DbRole, ExecutionRunner, PestScript, TargetEnv
 from app.generation.e2e_generator import E2EGenerator
 
@@ -282,8 +283,26 @@ class ProjectTargetProvider:
     deprecated fallback (logged in ``resolve_target_config``).
     """
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self, settings: Settings, *, provisioner: TargetAppProvisioner | None = None
+    ) -> None:
         self._settings = settings
+        # Injectable so tests exercise resolve() without a real git/composer; the
+        # default is built lazily (only when provisioning is actually needed).
+        self._provisioner = provisioner
+
+    def _resolve_provisioner(self) -> TargetAppProvisioner:
+        if self._provisioner is not None:
+            return self._provisioner
+        git = GitCliProvider(
+            token=self._settings.git_token,
+            token_username=self._settings.git_token_username,
+            timeout=self._settings.git_clone_timeout_seconds,
+        )
+        return TargetAppProvisioner(
+            git_sync=git,
+            composer_timeout=self._settings.composer_install_timeout_seconds,
+        )
 
     async def resolve(
         self, session: AsyncSession, project_id: uuid.UUID
@@ -292,6 +311,17 @@ class ProjectTargetProvider:
         if project is None:
             raise ApiConfigError(f"project {project_id} not found for target config")
         cfg = resolve_target_config(project, self._settings)
+        # Auto-provision the PHP checkout so the API/Pest layer runs without a manual
+        # `composer install` (ADR-0074). Best-effort: a failure leaves app_path as-is
+        # and the run degrades to the graceful "skip API layer" path (lifecycle.py).
+        if self._settings.target_provision_enabled:
+            ref = str((project.settings or {}).get("repo_ref") or "HEAD")
+            self._resolve_provisioner().ensure_php_checkout(
+                repo_path=cfg.repo_path,
+                app_path=cfg.app_path,
+                framework=cfg.framework,
+                ref=ref,
+            )
         return build_runner_for(cfg), build_target_env_for(cfg, self._settings)
 
 
