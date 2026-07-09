@@ -55,3 +55,29 @@ def test_aggregate_groups_by_module_with_per_kind_counts_and_order() -> None:
     assert orders.page_count == 1
     assert orders.total == 3
     assert modules[1].key == "users" and modules[1].total == 1
+
+
+def test_separator_variants_key_to_one_module() -> None:
+    # `order-items` and `order_items` are one feature area: keys canonicalize `_`→`-`,
+    # so two spellings don't render as two identically-labelled ("Order items") rows.
+    assert (
+        derive_module_key(NodeKind.ENDPOINT, "GET api/v1/order-items") == "order-items"
+    )
+    assert (
+        derive_module_key(NodeKind.ENDPOINT, "GET api/v1/order_items") == "order-items"
+    )
+
+
+def test_aggregate_merges_separator_variants_into_one_row() -> None:
+    project_id = uuid.uuid4()
+    nodes = [
+        make_node(project_id, kind=NodeKind.ENDPOINT, name="GET api/v1/order-items"),
+        make_node(project_id, kind=NodeKind.ENDPOINT, name="POST api/v1/order_items"),
+    ]
+    modules = aggregate_modules(nodes)
+
+    # One de-duplicated row, not two rows both labelled "Order items".
+    assert len(modules) == 1
+    assert modules[0].key == "order-items"
+    assert modules[0].label == "Order items"
+    assert modules[0].endpoint_count == 2

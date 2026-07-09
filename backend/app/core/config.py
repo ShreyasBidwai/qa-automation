@@ -86,6 +86,13 @@ class Settings(BaseSettings):
     #   executor_mode: stub | orchestrator     ingestor_mode: stub | laravel
     executor_mode: str = "stub"
     ingestor_mode: str = "stub"
+    # Optional route enrichment (ADR-0055): when ON *and* the target app happens to
+    # boot, merge ``php artisan route:list`` (dynamic / package-registered routes the
+    # static parser can't see) into the statically-parsed routes. OFF by default and
+    # fully FAIL-SAFE — ingestion never depends on it and falls back to the static set
+    # on any error. Opt in to widen module/endpoint coverage for apps that register
+    # routes outside ``routes/*.php`` (needs a composer-installed, bootable checkout).
+    ingest_artisan_enrichment: bool = False
 
     # --- Real execution wiring (orchestrator mode; runner worker) -------------
     # The orchestrator executor drives a real per-stack runner against a target.
