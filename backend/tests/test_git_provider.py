@@ -109,6 +109,49 @@ def test_checkout_of_specific_sha(git_origin: SimpleNamespace) -> None:
         provider.cleanup(handle)
 
 
+# --- sync_into: persistent read-only checkout for execution (ADR-0074) ------
+def test_sync_into_runs_readonly_persistent_verbs(tmp_path: Path) -> None:
+    calls: list[list[str]] = []
+    provider = GitCliProvider(runner=_spy_runner(calls), token=_TOKEN)
+    sha = provider.sync_into(_HTTPS_URL, "main", str(tmp_path))
+
+    assert sha == "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+    joined = [" ".join(a) for a in calls]
+    assert any(f"init -q {tmp_path}" in a for a in joined)
+    assert any("remote add origin" in a for a in joined)
+    assert any("fetch --no-tags --depth 1 origin main" in a for a in joined)
+    assert any("checkout -q -f --detach FETCH_HEAD" in a for a in joined)
+    # READ-ONLY + non-destructive to untracked deps: never push, never clean vendor/.
+    assert not any("push" in a for a in joined)
+    assert not any("clean" in a for a in joined)
+    # The credentialed URL is used for auth (but is redacted from logs, tested below).
+    assert any(f"oauth2:{_TOKEN}@" in a for a in joined)
+
+
+def test_sync_into_redacts_credentials_on_failure(tmp_path: Path) -> None:
+    provider = GitCliProvider(runner=_spy_runner([], fail_on="fetch"), token=_TOKEN)
+    with pytest.raises(GitCheckoutError) as exc:
+        provider.sync_into(_HTTPS_URL, "main", str(tmp_path))
+    assert _TOKEN not in str(exc.value)
+
+
+def test_sync_into_persists_and_preserves_untracked_on_resync(
+    git_origin: SimpleNamespace, tmp_path: Path
+) -> None:
+    dest = tmp_path / "app"
+    provider = GitCliProvider()  # real git against the local fixture
+    sha = provider.sync_into(git_origin.url, "main", str(dest))
+    assert sha == git_origin.head
+    assert (dest / "second.txt").read_text() == "two"
+
+    # An untracked file (mimicking an installed vendor/) MUST survive a re-sync, so a
+    # run never triggers a needless composer reinstall.
+    (dest / "vendor_marker").write_text("keep")
+    sha2 = provider.sync_into(git_origin.url, "main", str(dest))
+    assert sha2 == git_origin.head
+    assert (dest / "vendor_marker").read_text() == "keep"
+
+
 # --- cleanup on failure (no leaked temp dirs) -------------------------------
 def test_checkout_cleans_up_temp_dir_on_failure(
     monkeypatch: pytest.MonkeyPatch,
