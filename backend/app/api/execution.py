@@ -235,6 +235,12 @@ class OrchestratorRunExecutor:
             # The project's AI backend also triages failures (real-bug vs noise); the
             # cheap tier (ai_triage_model) keeps it inexpensive (ADR-0049).
             ai_provider=ai_provider,
+            # Crawl breadth/budget (ADR-0075) — tunable so a run can cover more of the
+            # frontend; the crawl now runs BEFORE target selection, so pages it finds
+            # are tested in the SAME run. get_settings() is lru-cached.
+            crawl_max_pages=get_settings().crawl_max_pages,
+            crawl_max_depth=get_settings().crawl_max_depth,
+            crawl_time_budget_s=get_settings().crawl_time_budget_seconds,
         )
         report = await orchestrator.run(
             project_id=project_id,

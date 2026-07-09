@@ -49,6 +49,21 @@ class _FakeCrawler:
         return CrawlResult(pages=3, nav_edges=2, call_edges=1, visited=("/", "/a"))
 
 
+class _WritingCrawler:
+    """Writes a page node into the Brain during the crawl (like the real crawler), so a
+    test can prove the crawl runs BEFORE target selection (ADR-0075) — the page it
+    discovers is selected + tested in the SAME run, not the next one."""
+
+    async def crawl(
+        self, *, session: AsyncSession, project_id: uuid.UUID, config: CrawlConfig
+    ) -> CrawlResult:
+        await NodeRepository(session).add(
+            make_node(project_id, kind=NodeKind.PAGE, name="/dashboard")
+        )
+        await session.flush()
+        return CrawlResult(pages=1, nav_edges=0, call_edges=0, visited=("/dashboard",))
+
+
 async def _project(session: AsyncSession) -> uuid.UUID:
     project = make_project()
     session.add(project)
@@ -147,3 +162,21 @@ async def test_crawl_phase_threads_the_auth_config_for_a_gated_crawl(
         project_id2,
     )
     assert crawler2.crawled_auth is None  # default: unauthenticated crawl
+
+
+async def test_crawl_runs_before_selection_so_its_pages_are_tested_same_run(
+    db_session: AsyncSession,
+) -> None:
+    # ADR-0075: the crawl runs FIRST, so a page it discovers joins the endpoint as a
+    # SELECTED target in THIS run (previously the crawl ran last → next-run only).
+    project_id = await _project(db_session)  # 1 endpoint in the Brain
+    orch = _orchestrator(
+        db_session,
+        _env("http://app.local"),
+        _WritingCrawler(),  # type: ignore[arg-type]
+    )
+    report = await _run(db_session, orch, project_id)
+
+    assert report.crawl is not None and report.crawl.pages == 1
+    # The endpoint + the crawl-discovered page were BOTH selected + tested this run.
+    assert report.targets_selected == 2

@@ -172,6 +172,9 @@ class ModeBOrchestrator:
         crawler: FrontendCrawler | None = None,
         auth_config: AuthConfig | None = None,
         ai_provider: AIProvider | None = None,
+        crawl_max_pages: int = 10,
+        crawl_max_depth: int = 2,
+        crawl_time_budget_s: float = 60.0,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._session = session
@@ -186,6 +189,10 @@ class ModeBOrchestrator:
         self._auth_config = auth_config
         # The AI provider used to triage failures (None ⇒ triage phase skipped).
         self._ai_provider = ai_provider
+        # Crawl breadth/budget (ADR-0075) — bound the frontend discovery + its cost.
+        self._crawl_max_pages = crawl_max_pages
+        self._crawl_max_depth = crawl_max_depth
+        self._crawl_time_budget_s = crawl_time_budget_s
         self._clock = clock
         self._cases = TestCaseRepository(session)
         self._scripts = TestScriptRepository(session)
@@ -227,6 +234,13 @@ class ModeBOrchestrator:
         # Run-progress (ADR-0050): the journey starts here and is narrated through
         # select → generate → execute → review to a terminal run event. Best-effort.
         await emit(phase=PHASE_RUN, step="run", status=STATUS_STARTED)
+        # Crawl the live frontend FIRST (ADR-0075): discover page nodes into the Brain
+        # BEFORE target selection, so ONE UI run crawls -> discovers -> tests the pages
+        # it just found (the crawl used to run last, so new pages only became testable
+        # on the NEXT run). Tier-free + defensive; only when a crawler is wired + UI is
+        # in scope.
+        ui_in_scope = bounds.layers is None or "ui" in bounds.layers
+        crawl_result = await self._run_crawl_phase(project_id) if ui_in_scope else None
         selection = await strategy.select(project_id)
 
         full_sweep_fallback = False
@@ -302,12 +316,6 @@ class ModeBOrchestrator:
             if db_in_scope
             else None
         )
-        # Frontend crawl phase (T4.2): when a crawler is wired and the UI layer is in
-        # scope, crawl the target frontend and write page nodes/edges into the Brain —
-        # so a single run exercises backend + DB + frontend. Tier-free; defensive.
-        ui_in_scope = bounds.layers is None or "ui" in bounds.layers
-        crawl_result = await self._run_crawl_phase(project_id) if ui_in_scope else None
-
         scorer = SeverityScorer(self._session, impact_resolver=self._resolver)
         await scorer.score_run(project_id, run.id)
         await HistoryClassifier(self._session).classify_run(project_id, run.id)
@@ -496,9 +504,9 @@ class ModeBOrchestrator:
                 project_id=project_id,
                 config=CrawlConfig(
                     base_url=self._target_env.base_url,
-                    max_pages=10,
-                    max_depth=2,
-                    time_budget_s=60.0,
+                    max_pages=self._crawl_max_pages,
+                    max_depth=self._crawl_max_depth,
+                    time_budget_s=self._crawl_time_budget_s,
                     # Log in + crawl behind the gate when a login config is present;
                     # the crawler delegates the single login to its AuthStrategy.
                     auth=self._auth_config,

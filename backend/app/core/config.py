@@ -109,6 +109,14 @@ class Settings(BaseSettings):
     # clicks a destructive control. Disable, or cap per page, here.
     crawl_interactions_enabled: bool = True
     crawl_max_interactions: int = 5
+    # Crawl breadth/budget (ADR-0075). The crawl discovers page nodes that become E2E
+    # targets IN THE SAME run (the crawl now runs before target selection). Bounded so
+    # a run's cost/time is predictable — raise ``crawl_max_pages`` to cover more of the
+    # frontend (each page ⇒ ~a few AI-authored E2E cases, so pages scale generation
+    # cost). Depth caps the BFS; the time budget caps the discovery phase itself.
+    crawl_max_pages: int = 10
+    crawl_max_depth: int = 2
+    crawl_time_budget_seconds: float = 60.0
     # The target app the runner executes in (Pest: the Laravel app dir; Playwright:
     # the node project dir) and the repo the Laravel ingestor reads.
     target_app_path: str = ""
