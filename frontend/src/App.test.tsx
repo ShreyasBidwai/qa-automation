@@ -24,6 +24,7 @@ vi.mock("@/lib/api/client", () => ({
     findings: vi.fn(),
     create: vi.fn(),
     triage: vi.fn(),
+    active: vi.fn(),
   },
   jobApi: { get: vi.fn() },
   healthApi: { liveness: vi.fn(), readiness: vi.fn() },
@@ -33,20 +34,34 @@ vi.mock("@/lib/api/client", () => ({
   adminApi: {
     me: vi.fn(() => Promise.resolve({ ok: false, status: 403, data: null })),
   },
+  searchApi: { search: vi.fn() },
 }));
 
-import { accountApi, adminApi, authApi, healthApi, projectApi } from "@/lib/api/client";
+import {
+  accountApi,
+  adminApi,
+  authApi,
+  healthApi,
+  projectApi,
+  runApi,
+} from "@/lib/api/client";
+import { ToastProvider } from "@/components/ToastProvider";
 import { AuthProvider } from "@/lib/auth/AuthContext";
 import { clearToken, setToken } from "@/lib/auth/session";
 import { resetStaffCache } from "@/lib/auth/useStaff";
+import { ThemeProvider } from "@/lib/theme/ThemeProvider";
 
 import { App } from "./App";
 
 function renderApp() {
   return render(
-    <AuthProvider>
-      <App />
-    </AuthProvider>,
+    <ThemeProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </ToastProvider>
+    </ThemeProvider>,
   );
 }
 
@@ -58,6 +73,14 @@ describe("App auth gating", () => {
     // Re-arm the default "not staff" reply after clearAllMocks wiped call state.
     vi.mocked(adminApi.me).mockResolvedValue({ ok: false, status: 403, data: null });
     window.history.pushState({}, "", "/");
+    localStorage.clear();
+    document.documentElement.removeAttribute("data-theme");
+    // useRunLifecycleToasts (mounted inside AppShell) polls this on mount.
+    vi.mocked(runApi.active).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { run_id: null, project_id: null, mode: null, status: null },
+    });
   });
 
   it("sends an unauthenticated visitor to sign in (no app data shown)", async () => {

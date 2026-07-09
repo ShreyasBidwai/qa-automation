@@ -5,10 +5,12 @@ vi.mock("@/lib/api/client", () => ({
   runApi: { get: vi.fn(), findings: vi.fn(), triage: vi.fn() },
 }));
 vi.mock("@/lib/router", () => ({ navigate: vi.fn() }));
+vi.mock("./exportFindings", () => ({ downloadFindingsCsv: vi.fn() }));
 
 import { runApi } from "@/lib/api/client";
 import type { Finding, JobStatusValue } from "@/lib/api/types";
 
+import { downloadFindingsCsv } from "./exportFindings";
 import { RunDashboard } from "./RunDashboard";
 
 function summaryResult(summary: Record<string, unknown>) {
@@ -313,5 +315,43 @@ describe("RunDashboard", () => {
 
     expect(within(list).getByText("Open issue")).toBeInTheDocument();
     expect(within(list).queryByText("Muted issue")).toBeNull();
+  });
+
+  describe("Export", () => {
+    beforeEach(() => {
+      vi.mocked(downloadFindingsCsv).mockReset();
+    });
+
+    it("is disabled while the run is loading", () => {
+      vi.mocked(runApi.get).mockReturnValue(new Promise(() => {})); // never resolves
+      vi.mocked(runApi.findings).mockReturnValue(new Promise(() => {}));
+      render(<RunDashboard runId="r1" />);
+      expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
+    });
+
+    it("downloads the current run's findings as CSV on click", async () => {
+      vi.mocked(runApi.get).mockResolvedValue(summaryResult({}));
+      const findings = [finding({ id: "f1", title: "Checkout 500" })];
+      vi.mocked(runApi.findings).mockResolvedValue(findingsResult(findings));
+
+      render(<RunDashboard runId="r1" />);
+      await listRegion();
+
+      fireEvent.click(screen.getByRole("button", { name: "Export" }));
+      expect(downloadFindingsCsv).toHaveBeenCalledWith("r1", findings);
+    });
+
+    it("stays enabled for a clean run with zero findings", async () => {
+      vi.mocked(runApi.get).mockResolvedValue(summaryResult({ pass_rate: 1 }));
+      vi.mocked(runApi.findings).mockResolvedValue(findingsResult([]));
+
+      render(<RunDashboard runId="r1" />);
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Export" })).not.toBeDisabled(),
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Export" }));
+      expect(downloadFindingsCsv).toHaveBeenCalledWith("r1", []);
+    });
   });
 });

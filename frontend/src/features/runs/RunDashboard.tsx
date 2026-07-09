@@ -1,13 +1,7 @@
-import {
-  AlertTriangle,
-  ArrowDown,
-  ArrowUp,
-  CheckCircle2,
-  Info,
-  MousePointerClick,
-} from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info, MousePointerClick } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
+import { DeltaBadge } from "@/components/DeltaBadge";
 import { LoadingFact } from "@/components/LoadingFact";
 import { StatePanel } from "@/components/StatePanel";
 import { Button } from "@/components/ui/button";
@@ -16,6 +10,7 @@ import { navigate } from "@/lib/router";
 import { relativeTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
+import { downloadFindingsCsv } from "./exportFindings";
 import { FindingDetail } from "./FindingDetail";
 import { FindingFilterBar } from "./FindingFilterBar";
 import { FindingRow } from "./FindingRow";
@@ -63,7 +58,13 @@ export function RunDashboard({
 
   return (
     <div className="flex flex-col min-[1024px]:h-full">
-      <RunHeaderBand runId={runId} mode={mode} metrics={metrics} loading={loading} />
+      <RunHeaderBand
+        runId={runId}
+        mode={mode}
+        metrics={metrics}
+        loading={loading}
+        findings={findings}
+      />
 
       {loading ? (
         <LoadingState />
@@ -127,11 +128,13 @@ function RunHeaderBand({
   mode,
   metrics,
   loading,
+  findings,
 }: {
   runId: string;
   mode: string;
   metrics: RunMetrics;
   loading: boolean;
+  findings: Finding[];
 }) {
   return (
     <div className="flex flex-none flex-wrap items-center justify-between gap-3 border-b border-border bg-surface px-6 py-[18px]">
@@ -181,8 +184,8 @@ function RunHeaderBand({
           variant="outline"
           size="sm"
           className="h-[34px]"
-          disabled
-          title="Export is coming in a later slice"
+          disabled={loading}
+          onClick={() => downloadFindingsCsv(runId, findings)}
         >
           Export
         </Button>
@@ -347,7 +350,7 @@ function PassRateCard({
         <span className={cn(BIG_NUMBER, "text-foreground")}>
           {formatPercent(passRate)}
         </span>
-        {delta ? <DeltaTag delta={delta} /> : null}
+        {delta ? <DeltaBadge delta={delta} label="vs prior" /> : null}
       </div>
       <div className="mt-3 h-[5px] overflow-hidden rounded-full bg-border-subtle">
         <div
@@ -375,25 +378,6 @@ function PassRateCard({
         </p>
       ) : null}
     </StatCard>
-  );
-}
-
-function DeltaTag({ delta }: { delta: PassRateDelta }) {
-  if (delta.direction === "flat") {
-    return <span className="text-xs text-muted-foreground">no change</span>;
-  }
-  const up = delta.direction === "up";
-  const Icon = up ? ArrowUp : ArrowDown;
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-0.5 text-xs",
-        up ? "text-status-pass-fg" : "text-status-fail-fg",
-      )}
-    >
-      <Icon className="h-3 w-3" aria-hidden="true" />
-      {Math.abs(delta.points)}% vs prior
-    </span>
   );
 }
 

@@ -1209,3 +1209,23 @@ class AdminGenerationQualityResponse(BaseModel):
     flaky: int
     triaged: int
     triage_rejected: int
+
+
+# --- global search (ADR-0072) ------------------------------------------------
+
+
+class SearchResultItem(BaseModel):
+    """One name-search hit — a minimal row the command palette can render + jump
+    to. Deliberately thin (no secrets, no full entity payload): type + id + a label
+    and optional subtitle to render, and the in-app ``url`` to navigate to."""
+
+    type: Literal["project", "finding", "run"]
+    id: uuid.UUID
+    label: str
+    subtitle: str | None
+    url: str
+
+
+class SearchResponse(BaseModel):
+    query: str
+    items: list[SearchResultItem]

@@ -57,6 +57,8 @@ import type {
   RunListResponse,
   RunResponse,
   RunStatus,
+  SearchResponse,
+  SearchResultType,
   SetStaffRoleBody,
   SignInBody,
   SignUpBody,
@@ -283,6 +285,18 @@ export const accountApi = {
 export const planApi = {
   /** GET /plans — the public plan tiers (name, price, quotas, features). */
   list: () => getJson<PlanList>(`${API_BASE}/plans`),
+};
+
+/** Global name search (ADR-0072) — the ⌘K command palette. Org-scoped server-side;
+ *  never a client-side filter over an already-fetched page (see the ADR). */
+export const searchApi = {
+  /** GET /search?q=…&types=…&limit=… — omit `types` for every kind, newest first. */
+  search: (q: string, types?: SearchResultType[], limit?: number) => {
+    const params = new URLSearchParams({ q });
+    if (types && types.length > 0) params.set("types", types.join(","));
+    if (limit != null) params.set("limit", String(limit));
+    return getJson<SearchResponse>(`${API_BASE}/search?${params.toString()}`);
+  },
 };
 
 function pageQuery({ limit, offset }: PageParams): string {

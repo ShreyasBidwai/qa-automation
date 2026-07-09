@@ -127,6 +127,74 @@ describe("DashboardPage", () => {
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/projects"));
   });
 
+  describe("pass-rate trend card", () => {
+    it("shows a sparkline + an up delta vs the window's first day when there are >=2 points", async () => {
+      vi.mocked(accountApi.dashboard).mockResolvedValue(ok(dashboard()));
+      render(<DashboardPage />);
+      await screen.findByText("94%");
+
+      const trend = screen.getByText("Pass-rate trend").closest("section")!;
+      expect(within(trend).getByText("6% vs 2026-01-30")).toHaveClass(
+        "text-status-pass-fg",
+      );
+      expect(within(trend).getByText("2026-01-30")).toBeInTheDocument();
+      expect(within(trend).getByText("2026-01-31")).toBeInTheDocument();
+    });
+
+    it("degrades to 'not enough history' for exactly one data point, without a delta", async () => {
+      vi.mocked(accountApi.dashboard).mockResolvedValue(
+        ok(
+          dashboard({
+            trend: [
+              {
+                date: "2026-01-31",
+                runs: 1,
+                passed: 9,
+                failed: 1,
+                errored: 0,
+                skipped: 0,
+                pass_rate: 0.9,
+              },
+            ],
+          }),
+        ),
+      );
+      render(<DashboardPage />);
+      await screen.findByText("94%");
+
+      const trend = screen.getByText("Pass-rate trend").closest("section")!;
+      expect(within(trend).getByText(/Not enough history yet/)).toBeInTheDocument();
+      expect(within(trend).queryByText(/vs 2026-01-31/)).toBeNull();
+    });
+
+    it("shows the honest empty state when the window has no runs at all", async () => {
+      vi.mocked(accountApi.dashboard).mockResolvedValue(
+        ok(
+          dashboard({
+            trend: [
+              {
+                date: "2026-01-31",
+                runs: 0,
+                passed: 0,
+                failed: 0,
+                errored: 0,
+                skipped: 0,
+                pass_rate: null,
+              },
+            ],
+          }),
+        ),
+      );
+      render(<DashboardPage />);
+      await screen.findByText("94%");
+
+      const trend = screen.getByText("Pass-rate trend").closest("section")!;
+      expect(
+        within(trend).getByText("No runs in this window yet."),
+      ).toBeInTheDocument();
+    });
+  });
+
   it("surfaces a load error honestly", async () => {
     vi.mocked(accountApi.dashboard).mockResolvedValue({
       ok: false,
