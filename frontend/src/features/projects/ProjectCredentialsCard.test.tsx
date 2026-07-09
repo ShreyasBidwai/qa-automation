@@ -69,7 +69,7 @@ describe("ProjectCredentialsCard", () => {
     await screen.findByRole("radio", { name: /Test a specific account/ });
 
     fireEvent.click(screen.getByRole("radio", { name: /Test a specific account/ }));
-    fireEvent.change(screen.getByLabelText("Email or mobile"), {
+    fireEvent.change(screen.getByLabelText("Username, email, or mobile"), {
       target: { value: "qa@x.com" },
     });
     fireEvent.change(screen.getByLabelText("Password"), {
@@ -125,7 +125,7 @@ describe("ProjectCredentialsCard", () => {
     await screen.findByRole("radio", { name: /Test a specific account/ });
 
     fireEvent.click(screen.getByRole("radio", { name: /Test a specific account/ }));
-    fireEvent.change(screen.getByLabelText("Email or mobile"), {
+    fireEvent.change(screen.getByLabelText("Username, email, or mobile"), {
       target: { value: "qa@x.com" },
     });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "pw" } });

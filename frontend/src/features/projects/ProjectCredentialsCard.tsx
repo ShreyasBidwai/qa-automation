@@ -87,7 +87,7 @@ export function ProjectCredentialsCard({ projectId }: { projectId: string }) {
     setSaved(false);
     if (mode === "specific_account") {
       if (!identifier.trim()) {
-        setError("Enter the account's email or mobile.");
+        setError("Enter the account's username, email, or mobile.");
         return;
       }
       if (!secret.trim()) {
@@ -239,14 +239,14 @@ export function ProjectCredentialsCard({ projectId }: { projectId: string }) {
       {showEditableFields ? (
         <div className="mt-4 space-y-3">
           <div className="space-y-1.5">
-            <Label htmlFor="cred-identifier">Email or mobile</Label>
+            <Label htmlFor="cred-identifier">Username, email, or mobile</Label>
             <Input
               id="cred-identifier"
               type="text"
               autoComplete="username"
               value={identifier}
               onChange={(event) => setIdentifier(event.target.value)}
-              placeholder="qa-user@example.com"
+              placeholder="qa-user@example.com or a username"
             />
           </div>
           <div className="space-y-1.5">
